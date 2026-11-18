@@ -2731,7 +2731,7 @@ function openSignUp(next) {
 }
 /* "Continue with Google" (only when GOOGLE_CLIENT_ID is set on the server) */
 function googleBlock(mode) { return window.GOOGLE_CLIENT ? `<div class="gwrap mt"><div id="gBtn" class="gbtn" data-mode="${mode || 'signin'}"></div></div><div class="ordiv"><span>or with email</span></div>` : ''; }
-let gsiLoading = null;
+let gsiLoading = null, gsiReady = false, gsiNext = null;
 function loadGsi() {
   if (window.google && google.accounts && google.accounts.id) return Promise.resolve();
   return gsiLoading || (gsiLoading = new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://accounts.google.com/gsi/client'; sc.async = true; sc.onload = res; sc.onerror = () => { gsiLoading = null; rej(new Error('Could not load Google sign-in. Check your connection, or use your email.')); }; document.head.appendChild(sc); }));
@@ -2740,7 +2740,8 @@ async function mountGoogle(next, mode) {
   const el = $('#gBtn'); if (!el || !window.GOOGLE_CLIENT) return;
   try {
     await loadGsi(); if (!document.body.contains(el)) return;
-    google.accounts.id.initialize({ client_id: window.GOOGLE_CLIENT, callback: r => googleDone(r.credential, next), ux_mode: 'popup', context: mode === 'signup' ? 'signup' : 'signin' });
+    gsiNext = next; /* where to go after Google sign-in (the latest screen wins) */
+    if (!gsiReady) { google.accounts.id.initialize({ client_id: window.GOOGLE_CLIENT, callback: r => googleDone(r.credential, gsiNext), ux_mode: 'popup' }); gsiReady = true; }
     google.accounts.id.renderButton(el, { theme: 'outline', size: 'large', shape: 'pill', text: mode === 'signup' ? 'signup_with' : 'continue_with', logo_alignment: 'center', width: Math.max(220, Math.min(380, el.offsetWidth || 320)) });
   } catch (x) { el.innerHTML = `<p class="err">${esc(x.message)}</p>`; }
 }
