@@ -1,0 +1,7 @@
+# Only the 4 pages and api/ go online. Everything below stays in GitHub but is not served.
+source
+supabase
+preview
+README.md
+.env.example
+.gitignore

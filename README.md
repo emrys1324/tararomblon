@@ -19,7 +19,7 @@ There is no Google Sheets, Apps Script or Drive connection anywhere.
 ## What's in the package
 
 ```
-vercel/                  <- deploy this folder to Vercel as-is
+(repo root)              <- what Vercel deploys (Root Directory: leave empty)
   index.html  admin.html  merchant.html  rider.html
   api/index.js           POST /api: every app action
   api/hitpay-webhook.js  POST /api/hitpay-webhook: HitPay payment confirmations
@@ -27,6 +27,7 @@ vercel/                  <- deploy this folder to Vercel as-is
   api/_lib/env.js        Supabase, Resend and HitPay connections
   api/_lib/shared.js     pricing + rules + core (generated; same code as the apps)
   vercel.json  package.json  .env.example
+  .vercelignore          keeps supabase/, preview/, source/ off the website
 supabase/schema.sql      run once in Supabase
 preview/                 the same 4 apps in demo mode (sample data, no backend)
 source/                  editable source + build.py + tests
@@ -161,7 +162,7 @@ The free plan sends up to 100 emails a day and 3,000 a month. You can turn off e
 3. Keep `HITPAY_SANDBOX=true` while testing with the sandbox account. Set it to `false` with live keys.
 
 ### 4. Vercel
-1. Push the `vercel/` folder to a GitHub repo and import it at vercel.com/new. Framework preset: **Other**. No build command.
+1. Import this repo at vercel.com/new. Framework preset: **Other**. No build command. **Root Directory: leave empty** (the app is at the top of the repo).
 2. In **Settings > Environment Variables**, add every variable from `.env.example`:
    - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
    - `SUPER_ADMINS` (the 2 MJV emails, comma separated)
@@ -202,7 +203,7 @@ The free plan sends up to 100 emails a day and 3,000 a month. You can turn off e
 3. Run the tests:
    - `node tests/api_test.js` runs the full flow against a simulated Supabase, HitPay and Resend.
    - `python3 tests/ui_test.py` and `python3 tests/demo_test.py` check the demo pages in a headless browser.
-4. Redeploy the `vercel/` folder.
+4. Copy the files from `source/out/vercel/` to the top of this repo (replacing the old ones) and commit; Vercel redeploys automatically.
 
 `pricing.js`, `rules.js` and `core.js` run both in the browser (demo mode) and on the server, so prices and statuses always match.
 
