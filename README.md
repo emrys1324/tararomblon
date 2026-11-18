@@ -35,6 +35,23 @@ source/                  editable source + build.py + tests
 
 There are no npm packages to install. The functions use Node's built-in `fetch` and `crypto`.
 
+## New: Create account page + Continue with Google
+- **Customer app:** a **Create account** screen (Account tab, or the link `/#signup`) with **Sign up with Google**, or full name + mobile + email followed by a 6-digit code. After that, only the address is asked. The **Sign in** screen also has **Continue with Google**, and both screens link to each other.
+- Google accounts are matched by email, so someone who signed up with an email code and later taps Google gets the same account. Each mobile number still belongs to one account only.
+- **Security:** the server checks every Google sign-in with Google (`oauth2.googleapis.com/tokeninfo`): it must be made for your site (your Client ID), with a verified email, not expired, and issued by Google.
+- Without `GOOGLE_CLIENT_ID`, the Google button is hidden and email codes work as before.
+
+### Google sign-in setup (about 10 minutes)
+1. Go to **console.cloud.google.com**. Create a project or pick one.
+2. Under **APIs & Services > OAuth consent screen** (Google Auth Platform > Branding), set:
+   - App name: *Tara Romblon*
+   - Support email
+   - Logo (optional)
+   - Authorized domain: your domain, plus `vercel.app` if you use that address.
+3. Under **Audience**, choose **External** and **Publish app** (In production). While it's still in *Testing*, only test users you add can sign in.
+4. Go to **APIs & Services > Credentials > Create credentials > OAuth client ID**. Choose **Web application**, name it *Tara Romblon web*, and add **Authorized JavaScript origins** such as `https://tararomblon.vercel.app` and your own domain. No redirect URI is needed.
+5. Copy the **Client ID**, which ends in `.apps.googleusercontent.com`. In Vercel, add it as `GOOGLE_CLIENT_ID`, then redeploy. You don't need the client secret.
+
 ## What's new in v12.5: live rider tracking
 - **Rider app:** during an accepted delivery, the app shares the rider's GPS position about every 10 seconds, showing the banner "Sharing your live location…". It stops automatically when the delivery is done, and riders are warned if location is turned off.
 - **Customer, Merchant and Super Admin apps:** a **Track rider** button on active deliveries opens a live map with:
@@ -171,6 +188,7 @@ The free plan sends up to 100 emails a day and 3,000 a month. You can turn off e
    - `HITPAY_API_KEY`, `HITPAY_SALT`, `HITPAY_SANDBOX`
    - `LOYVERSE_TOKEN` (optional, Pahuway Café points)
    - `GOOGLE_MAPS_API_KEY`, `GOOGLE_MAPS_MAP_ID` (optional, live rider tracking)
+   - `GOOGLE_CLIENT_ID` (optional, Continue with Google on sign-in / sign-up)
    - `CRON_SECRET` (any long random text)
 3. **Redeploy** so the variables take effect.
 

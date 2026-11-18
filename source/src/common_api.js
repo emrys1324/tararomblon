@@ -7,7 +7,7 @@ let _demoQ = Promise.resolve();
 async function api(action, data) {
   if (DEMO) { const run = async () => { DemoStore.load(); try { const r = await demoCore().handle(action, JSON.parse(JSON.stringify(data || {}))); return { ok: true, ...JSON.parse(JSON.stringify(r)) }; } finally { DemoStore.save(); } }; const p = _demoQ.then(run, run); _demoQ = p.catch(() => {}); return p; }
   const r = await fetch(CONFIG.apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...(data || {}) }) });
-  let j; try { j = await r.json(); if (action === 'getCatalog' && j && j.maps) window.MAPCFG = j.maps; } catch (e) { throw new Error(r.status === 413 ? 'That photo is too large. Try a smaller one.' : 'Could not reach the server. Check your connection and try again.'); }
+  let j; try { j = await r.json(); if (action === 'getCatalog' && j && j.maps) window.MAPCFG = j.maps; if (action === 'getCatalog' && j && j.google) window.GOOGLE_CLIENT = j.google; } catch (e) { throw new Error(r.status === 413 ? 'That photo is too large. Try a smaller one.' : 'Could not reach the server. Check your connection and try again.'); }
   if (!j.ok) throw new Error(j.error || 'Something went wrong.');
   return j;
 }

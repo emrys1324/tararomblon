@@ -2,7 +2,8 @@
    Run: node tests/api_test.js  (after python3 build.py) */
 const path = require('path'), crypto = require('crypto'), vm = require('vm'), fs = require('fs'), { Readable } = require('stream');
 const V = path.join(__dirname, '../out/vercel/api/');
-Object.assign(process.env, { SUPABASE_URL: 'https://sb.test', SUPABASE_SERVICE_ROLE_KEY: 'svc', SUPER_ADMINS: 'boss@mjv.ph,ops@mjv.ph', SITE_URL: 'https://tara.test', RESEND_API_KEY: 're_x', MAIL_FROM: 'bookings@tara.test', HITPAY_API_KEY: 'hp', HITPAY_SALT: 'salty', HITPAY_SANDBOX: 'true', CRON_SECRET: 'cron123', GOOGLE_MAPS_API_KEY: 'gm-key' });
+Object.assign(process.env, { SUPABASE_URL: 'https://sb.test', SUPABASE_SERVICE_ROLE_KEY: 'svc', SUPER_ADMINS: 'boss@mjv.ph,ops@mjv.ph', SITE_URL: 'https://tara.test', RESEND_API_KEY: 're_x', MAIL_FROM: 'bookings@tara.test', HITPAY_API_KEY: 'hp', HITPAY_SALT: 'salty', HITPAY_SANDBOX: 'true', CRON_SECRET: 'cron123', GOOGLE_MAPS_API_KEY: 'gm-key', GOOGLE_CLIENT_ID: 'cid-123.apps.googleusercontent.com' });
+const GTOK = {}; // fake Google ID tokens -> tokeninfo answers
 
 /* ---------- fake services ---------- */
 const DB = {}, STORE = {}, MAILS = [], HP = {}, LV = { customers: [] }; let seq = 0, calls = 0;
@@ -59,6 +60,7 @@ global.fetch = async (url, opt = {}) => {
     if (m === 'GET') { const e = u.searchParams.get('email'); return J({ customers: LV.customers.filter(c => !e || c.email === e), cursor: null }); }
     const b = JSON.parse(opt.body); const i = LV.customers.findIndex(c => c.id === b.id); if (i >= 0) LV.customers[i] = Object.assign(LV.customers[i], b); else LV.customers.push(Object.assign({ id: 'lv' + (LV.customers.length + 1) }, b)); return J(b);
   }
+  if (u.host === 'oauth2.googleapis.com' && u.pathname === '/tokeninfo') { const g = GTOK[u.searchParams.get('id_token')]; return g ? J(g) : J({ error_description: 'Invalid Value' }, 400); }
   if (u.host === 'api.resend.com') { const b = JSON.parse(opt.body); MAILS.push(b); return J({ id: 'm' + MAILS.length }); }
   throw new Error('Unexpected fetch ' + url);
 };
@@ -103,6 +105,22 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   await ok('sendOtp', { email: 'Ana@Mail.com' });
   await fails('verifyOtp', { email: 'ana@mail.com', code: '000000' }, /incorrect/);
   const cust = (await ok('verifyOtp', { email: 'ana@mail.com', code: lastCode('ana@mail.com') })).token;
+
+  console.log('Google sign-in');
+  const gt = (k, o) => { const t = 'g' + k + '.' + 'x'.repeat(120); GTOK[t] = Object.assign({ aud: 'cid-123.apps.googleusercontent.com', iss: 'https://accounts.google.com', exp: String(Math.floor(Date.now() / 1000) + 600), email: 'gina@gmail.com', email_verified: 'true', name: 'Gina Google' }, o || {}); return t; };
+  assert((await ok('getCatalog')).google === 'cid-123.apps.googleusercontent.com', 'getCatalog tells the app the Google client ID');
+  const g1 = await ok('googleSignIn', { credential: gt(1) });
+  assert(g1.created && g1.token && g1.profile.email === 'gina@gmail.com' && g1.profile.name === 'Gina Google' && !g1.profile.phone, 'Google sign-up creates an account with the Google name and email (mobile and address asked next)');
+  const g2 = await ok('googleSignIn', { credential: gt(2) });
+  assert(!g2.created && g2.token !== g1.token && (await ok('me', { token: g1.token })).profile.email === 'gina@gmail.com', 'signing in with Google again opens the same account (both sessions work)');
+  const ga = await ok('googleSignIn', { credential: gt(3, { email: 'Ana@Mail.com', name: 'Someone Else' }) });
+  assert(!ga.created && ga.profile.email === 'ana@mail.com', 'Google with the same email as an email-code account signs into that account');
+  await fails('googleSignIn', { credential: gt(4, { aud: 'someone-elses-app' }) }, /Google sign-in failed/);
+  await fails('googleSignIn', { credential: gt(5, { email_verified: 'false' }) }, /Google sign-in failed/);
+  await fails('googleSignIn', { credential: gt(6, { exp: '1000' }) }, /Google sign-in failed/);
+  await fails('googleSignIn', { credential: gt(7, { iss: 'https://evil.example' }) }, /Google sign-in failed/);
+  await fails('googleSignIn', { credential: 'not-a-token' }, /Google sign-in failed/);
+  await fails('googleSignIn', { credential: 'g8.' + 'y'.repeat(120) }, /Google sign-in failed/);
   assert(MAILS[MAILS.length - 1].from === 'Tara Romblon <bookings@tara.test>', 'email sent through Resend with app name');
   await ok('saveProfile', { token: cust, profile: { name: 'Ana Cruz', phone: '09171234567', address: 'Makati' } });
   const stay = CATALOG.stays[0];
@@ -208,7 +226,7 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   cr = mkRes(); await cronFn({ headers: { authorization: 'Bearer cron123' } }, cr);
   assert(cr.code === 200 && er.data.status === 'Expired', 'cron expires unpaid HitPay order after 60 minutes');
   assert(!DB.cache.some(c => c.key === 'old'), 'cron clears expired cache rows');
-  const ad = await ok('adminData', { token: admin }); assert(ad.bookings.length === 5 && ad.customers.length === 1 && ad.applications.length === 1, 'admin data complete');
+  const ad = await ok('adminData', { token: admin }); assert(ad.bookings.length === 5 && ad.customers.length === 2 && ad.applications.length === 1, 'admin data complete (Ana + Gina from Google)');
 
   console.log('Approval creates business, listing, Merchant Admin and payout account');
   const app = ad.applications[0];

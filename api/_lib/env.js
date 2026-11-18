@@ -176,11 +176,29 @@ function createEnv() {
     }
   };
 
+  /* Google sign-in: check the ID token with Google, and that it was made for this site (aud = GOOGLE_CLIENT_ID) */
+  async function verifyGoogle(idToken) {
+    const clientId = E('GOOGLE_CLIENT_ID');
+    if (!clientId) throw new Error('Google sign-in is not set up yet.');
+    if (!/^[A-Za-z0-9._-]{100,4096}$/.test(idToken || '')) throw new Error('Google sign-in failed. Please try again.');
+    const r = await fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken));
+    const g = await r.json().catch(() => ({}));
+    const fresh = +g.exp * 1000 > Date.now();
+    const verified = g.email_verified === true || g.email_verified === 'true';
+    if (!r.ok || g.aud !== clientId || !['accounts.google.com', 'https://accounts.google.com'].includes(g.iss) || !fresh || !verified || !g.email) {
+      console.warn('Google sign-in rejected', r.status, g.aud === clientId, g.iss, fresh, verified);
+      throw new Error('Google sign-in failed. Please try again.');
+    }
+    return { email: String(g.email).toLowerCase(), name: String(g.name || '').slice(0, 120) };
+  }
+
   const ph = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10); // Philippine date
   return {
     demo: false, defaultCatalog: null, siteUrl: E('SITE_URL'), notifyEmail: E('NOTIFY_EMAIL').toLowerCase(),
     now: () => new Date().toISOString(), today: ph, uuid: () => crypto.randomUUID(),
     db, cache, files, hitpay, mail, loyverse, loyverseToken: E('LOYVERSE_TOKEN'),
+    /* public OAuth client ID for "Continue with Google" (not a secret) */
+    googleClientId: E('GOOGLE_CLIENT_ID') || null, verifyGoogle,
     /* public browser key (restrict it to your site in Google Cloud) */
     maps: E('GOOGLE_MAPS_API_KEY') ? { key: E('GOOGLE_MAPS_API_KEY'), mapId: E('GOOGLE_MAPS_MAP_ID', 'DEMO_MAP_ID') } : null
   };

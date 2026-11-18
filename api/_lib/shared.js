@@ -679,7 +679,7 @@ function createCore(env) {
   /* ---------- actions ---------- */
   var A = {};
   /* public */
-  A.getCatalog = async function () { return { catalog: Pricing.norm(await env.db.kvGet('catalog')), maps: env.maps || null }; };
+  A.getCatalog = async function () { return { catalog: Pricing.norm(await env.db.kvGet('catalog')), maps: env.maps || null, google: env.googleClientId || null }; };
   A.availability = async function () { return { busy: await busy() }; };
   A.submitApplication = async function (p) {
     var f = p.application || {}, rider = f.appType === 'rider';
@@ -711,6 +711,16 @@ function createCore(env) {
   };
   /* customer sign-in & profile */
   A.sendOtp = async function (p) { var e = low(p.email); if (!validEmail(e)) err('Enter a valid email address.'); return await code('cust:' + e, e, await catalog()); };
+  /* "Continue with Google": the server checks the token with Google, then signs in (or creates) the customer with that email */
+  A.googleSignIn = async function (p) {
+    if (!env.verifyGoogle || !env.googleClientId) err('Google sign-in is not set up yet. Use your email instead.');
+    var g = await env.verifyGoogle(String(p.credential || '')), e = low(g.email);
+    if (!validEmail(e)) err('Google sign-in failed. Please try again.');
+    var c = await env.db.get(T.cust, e), created = !c;
+    if (!c) c = { id: e, email: e, name: g.name || '', phone: '', address: '', created: now(), verify: { status: 'unverified' }, signup: 'google' };
+    else if (!c.name && g.name) c.name = g.name;
+    var t = addToken(c); await env.db.put(T.cust, c); return { token: t, profile: pubCust(c), created: created };
+  };
   A.verifyOtp = async function (p) {
     var e = low(p.email); await check('cust:' + e, p.code);
     var c = (await env.db.get(T.cust, e)) || { id: e, email: e, name: '', phone: '', address: '', created: now(), verify: { status: 'unverified' } };

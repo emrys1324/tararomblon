@@ -331,26 +331,75 @@ function requireSignIn(next) {
 }
 function openSignIn(next) {
   if (session && session.token) return openProfileSheet(next);
-  openSheet(`<div class="sbody"><h2>Sign in</h2><p class="meta" style="margin-top:4px">We'll email you a 6-digit code. No password needed.</p>
+  openSheet(`<div class="sbody"><h2>Sign in</h2><p class="meta" style="margin-top:4px">${window.GOOGLE_CLIENT ? 'Continue with Google, or get' : "We'll email you"} a 6-digit code${window.GOOGLE_CLIENT ? ' by email' : ''}. No password needed.</p>
+    ${googleBlock()}
     <div class="field mt"><label>Email</label><input type="email" id="siE" autocomplete="email" placeholder="you@email.com"></div>
-    <div class="err" id="siErr"></div><button class="btn navy full mt" id="siBtn">Send code</button></div>`);
+    <div class="err" id="siErr"></div><button class="btn navy full mt" id="siBtn">Send code</button>
+    <p class="meta swap">New to Tara Romblon? <button class="link" id="toSignUp">Create an account</button></p></div>`);
+  mountGoogle(next, 'signin');
+  $('#toSignUp').onclick = () => openSignUp(next);
   $('#siBtn').onclick = async () => {
+    $('#siErr').textContent = '';
     const e = $('#siE').value.trim().toLowerCase();
     if (!validEmail(e)) { $('#siErr').textContent = 'Enter a valid email address.'; return; }
     loading(true, 'Sending code…');
     try { const r = await api('sendOtp', { email: e }); loading(false); codeStep(e, r.demoCode, next); } catch (x) { loading(false); $('#siErr').textContent = x.message; }
   };
 }
-function codeStep(email, demoCode, next) {
+/* Sign up: Google in one tap, or name + mobile + email (then a 6-digit code). Address is asked right after. */
+function openSignUp(next) {
+  if (session && session.token) return openProfileSheet(next);
+  openSheet(`<div class="sbody"><h2>Create your account</h2><p class="meta" style="margin-top:4px">Book stays, rentals, food and tours across Romblon, and keep your reward points in one place.</p>
+    ${googleBlock('signup')}
+    <div class="field mt"><label>Full name</label><input id="suN" autocomplete="name" placeholder="Juan dela Cruz"></div>
+    <div class="field mt"><label>Mobile number</label><input id="suP" inputmode="tel" autocomplete="tel" placeholder="09XX XXX XXXX"></div>
+    <div class="field mt"><label>Email</label><input type="email" id="suE" autocomplete="email" placeholder="you@email.com"></div>
+    <div class="err" id="suErr"></div><button class="btn navy full mt" id="suBtn">Create account</button>
+    <p class="hint" style="margin-top:8px">We'll email you a 6-digit code to confirm. No password needed.</p>
+    <p class="meta swap">Already have an account? <button class="link" id="toSignIn">Sign in</button></p></div>`);
+  mountGoogle(next, 'signup');
+  $('#toSignIn').onclick = () => openSignIn(next);
+  $('#suBtn').onclick = async () => {
+    $('#suErr').textContent = '';
+    const pre = { name: $('#suN').value.trim(), phone: $('#suP').value.trim() }, e = $('#suE').value.trim().toLowerCase();
+    if (pre.name.length < 2) { $('#suErr').textContent = 'Enter your full name.'; return; }
+    if (!validPhone(pre.phone)) { $('#suErr').textContent = 'Enter a valid PH mobile number (e.g. 0917 123 4567).'; return; }
+    if (!validEmail(e)) { $('#suErr').textContent = 'Enter a valid email address.'; return; }
+    loading(true, 'Sending code…');
+    try { const r = await api('sendOtp', { email: e }); loading(false); codeStep(e, r.demoCode, next, pre); } catch (x) { loading(false); $('#suErr').textContent = x.message; }
+  };
+}
+/* "Continue with Google" (only when GOOGLE_CLIENT_ID is set on the server) */
+function googleBlock(mode) { return window.GOOGLE_CLIENT ? `<div class="gwrap mt"><div id="gBtn" class="gbtn" data-mode="${mode || 'signin'}"></div></div><div class="ordiv"><span>or with email</span></div>` : ''; }
+let gsiLoading = null;
+function loadGsi() {
+  if (window.google && google.accounts && google.accounts.id) return Promise.resolve();
+  return gsiLoading || (gsiLoading = new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://accounts.google.com/gsi/client'; sc.async = true; sc.onload = res; sc.onerror = () => { gsiLoading = null; rej(new Error('Could not load Google sign-in. Check your connection, or use your email.')); }; document.head.appendChild(sc); }));
+}
+async function mountGoogle(next, mode) {
+  const el = $('#gBtn'); if (!el || !window.GOOGLE_CLIENT) return;
+  try {
+    await loadGsi(); if (!document.body.contains(el)) return;
+    google.accounts.id.initialize({ client_id: window.GOOGLE_CLIENT, callback: r => googleDone(r.credential, next), ux_mode: 'popup', context: mode === 'signup' ? 'signup' : 'signin' });
+    google.accounts.id.renderButton(el, { theme: 'outline', size: 'large', shape: 'pill', text: mode === 'signup' ? 'signup_with' : 'continue_with', logo_alignment: 'center', width: Math.max(220, Math.min(380, el.offsetWidth || 320)) });
+  } catch (x) { el.innerHTML = `<p class="err">${esc(x.message)}</p>`; }
+}
+async function googleDone(credential, next) {
+  loading(true, 'Signing in with Google…');
+  try { const r = await api('googleSignIn', { credential }); session = { token: r.token, profile: r.profile }; store('tr4_session', session); loading(false); renderBadges(); startCustomerNotif(); if (r.created) toast('Welcome to Tara Romblon!'); openProfileSheet(next); }
+  catch (x) { loading(false); const er = $('#siErr') || $('#suErr'); if (er) er.textContent = x.message; else toast(x.message); }
+}
+function codeStep(email, demoCode, next, pre) {
   openSheet(`<div class="sbody"><h2>Enter your code</h2><p class="meta" style="margin-top:4px">We sent a 6-digit code to <b>${esc(email)}</b>. Check your spam folder too.</p>
     ${demoCode ? `<div class="warn">Demo mode: your code is <b>${demoCode}</b></div>` : ''}
     <div class="field mt"><input id="siC" class="otp" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></div>
     <div class="err" id="siErr"></div><button class="btn navy full mt" id="siBtn">Verify</button>
-    <button class="link mt" style="display:block;margin:12px auto 0" onclick="openSignIn()">Use a different email</button></div>`);
+    <button class="link mt" style="display:block;margin:12px auto 0" id="siBack">Use a different email</button></div>`);
+  $('#siBack').onclick = () => (pre ? openSignUp(next) : openSignIn(next));
   $('#siC').focus();
   $('#siBtn').onclick = async () => {
     loading(true, 'Verifying…');
-    try { const r = await api('verifyOtp', { email, code: $('#siC').value.trim() }); session = { token: r.token, profile: r.profile }; store('tr4_session', session); loading(false); renderBadges(); startCustomerNotif(); openProfileSheet(next); }
+    try { const r = await api('verifyOtp', { email, code: $('#siC').value.trim() }); session = { token: r.token, profile: r.profile }; store('tr4_session', session); loading(false); renderBadges(); startCustomerNotif(); openProfileSheet(next, pre); }
     catch (x) { loading(false); $('#siErr').textContent = x.message; }
   };
 }
@@ -371,10 +420,12 @@ async function saveProfileFromFields(errSel) {
   try { const r = await api('saveProfile', { token: session.token, profile: pr }); session.profile = r.profile; store('tr4_session', session); loading(false); return true; }
   catch (x) { loading(false); $(errSel).textContent = x.message; if (/sign in/i.test(x.message)) signOut(); return false; }
 }
-function openProfileSheet(next) {
+function openProfileSheet(next, pre) {
   const p = session.profile || {};
   if (p.name && p.phone && p.address && next) { closeSheet(); return next(); }
-  openSheet(`<div class="sbody"><h2>Your details</h2><p class="meta" style="margin-top:4px">We need these for your bookings and deliveries.</p>${profileFields(p)}
+  /* sign-up form values fill the blanks (they are saved with the address below) */
+  const shown = Object.assign({}, p, { name: p.name || (pre && pre.name) || '', phone: p.phone || (pre && pre.phone) || '' });
+  openSheet(`<div class="sbody"><h2>${p.name || p.phone ? 'Your details' : 'Almost done'}</h2><p class="meta" style="margin-top:4px">We need these for your bookings and deliveries.</p>${profileFields(shown)}
     <div class="err" id="pfErr"></div><button class="btn navy full mt" id="pfBtn">Save and continue</button></div>`);
   $('#pfBtn').onclick = async () => { if (await saveProfileFromFields('#pfErr')) { closeSheet(); toast('Signed in as ' + session.profile.email); if (next) next(); else go('account'); } };
 }
@@ -618,7 +669,7 @@ async function refreshAvailability() { try { const r = await api('availability')
 /* ================= ACCOUNT ================= */
 async function renderAccount() {
   const el = $('#accountBody');
-  if (!session) { el.innerHTML = `<div class="empty"><div class="big">${ic('users', 40)}</div><h2 style="color:var(--ink)">Sign in to book</h2><p style="margin:8px 0 16px">You can browse and add to cart as a guest. Sign in with your email to check out.</p><button class="btn navy" onclick="openSignIn()">Sign in with email</button></div>`; return; }
+  if (!session) { el.innerHTML = `<div class="empty"><div class="big">${ic('users', 40)}</div><h2 style="color:var(--ink)">Sign in to book</h2><p style="margin:8px 0 16px">You can browse and add to cart as a guest. Create a free account${window.GOOGLE_CLIENT ? ' with Google or your email' : ' with your email'} to check out.</p><div class="acbtns"><button class="btn navy" onclick="openSignUp()">Create account</button><button class="btn ghost" onclick="openSignIn()">Sign in</button></div></div>`; return; }
   const v = (session.profile.verify || {}).status || 'unverified';
   el.innerHTML = `<div class="shead"><div><h2>My account</h2><p>${esc(session.profile.email)}</p></div><button class="link" onclick="signOut()">Sign out</button></div>
     <div class="acard vcard ${v}"><h3><span class="hl">${ic('id')} ID verification</span><span class="schip ${v === 'verified' ? 'done' : v === 'rejected' ? 'bad' : 'wait'}">${{ verified: 'Verified', pending: 'Under review', rejected: 'Not approved', unverified: 'Not yet verified' }[v]}</span></h3>
@@ -845,6 +896,8 @@ function setupSearch() {
 const VIEWS = ['home', 'explore', 'stays', 'rentals', 'food', 'tours', 'cart', 'messages', 'account', 'list', 'rider'];
 function renderAll() { renderTours(); renderLocSlots(); renderStays(); renderRides(); renderFood(); renderBadges(); if (currentView === 'explore') renderExplore(); }
 function go(v, push = true) {
+  /* /#signup opens the Create account screen (shareable link) */
+  if (v === 'signup') { v = 'account'; setTimeout(() => { if (!session) openSignUp(); }, 0); }
   if (!VIEWS.includes(v)) v = 'home';
   currentView = v;
   document.body.classList.toggle('subview', v !== 'home');

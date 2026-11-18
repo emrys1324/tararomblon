@@ -491,3 +491,9 @@ input,select,textarea,button{font-family:inherit}
 .rshare{display:flex;gap:10px;align-items:center;padding:10px 14px;border-radius:14px;margin:-6px 0 14px;font-size:13.5px;background:#fff6ee;border:1px solid #f6d3b8}.rshare.bad{background:#fdecec;border-color:#f3c2c2;color:#8a1f1f}
 .rshare .rdot{width:10px;height:10px;border-radius:50%;background:var(--sun);flex:none;animation:rpulse 1.6s infinite}
 .btn.track{background:var(--sun);color:#fff;border-color:var(--sun)}
+
+/* sign up / Google sign-in */
+.gwrap{display:flex;justify-content:center;min-height:44px}.gbtn{width:100%;max-width:380px;display:flex;justify-content:center}
+.ordiv{display:flex;align-items:center;gap:10px;margin:16px 0 4px;color:var(--mute);font-size:13px}.ordiv::before,.ordiv::after{content:"";flex:1;height:1px;background:var(--line)}
+.swap{text-align:center;margin-top:16px}.swap .link{font-weight:600}
+.acbtns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
