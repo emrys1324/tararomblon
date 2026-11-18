@@ -897,7 +897,7 @@ const VIEWS = ['home', 'explore', 'stays', 'rentals', 'food', 'tours', 'cart', '
 function renderAll() { renderTours(); renderLocSlots(); renderStays(); renderRides(); renderFood(); renderBadges(); if (currentView === 'explore') renderExplore(); }
 function go(v, push = true) {
   /* /#signup opens the Create account screen (shareable link) */
-  if (v === 'signup') { v = 'account'; setTimeout(() => { if (!session) openSignUp(); }, 0); }
+  if (v === 'signup') { v = 'account'; (window.catalogReady || Promise.resolve()).then(() => { if (!session) openSignUp(); }); }
   if (!VIEWS.includes(v)) v = 'home';
   currentView = v;
   document.body.classList.toggle('subview', v !== 'home');
@@ -915,8 +915,9 @@ window.addEventListener('hashchange', () => { const v = location.hash.slice(1); 
 (async function init() {
   if (DEMO) document.body.classList.add('demo');
   setupSearch(); renderAll();
+  window.catalogReady = loadCatalog(); /* settings from the server (incl. Google sign-in) */
   go(location.hash.slice(1) || 'home', false);
-  await loadCatalog(); renderAll(); if (currentView === 'cart') renderCart();
+  await window.catalogReady; renderAll(); if (currentView === 'cart') renderCart();
   startCustomerNotif();
   checkReturnFromPayment();
 })();
