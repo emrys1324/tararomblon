@@ -1,0 +1,108 @@
+/* ================= RIDER APP ================= */
+const RP = { token: null, me: null, tab: 'active', orders: [], threads: [], range: 'today', timer: null };
+const tm = s => new Date(s).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' });
+const dt = s => new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
+const dayOf = s => { const d = new Date(s); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); };
+const DONE = ['Delivered', 'Payment Collected', 'Completed'];
+const share = () => (Object.assign({}, DEFAULT_SETTINGS, CAT.settings || {}).riderSharePct) / 100;
+
+async function initPortal() {
+  if (DEMO) document.body.classList.add('demo');
+  try { const r = await api('getCatalog'); if (r.catalog) CAT = r.catalog; } catch (e) { }
+  const s = store('tr5_staff_rider');
+  if (s && s.token) { try { const r = await api('staffMe', { token: s.token }); if (r.me.role === 'rider') return start(s.token, r.me); } catch (e) { } }
+  staffLogin('rider', v => start(v.token, v.me));
+}
+async function start(token, me) {
+  RP.token = token; RP.me = me; Chat.token = () => RP.token; Chat.me = { email: me.email, name: me.name, role: 'rider' };
+  $('#who').innerHTML = `<span>${esc(me.name || me.email)}</span><button class="link" onclick="signOutStaff()">Sign out</button>`; $('#bellSlot').innerHTML = bellBtn(); $('#ptitle').textContent = 'Deliveries';
+  await reload(); render();
+  Notif.start(token, 'r_' + me.email, async () => { await reload(true); render(); });
+  clearInterval(RP.timer); RP.timer = setInterval(async () => { if (!$('#ov').classList.contains('show')) { await reload(true); render(); } }, DEMO ? 10000 : 30000);
+}
+function signOutStaff() { Share.stop(); store('tr5_staff_rider', null); Notif.stop(); location.reload(); }
+/* Live location: shared with the customer and store only while the rider has an accepted delivery in progress */
+const Share = {
+  watch: null, last: null, sent: 0, state: 'off', refs: [],
+  sync() { const need = RP.orders.filter(Rules.trackable); this.refs = need.map(b => b.ref); if (need.length && this.watch == null) this.start(); if (!need.length && this.watch != null) this.stop(); },
+  start() {
+    if (!navigator.geolocation) { this.state = 'unsupported'; return; }
+    this.state = 'starting';
+    this.watch = navigator.geolocation.watchPosition(p => this.send(p), e => { this.state = e && e.code === 1 ? 'denied' : 'error'; banner(); }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
+  },
+  async send(pos) {
+    const c = pos.coords, now = Date.now(), moved = this.last ? Pricing.km(this.last.latitude, this.last.longitude, c.latitude, c.longitude) : 1;
+    this.state = 'on'; if (now - this.sent < 10000 && moved < 0.03) return; this.sent = now; this.last = c;
+    try { const r = await api('rLocation', { token: RP.token, lat: c.latitude, lng: c.longitude, acc: c.accuracy, heading: c.heading }); if (!r.sharing) this.stop(); } catch (e) { }
+    banner();
+  },
+  stop() { if (this.watch != null && navigator.geolocation) navigator.geolocation.clearWatch(this.watch); this.watch = null; this.state = 'off'; }
+};
+function banner() {
+  const el = $('#rshare'); if (!el) return; const n = Share.refs.length;
+  if (!n) { el.innerHTML = ''; return; }
+  el.innerHTML = Share.state === 'denied' || Share.state === 'error' || Share.state === 'unsupported'
+    ? `<div class="rshare bad">${ic('locate', 18)}<span><b>Turn on location.</b> The customer and store can't see where you are. Allow location for this app in your phone settings, then reopen it.</span></div>`
+    : `<div class="rshare"><span class="rdot"></span><span>Sharing your live location with the customer and store for ${Share.refs.map(esc).join(', ')}. It stops when ${n === 1 ? 'the delivery is' : 'deliveries are'} done.</span></div>`;
+}
+async function reload(quiet) {
+  if (!quiet) loading(true, 'Loading…');
+  try { const [o, t] = await Promise.all([api('rOrders', { token: RP.token }), api('threads', { token: RP.token })]); RP.me = o.me; RP.orders = o.orders.sort((a, b) => b.created.localeCompare(a.created)); RP.threads = t.threads; }
+  catch (x) { toast(x.message); if (/sign in/i.test(x.message)) signOutStaff(); }
+  loading(false);
+}
+function render() {
+  const act = RP.orders.filter(b => !Rules.CLOSED.includes(b.status) && !Rules.DELIVERED.includes(b.status));
+  const unread = RP.threads.filter(t => Chat.unread(t)).length;
+  const on = !!RP.me.available, n = act.length;
+  $('#ptitle').innerHTML = `Deliveries <span class="rstat ${on ? 'on' : ''}">${on ? 'Online' : 'Offline'}</span>`;
+  $('#root').innerHTML = `<label class="ravail big ${on ? 'on' : ''}" for="avT">
+      <span class="rdot" aria-hidden="true"></span>
+      <span class="rtxt"><small>${on ? 'ONLINE' : 'OFFLINE'}</small><b>${on ? 'You are available' : 'You are offline'}</b><span>${on ? (n ? n + ' active deliver' + (n === 1 ? 'y' : 'ies') + ' · tap to go offline' : 'Merchants can assign deliveries to you · tap to go offline') : 'Tap to go online and receive deliveries'}</span></span>
+      <span class="bigswitch"><input type="checkbox" id="avT" ${on ? 'checked' : ''} aria-label="Available for deliveries"><i></i><em>${on ? 'ON' : 'OFF'}</em></span></label>
+    <div id="rshare"></div><div class="ptabs"><button class="${RP.tab === 'active' ? 'on' : ''}" onclick="RP.tab='active';render()">${ic('bike')} Active${act.length ? ` <i>${act.length}</i>` : ''}</button>
+      <button class="${RP.tab === 'earn' ? 'on' : ''}" onclick="RP.tab='earn';render()">${ic('wallet')} Earnings</button>
+      <button class="${RP.tab === 'messages' ? 'on' : ''}" onclick="RP.tab='messages';render()">${ic('chat')} Messages${unread ? ` <i>${unread}</i>` : ''}</button>
+      <button class="${RP.tab === 'history' ? 'on' : ''}" onclick="RP.tab='history';render()">${ic('clock')} History</button></div><div id="pbody"></div>`;
+  $('#avT').onchange = async e => { if (!e.target.checked && act.length && !confirm('You still have ' + act.length + ' active deliver' + (act.length === 1 ? 'y' : 'ies') + '. Go offline anyway? You will keep them, but won\'t get new ones.')) { e.target.checked = true; return; } try { const r = await api('rAvailable', { token: RP.token, value: e.target.checked }); RP.me = r.me; toast(r.me.available ? 'You are now available' : 'You are now offline'); render(); } catch (x) { toast(x.message); e.target.checked = !e.target.checked; } };
+  Share.sync(); banner();
+  ({ active: () => vList(act, 'No active deliveries. Stay available to receive new ones.'), history: () => vList(RP.orders.filter(b => !act.includes(b)), 'No past deliveries yet.'), earn: vEarn, messages: vMsgs })[RP.tab]();
+}
+function mapsLink(b) { return b.lat != null ? `https://www.google.com/maps/dir/?api=1&destination=${b.lat},${b.lng}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((b.landmark || b.customer.address) + ', Romblon')}`; }
+function vList(list, empty) {
+  $('#pbody').innerHTML = list.map(b => {
+    const F = Pricing.store(CAT, b.bizId) || { storeName: bizName(b.bizId), address: '', lat: 12.57, lng: 122.13 };
+    const fee = (+b.quote.deliveryFee || 0) * share(), cash = b.payMethod === 'cod';
+    return `<div class="ordcard"><div class="th"><div><span class="ref">${esc(b.ref)}</span><br><span class="mini">${esc(bizName(b.bizId))} · placed ${tm(b.created)}</span></div>${statusChip(b.status)}</div>
+      ${timeline(b)}
+      <div class="rstops"><div><span class="lbl">Pick up</span><b>${esc(F.storeName)}</b><span class="hint">${esc(F.address)}</span><a class="link" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${F.lat},${F.lng}">${ic('nav', 14)} Directions</a></div>
+        <div><span class="lbl">Deliver to</span><b>${esc(b.customer.name)}</b><span class="hint">${esc(b.landmark || b.customer.address)}</span><span class="rowbtns" style="margin:4px 0 0"><a class="link" target="_blank" rel="noopener" href="${mapsLink(b)}">${ic('nav', 14)} Directions</a><a class="link" href="tel:${esc(String(b.customer.phone).replace(/\s/g, ''))}">${ic('phone', 14)} ${esc(b.customer.phone)}</a></span></div></div>
+      <div class="hint">${b.lines.map(l => esc(l.qty + ' x ' + l.name + (l.addons && l.addons.length ? ' (' + l.addons.join(', ') + ')' : ''))).join(' · ')}</div>
+      <div class="rmoney"><div><span>${cash ? 'Collect from customer' : 'Already paid'}</span><b>${cash ? peso(Rules.payable(b)) : peso(0)}</b></div><div><span>Your delivery fee</span><b>${peso(fee)}</b></div></div>
+      ${b.notes ? `<div class="warn">Customer note: ${esc(b.notes)}</div>` : ''}
+      ${!b.riderAccepted && !Rules.CLOSED.includes(b.status) ? `<div class="sact"><button class="btn" onclick="respond('${esc(b.ref)}',true)">${ic('check')} Accept delivery</button><button class="btn ghost danger" onclick="respond('${esc(b.ref)}',false)">Decline</button></div>` : statusActions(b, { role: 'rider', email: RP.me.email })}
+      ${cash && b.status === 'Delivered' ? `<div class="hint" style="margin-top:8px">Hand ${peso(Rules.cashExpected(b))} to ${esc(F.storeName)} and keep your ${peso(+b.quote.deliveryFee || 0)} delivery fee. The store records the cash received.</div>` : ''}
+      <div class="rowbtns" style="margin:10px 0 0"><button class="btn ghost sm" onclick="Chat.open({ref:'${esc(b.ref)}',chan:'customer'})">${ic('chat')} Message customer</button><button class="btn ghost sm" onclick="Chat.open({ref:'${esc(b.ref)}',chan:'merchant'})">${ic('store')} Message ${esc(F.storeName)}</button></div></div>`;
+  }).join('') || `<div class="empty"><div class="big">${ic('bike', 40)}</div>${empty}</div>`;
+  wireStatus($('#pbody'), () => RP.token, async () => { await reload(true); render(); }, ref => RP.orders.find(b => b.ref === ref));
+}
+async function respond(ref, accept) {
+  loading(true); try { await api('rRespond', { token: RP.token, ref, accept }); await reload(true); loading(false); toast(accept ? 'Delivery accepted' : 'Delivery declined'); render(); } catch (x) { loading(false); toast(x.message); }
+}
+function vEarn() {
+  const now = new Date(), weekAgo = dayOf(new Date(now.getTime() - 6 * 864e5));
+  const inR = b => RP.range === 'all' || (RP.range === 'today' ? dayOf(b.updated || b.created) === today : dayOf(b.updated || b.created) >= weekAgo);
+  const done = RP.orders.filter(b => DONE.includes(b.status) && inR(b)), fee = b => (+b.quote.deliveryFee || 0) * share();
+  const earned = done.reduce((t, b) => t + fee(b), 0), unpaid = done.filter(b => !b.riderPaidAt).reduce((t, b) => t + fee(b), 0), cash = done.filter(b => b.payMethod === 'cod').reduce((t, b) => t + Rules.payable(b), 0);
+  $('#pbody').innerHTML = `<div class="seg" style="margin-bottom:12px">${[['today', 'Today'], ['week', 'Last 7 days'], ['all', 'All time']].map(x => `<button class="${RP.range === x[0] ? 'on' : ''}" onclick="RP.range='${x[0]}';vEarn()">${x[1]}</button>`).join('')}</div>
+    <div class="kpis"><div class="kpi"><span>Completed deliveries</span><b>${done.length}</b><small>${Math.round(share() * 100)}% of each delivery fee</small></div><div class="kpi"><span>Delivery fees earned</span><b>${peso(earned)}</b><small>${peso(earned - unpaid)} paid out</small></div>
+      <div class="kpi warnk"><span>Due to you</span><b>${peso(unpaid)}</b><small>paid out by MJV Services OPC</small></div><div class="kpi"><span>COD cash collected</span><b>${peso(cash)}</b><small>turn over to the store</small></div></div>
+    <div class="acard"><h3>Breakdown</h3><div class="tscroll"><table class="btable"><tr><th>Ref</th><th>Date</th><th>Store</th><th>Delivered to</th><th>Delivery fee</th><th>Your share</th><th>COD collected</th><th>Paid out</th></tr>
+      ${done.map(b => `<tr><td>${esc(b.ref)}</td><td>${dt(b.updated || b.created)}</td><td>${esc(bizName(b.bizId))}</td><td>${esc(b.landmark || b.customer.address)}</td><td>${peso(b.quote.deliveryFee)}</td><td><b>${peso(fee(b))}</b></td><td>${b.payMethod === 'cod' ? peso(Rules.payable(b)) : '-'}</td><td>${b.riderPaidAt ? fmtD(dayOf(b.riderPaidAt)) : 'Unpaid'}</td></tr>`).join('') || '<tr><td colspan="8">No completed deliveries in this period.</td></tr>'}</table></div></div>`;
+}
+function vMsgs() {
+  const cu = RP.threads.filter(t => t.with === 'customer'), st = RP.threads.filter(t => t.with === 'merchant');
+  $('#pbody').innerHTML = `<p class="meta" style="margin-bottom:12px">Separate chats with customers and with stores. Start one from a delivery with Message customer or Message store.</p>
+    <div class="xsec">Customers</div>${Chat.list(cu, { who: 'rider', empty: 'No customer chats yet.' })}<div class="xsec">Stores</div>${Chat.list(st, { who: 'rider', empty: 'No store chats yet.' })}`;
+}
+initPortal();

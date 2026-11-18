@@ -1,0 +1,8 @@
+{
+  "name": "tara-romblon",
+  "version": "10.0.0",
+  "private": true,
+  "description": "Tara Romblon booking apps: static pages + Vercel serverless API on Supabase",
+  "engines": { "node": ">=18" },
+  "scripts": {}
+}

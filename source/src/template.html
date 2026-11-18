@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tara Romblon — Stays, Scooter Rentals & Food Delivery</title>
+<meta name="description" content="Book Hiraya Beach House and Casa Dos, rent a Baybayin scooter, and order from Pahuway Café in San Agustin, Romblon.">
+<meta name="theme-color" content="#13305a">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%231d3461'/%3E%3Ccircle cx='21' cy='12' r='5' fill='%23f29e4c'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/*CSS*/
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap hbar">
+    <button class="backbtn" id="backBtn" type="button" aria-label="Back to home" onclick="goHome()"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+    <button class="logo" data-go="home" aria-label="Home">
+      <svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="15" fill="#1d3461"/><circle cx="21" cy="12" r="5" fill="#f29e4c"/><path d="M4 21c3-2 5-2 8 0s5 2 8 0 5-2 8 0" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>
+      <span id="brandName">Tara Romblon</span>
+    </button>
+    <nav class="nav">
+      <button data-go="home">Home</button><button data-go="explore">Explore</button><button data-go="stays">Stays</button><button data-go="rentals">Rentals</button><button data-go="food">Food</button><button data-go="messages">Messages</button><button data-go="list" class="navlb">List Business</button>
+    </nav>
+    <div class="hright">
+      <span id="bellSlot"></span><button class="loginpill" data-go="account" id="loginPill">Log in</button>
+      <button class="iconbtn deskonly" data-go="account" aria-label="Account" id="acctBtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg></button>
+      <button class="iconbtn deskonly" data-go="cart" aria-label="Cart"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6h15l-1.5 9h-12z"/><path d="M6 6 5 3H2"/><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/></svg><span class="badge" id="cartBadge" data-n="0"></span></button>
+    </div>
+  </div>
+  <div class="demobar" id="demobar">Demo mode — no backend connected. Bookings stay on this device, payments are simulated, and the sign-in code is shown on screen.</div>
+</header>
+
+<main>
+<div class="view" id="v-home">
+  <div class="wrap">
+    <div class="khero">
+      <div class="locslot"></div>
+      <h1>Book <em>Romblon</em><br>with local hosts.</h1>
+      <form class="ksearch" id="homeSearch" role="search"><input id="homeQ" placeholder="Where to?" aria-label="Search" autocomplete="off"><button aria-label="Search"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button></form>
+      <div class="kpills">
+        <button data-go="stays"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V20H4z"/><path d="M10 20v-5h4v5"/></svg>Stays</button>
+        <button data-go="rentals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M9 17h6l-2-8h3M13 9l-2-3H8"/></svg>Rentals</button>
+        <button data-go="food"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13v5a6 6 0 0 1-6 6h-1a6 6 0 0 1-6-6z"/><path d="M17 9h2a2 2 0 0 1 0 4h-2M8 3v2M12 3v2"/></svg>Food</button>
+        <button data-go="tours"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V10M12 10C10 6 6 5 3 7M12 10c2-4 6-5 9-3M12 10c-3-1-6 1-7 4M12 10c3-1 6 1 7 4"/></svg>Things to do</button>
+      </div>
+    </div>
+    <button class="lbstrip" data-go="list"><span><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9 5.5 4h13L20 9M4 9h16v11H4zM4 9a2.7 2.7 0 0 0 5.3 0 2.7 2.7 0 0 0 5.4 0 2.7 2.7 0 0 0 5.3 0"/><path d="M10 20v-5h4v5"/></svg></span><span><b>Own a business in Romblon?</b><br>List your stay, rental, food or tour — apply in 5 minutes</span><span class="arr">→</span></button>
+  </div>
+  <section><div class="wrap">
+    <div class="shead"><h2>Where to stay</h2><button class="link" data-go="stays">See all →</button></div>
+    <div class="hscroll" id="homeStays"></div>
+  </div></section>
+  <section style="padding-top:0"><div class="wrap">
+    <div class="shead"><h2>Ride around Romblon</h2><button class="link" data-go="rentals">See all →</button></div>
+    <div class="hscroll" id="homeRides"></div>
+  </div></section>
+  <section style="padding-top:0"><div class="wrap">
+    <div class="shead"><h2 id="homeFoodT">Where to eat</h2><button class="link" data-go="food">See all →</button></div>
+    <div class="hscroll stores" id="homeFood"></div>
+  </div></section>
+  <section style="padding-top:0"><div class="wrap">
+    <div class="lbcta"><div><span class="eyebrow2">List Business</span><h2>Grow your business with travellers to Romblon</h2><p>Resorts, homestays, rentals, restaurants, tour and boat operators from all 17 towns are welcome. Get online bookings, e-wallet payments and your own merchant portal.</p></div>
+      <div class="lbsteps"><div><b>1</b>Apply online</div><div><b>2</b>We verify & set up your listing</div><div><b>3</b>Start receiving bookings</div></div>
+      <button class="btn" data-go="list">Apply to list your business</button></div>
+      <button class="lbstrip" data-go="rider" style="margin-top:14px"><span><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M9 17h6l-2-8h3M13 9l-2-3H8"/></svg></span><span><b>Ride with us</b><br>Apply as a delivery rider and earn per delivery</span><span>→</span></button>
+  </div></section>
+</div>
+
+<div class="view" id="v-stays"><section><div class="wrap">
+  <div class="locslot" style="margin-bottom:10px"></div>
+  <div class="shead"><div><h2>Stays</h2><p>Rates are per night. Choose your dates to check availability.</p></div></div>
+  <div class="sbar">
+    <div class="field"><label>Check-in</label><input type="date" id="sIn"></div>
+    <div class="field"><label>Check-out</label><input type="date" id="sOut"></div>
+    <div class="field"><label>Guests</label><select id="sGuests"></select></div>
+  </div>
+  <div class="grid" id="staysGrid"></div>
+</div></section></div>
+
+<div class="view" id="v-rentals"><section><div class="wrap">
+  <div class="locslot" style="margin-bottom:10px"></div>
+  <div class="shead"><div><h2>Scooter rentals</h2><p>Baybayin Vehicle Rental · charged per 24 hours, plus an hourly rate for any extra time.</p></div></div>
+  <div class="sbar sbar4">
+    <div class="field"><label>Pick-up date</label><input type="date" id="rD"></div>
+    <div class="field"><label>Pick-up time</label><select id="rT"></select></div>
+    <div class="field"><label>Return date</label><input type="date" id="rRD"></div>
+    <div class="field"><label>Return time</label><select id="rRT"></select></div>
+  </div>
+  <div class="grid" id="ridesGrid"></div>
+</div></section></div>
+
+<div class="view" id="v-food"><section><div class="wrap">
+  <div class="locslot" style="margin-bottom:10px"></div><div id="foodNotice"></div>
+  <div class="storehead" id="storeHead"></div>
+  <div class="mcats" id="mcats"></div>
+  <div class="menu" id="menu"></div>
+</div></section></div>
+
+<div class="view" id="v-explore"><section><div class="wrap">
+  <h2 class="kh" style="margin-top:0">Explore</h2>
+  <div class="locslot" style="margin:-4px 0 4px"></div>
+  <form class="ksearch" id="exSearch" role="search"><input id="exQ" placeholder="Search stays, scooters, drinks…" aria-label="Search" autocomplete="off"><button aria-label="Search"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button></form>
+  <div id="exResults"></div>
+</div></section></div>
+
+<div class="view" id="v-messages"><section><div class="wrap" style="max-width:640px" id="msgBody"></div></section></div>
+
+<div class="view" id="v-tours"><section><div class="wrap" id="toursBody"></div></section></div>
+<div class="view" id="v-rider"><section><div class="wrap" style="max-width:720px" id="riderBody"></div></section></div>
+
+<div class="view" id="v-cart"><section><div class="wrap" style="max-width:640px">
+  <div class="shead"><div><h2>Your cart</h2><p>Bookings and food orders check out separately.</p></div></div>
+  <div id="cartBody"></div>
+</div></section></div>
+
+<div class="view" id="v-account"><section><div class="wrap" style="max-width:640px" id="accountBody"></div></section></div>
+
+<div class="view" id="v-list"><section><div class="wrap" style="max-width:720px" id="listBody"></div></section></div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="fg">
+      <div><b id="footBrand">Tara Romblon</b><span id="footContact"></span></div>
+      <div><b>Book</b><button data-go="stays">Stays</button><button data-go="rentals">Scooter rentals</button><button data-go="food">Where to eat</button><button data-go="tours">Tours & services</button></div>
+      <div><b>Account</b><button data-go="account">Sign in / My bookings</button><button data-go="messages">Messages</button></div>
+      <div><b>For businesses</b><button data-go="list">List your business</button><button data-go="rider">Deliver with us</button><a href="merchant.html" id="merchantLink">Merchant login</a></div>
+    </div>
+  </div>
+</footer>
+
+<nav class="bnav">
+  <button data-go="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V20H4z"/><path d="M10 20v-5h4v5"/></svg>Home</button>
+  <button data-go="explore"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Explore</button>
+  <button data-go="cart"><span class="bwrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6h15l-1.5 9h-12z"/><path d="M6 6 5 3H2"/><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/></svg><span class="badge" id="cartBadge2" data-n="0"></span></span>Cart</button>
+  <button data-go="messages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>Messages</button>
+  <button data-go="account"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3"/><path d="M6.5 18.5c1.3-2 3.2-3 5.5-3s4.2 1 5.5 3"/></svg><span id="bnAcct">Log in</span></button>
+</nav>
+
+<button class="floatcart" id="floatcart" data-go="cart"><span id="fcText"></span><span>View cart →</span></button>
+<div class="ov" id="ov"><div class="sheet" id="sheet"></div></div>
+<div class="toast" id="toast"></div>
+<div class="loading" id="loading"><div class="spin"></div><span id="loadingText">Loading…</span></div>
+
+<script>
+/*PRICING*/
+</script>
+<script>
+/*RULES*/
+</script>
+<script>
+/*CORE*/
+</script>
+<script>
+/*APP*/
+</script>
+</body>
+</html>
