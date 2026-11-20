@@ -178,6 +178,12 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   tbl('bookings').push({ id: 'TR-FAKE-3', data: { ref: 'TR-FAKE-3', email: 'ana@mail.com', status: 'Completed', kind: 'rental', created: '2026-01-03' } });
   await fails('createBooking', Object.assign({}, codP, { lines: [{ itemId: item.id, qty: Math.ceil(501 / item.price), addons: [] }] }), /up to ₱500/);
   assert(Rules.codBlock({ codMinCompleted: 3, codMax: 500 }, 3, 500) === null && Rules.codBlock({ codMinCompleted: 3, codMax: 0 }, 5, 9000) === null, 'COD allowed after 3 completed, up to ₱500 (0 = no ceiling)');
+  const XS = { codMinCompleted: 3, codMax: 500, codExemptBefore: '2026-11-20' };
+  assert(Rules.codBlock(XS, 0, 300, '2026-11-19T15:59:00.000Z') === null && /unlocks/.test(Rules.codBlock(XS, 0, 300, '2026-11-19T16:00:00.000Z')), 'customers who signed up before 20 Nov 2026 (PH time) keep COD; later sign-ups need 3 completed');
+  assert(/up to ₱500/.test(Rules.codBlock(XS, 0, 501, '2026-01-01T00:00:00.000Z')) && /unlocks/.test(Rules.codBlock(Object.assign({}, XS, { codExemptBefore: '' }), 0, 300, '2026-01-01T00:00:00.000Z')), 'exempt customers still have the ₱500 ceiling; empty date = no exemption');
+  const anaRec = DB.customers.find(r => r.id === 'ana@mail.com').data, anaWas = anaRec.created; anaRec.created = '2026-10-01T02:00:00.000Z';
+  const exB = await ok('createBooking', Object.assign({}, codP, { lines: [{ itemId: item.id, qty: 1, addons: [] }] })); assert(exB.refs.length === 1, 'existing customer (signed up 1 Oct) places COD with 0 completed');
+  anaRec.created = anaWas; DB.bookings.splice(DB.bookings.findIndex(r => r.id === exB.refs[0]), 1);
   for (const id of ['TR-FAKE-1', 'TR-FAKE-2', 'TR-FAKE-3']) { const k = DB.bookings.findIndex(r => r.id === id); DB.bookings.splice(k, 1); }
   tbl('bookings').push(...[1, 2, 3].map(i => ({ id: 'TR-FAKE-' + i, data: { ref: 'TR-FAKE-' + i, email: 'ana@mail.com', status: 'Completed', kind: 'food', created: '2026-01-0' + i } })));
   const food = await ok('createBooking', { token: cust, kind: 'food', bizId: 'pahuway', fulfillment: 'delivery', payMethod: 'cod', lat: 12.5720, lng: 122.1330, landmark: 'Near plaza', lines: [{ itemId: item.id, qty: 2, addons: [] }] });

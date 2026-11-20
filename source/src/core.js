@@ -2,7 +2,7 @@
 var DEFAULT_SETTINGS = {
   requireIdVerification: true, idUploadAtCheckout: 'optional', proofUpload: 'required', transferEnabled: true,
   transferInstructions: 'Send your payment to GCash 0917 000 0000 (MJV Services OPC) or BPI 0000-0000-00 (MJV Services OPC), then upload a screenshot of your receipt.',
-  riderSharePct: 100, codCashTo: 'merchant', codMinCompleted: 3, codMax: 500, email: { customers: true, merchants: true, admins: true, riders: true },
+  riderSharePct: 100, codCashTo: 'merchant', codMinCompleted: 3, codMax: 500, codExemptBefore: '2026-11-20', email: { customers: true, merchants: true, admins: true, riders: true },
   /* Stays and Things to do show "Coming soon" until a Super Admin opens them in Settings */
   staysLive: false, toursLive: false
 };
@@ -162,7 +162,7 @@ function createCore(env) {
       var ok = (pm === 'cod' && p.fulfillment === 'delivery' && F.codEnabled) || (pm === 'pickup' && p.fulfillment === 'pickup') || (pm === 'online' && F.onlineEnabled) || (pm === 'transfer' && st.transferEnabled);
       if (!ok) err('That payment option is not available.');
       var q = Pricing.food(cat, p); if (q.error) err(q.error);
-      if (pm === 'cod') { var cb = Rules.codBlock(st, Rules.completedCount(await allBookings(), who.email), q.total); if (cb) err(cb); }
+      if (pm === 'cod') { var cb = Rules.codBlock(st, Rules.completedCount(await allBookings(), who.email), q.total, me.created); if (cb) err(cb); }
       drafts.push({ kind: 'food', bizId: F.bizId || 'pahuway', lines: q.lines, quote: q, payMethod: pm, fulfillment: p.fulfillment, landmark: String(p.landmark || '').slice(0, 200), lat: p.lat, lng: p.lng, dueNow: Rules.NONCASH.indexOf(pm) >= 0 ? q.total : 0 });
     } else {
       if (!p.agree) err('Please agree to the cancellation & refund policy.');

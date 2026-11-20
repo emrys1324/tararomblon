@@ -744,11 +744,17 @@ var Rules = {
     return pre.concat(['Preparing', 'Ready for Pick-up', 'Order Picked Up'], b.payMethod === 'pickup' ? ['Payment Collected', 'Completed'] : ['Completed']);
   },
   /* Cash on delivery: only after N completed transactions, and only up to a ceiling. Returns null when allowed, else the reason. */
-  codBlock: function (st, completed, total) {
+  codBlock: function (st, completed, total, created) {
     var need = +st.codMinCompleted || 0, max = +st.codMax || 0;
-    if (completed < need) return 'Cash on delivery unlocks after ' + need + ' completed orders or bookings (you have ' + completed + '). Please pay online for now.';
+    if (completed < need && !Rules.codExempt(st, created)) return 'Cash on delivery unlocks after ' + need + ' completed orders or bookings (you have ' + completed + '). Please pay online for now.';
     if (max && total > max + 1e-9) return 'Cash on delivery is for orders up to ₱' + max + '. Please pay online for this order.';
     return null;
+  },
+  /* Customers who signed up before this Philippine date keep cash on delivery without the completed-orders rule (the ceiling still applies). */
+  codExempt: function (st, created) {
+    var cut = String(st.codExemptBefore || '').slice(0, 10); if (!cut) return false;
+    if (!created) return true;
+    var t = Date.parse(created); return isNaN(t) ? true : new Date(t + 8 * 3600e3).toISOString().slice(0, 10) < cut;
   },
   completedCount: function (list, email) { return (list || []).filter(function (b) { return (!email || b.email === email) && b.status === 'Completed'; }).length; },
   next: function (b) { var f = Rules.flow(b), i = f.indexOf(b.status); return i >= 0 && i < f.length - 1 ? f[i + 1] : null; },
@@ -901,7 +907,7 @@ var Rules = {
 var DEFAULT_SETTINGS = {
   requireIdVerification: true, idUploadAtCheckout: 'optional', proofUpload: 'required', transferEnabled: true,
   transferInstructions: 'Send your payment to GCash 0917 000 0000 (MJV Services OPC) or BPI 0000-0000-00 (MJV Services OPC), then upload a screenshot of your receipt.',
-  riderSharePct: 100, codCashTo: 'merchant', codMinCompleted: 3, codMax: 500, email: { customers: true, merchants: true, admins: true, riders: true },
+  riderSharePct: 100, codCashTo: 'merchant', codMinCompleted: 3, codMax: 500, codExemptBefore: '2026-11-20', email: { customers: true, merchants: true, admins: true, riders: true },
   /* Stays and Things to do show "Coming soon" until a Super Admin opens them in Settings */
   staysLive: false, toursLive: false
 };
@@ -1061,7 +1067,7 @@ function createCore(env) {
       var ok = (pm === 'cod' && p.fulfillment === 'delivery' && F.codEnabled) || (pm === 'pickup' && p.fulfillment === 'pickup') || (pm === 'online' && F.onlineEnabled) || (pm === 'transfer' && st.transferEnabled);
       if (!ok) err('That payment option is not available.');
       var q = Pricing.food(cat, p); if (q.error) err(q.error);
-      if (pm === 'cod') { var cb = Rules.codBlock(st, Rules.completedCount(await allBookings(), who.email), q.total); if (cb) err(cb); }
+      if (pm === 'cod') { var cb = Rules.codBlock(st, Rules.completedCount(await allBookings(), who.email), q.total, me.created); if (cb) err(cb); }
       drafts.push({ kind: 'food', bizId: F.bizId || 'pahuway', lines: q.lines, quote: q, payMethod: pm, fulfillment: p.fulfillment, landmark: String(p.landmark || '').slice(0, 200), lat: p.lat, lng: p.lng, dueNow: Rules.NONCASH.indexOf(pm) >= 0 ? q.total : 0 });
     } else {
       if (!p.agree) err('Please agree to the cancellation & refund policy.');
@@ -2875,7 +2881,7 @@ function vSettings() {
     <div class="acard"><h3><span class="hl">${ic('bike')} Delivery fee</span></h3><div class="agrid">${aIn('settings.delivery.freeKm', 'Free within (km of the store)', 'num')}${aIn('settings.delivery.perKm', 'Delivery fee per km after that (₱, each started km)', 'num')}${aIn('settings.delivery.customerPct', 'Customer pays (% of the fee; the store pays the rest)', 'num')}${aIn('settings.delivery.baseFee', 'Within the free distance, the store pays the rider (₱)', 'num')}${aIn('settings.delivery.maxKm', 'Longest delivery (km), unless a store sets its own', 'num')}${aIn('settings.delivery.minRider', 'Minimum rider earning per delivery (₱; the store pays the difference)', 'num')}</div>
       <p class="hint">The rider earns the whole fee. Example with the defaults: 3.2 km → 2 started km after 1.5 km → ₱20 fee: customer ₱14, store ₱6, rider ₱20. At 2.0 km the fee is ₱10: customer ₱7, and the store pays ₱13 so the rider still gets the ₱20 minimum. Within 1.5 km: customer ₱0, store ₱20, rider ₱20. Empty = default (1.5 km · ₱10/km · 70% · ₱20 · 10 km · ₱20 minimum).</p></div>
     <div class="acard"><h3><span class="hl">${ic('bike')} Riders</span></h3><div class="agrid">${aIn('settings.riderSharePct', 'Rider share of the delivery fee for older orders only (%)', 'num')}</div>
-      <div class="agrid">${aIn('settings.codMinCompleted', 'Cash on delivery unlocks after this many completed orders or bookings', 'num')}${aIn('settings.codMax', 'Cash on delivery ceiling per order (₱, total incl. delivery fee; 0 = no limit)', 'num')}</div>
+      <div class="agrid">${aIn('settings.codMinCompleted', 'Cash on delivery unlocks after this many completed orders or bookings', 'num')}${aIn('settings.codMax', 'Cash on delivery ceiling per order (₱, total incl. delivery fee; 0 = no limit)', 'num')}${aIn('settings.codExemptBefore', 'Customers who signed up before this date (YYYY-MM-DD) skip the completed-orders rule; empty = no one')}</div>
       <div class="field mt"><label>Cash collected by riders on COD orders goes to</label></div><div class="seg">${[['merchant', 'The merchant'], ['tara', 'Tara Romblon']].map(o => `<button type="button" class="${(st.codCashTo || 'merchant') === o[0] ? 'on' : ''}" data-set="settings.codCashTo" data-val="${o[0]}">${o[1]}</button>`).join('')}</div>
       <p class="hint">The merchant: the rider hands the food amount to the merchant and keeps the delivery fee. Tara Romblon: the rider remits all COD cash to Tara Romblon, which then pays the merchant through Payouts.</p></div>
     <div class="acard"><h3><span class="hl">${ic('bell')} Email notifications</span></h3><p class="hint">In-app notifications are always on. Email copies go to:</p>${aIn('settings.email.customers', 'Customers (bookings, status updates, messages, verification)', 'bool')}${aIn('settings.email.merchants', 'Merchants (new orders, payments, messages)', 'bool')}${aIn('settings.email.admins', 'Super Admins (new transactions, applications, ID reviews)', 'bool')}${aIn('settings.email.riders', 'Riders (assignments, ready for pick-up)', 'bool')}

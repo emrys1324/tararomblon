@@ -592,7 +592,7 @@ function checkoutFood() {
       <button class="btn full mt" id="ckBtn" style="padding:15px">Place order</button></div>`);
     const payOpts = () => {
       const o = [];
-      const qq = quote(), codWhy = st.ful === 'delivery' && F.codEnabled ? Rules.codBlock(SET(), window._myB ? Rules.completedCount(window._myB) : 0, qq.error ? (Pricing.food(CAT, { bizId: F.bizId, lines: cart.food, fulfillment: 'quote' }).subtotal || 0) : qq.total) : null;
+      const qq = quote(), codWhy = st.ful === 'delivery' && F.codEnabled ? Rules.codBlock(SET(), window._myB ? Rules.completedCount(window._myB) : 0, qq.error ? (Pricing.food(CAT, { bizId: F.bizId, lines: cart.food, fulfillment: 'quote' }).subtotal || 0) : qq.total, session.profile && session.profile.created) : null;
       if (st.ful === 'delivery' && F.codEnabled && !codWhy) o.push(['cod', 'Cash on delivery']);
       if (st.ful === 'pickup') o.push(['pickup', 'Pay upon pick-up']);
       if (F.onlineEnabled) o.push(['online', 'Pay online via HitPay — GCash, Maya & other e-wallets, QR Ph or card']);
