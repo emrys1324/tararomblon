@@ -514,6 +514,11 @@ input,select,textarea,button{font-family:inherit}
 .bizbar{display:none;border-top:1px solid var(--line);background:var(--marble-2,#ece7df)}.bizbar.on{display:block}.bizbar .wrap{display:flex;align-items:center;gap:10px;padding-top:8px;padding-bottom:8px}.bizbar label{font-size:12px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.04em}
 .bizpick{flex:1;min-width:0;max-width:420px;font:inherit;font-size:14px;font-weight:600;border:1px solid var(--line);border-radius:12px;padding:8px 10px;background:#fff;color:var(--ink)}
 
+/* Coming soon badges (Stays, Things to do) */
+.soonb{display:none;margin-left:6px;padding:1px 7px;border-radius:999px;background:#f6a457;color:#13305a;font-size:10px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;vertical-align:middle}.soonb.on{display:inline-block}
+.soonbox .soonb{margin-left:0;font-size:11px;padding:3px 10px}
+.kpills button{position:relative}.kpills .soonb{position:absolute;top:-8px;right:10px;margin:0;box-shadow:0 2px 6px rgba(19,48,90,.18)}
+
 </style>
 </head>
 <body>
@@ -525,7 +530,7 @@ input,select,textarea,button{font-family:inherit}
       <span id="brandName">Tara Romblon</span>
     </button>
     <nav class="nav">
-      <button data-go="home">Home</button><button data-go="explore">Explore</button><button data-go="stays">Stays</button><button data-go="rentals">Rentals</button><button data-go="food">Food</button><button data-go="messages">Messages</button><button data-go="list" class="navlb">List Business</button>
+      <button data-go="home">Home</button><button data-go="explore">Explore</button><button data-go="food">Food</button><button data-go="rentals">Rentals</button><button data-go="stays">Stays</button><button data-go="messages">Messages</button><button data-go="list" class="navlb">List Business</button>
     </nav>
     <div class="hright">
       <span id="bellSlot"></span><button class="loginpill" data-go="account" id="loginPill">Log in</button>
@@ -544,25 +549,25 @@ input,select,textarea,button{font-family:inherit}
       <h1>Book <em>Romblon</em><br>with local hosts.</h1>
       <form class="ksearch" id="homeSearch" role="search"><input id="homeQ" placeholder="Where to?" aria-label="Search" autocomplete="off"><button aria-label="Search"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button></form>
       <div class="kpills">
-        <button data-go="stays"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V20H4z"/><path d="M10 20v-5h4v5"/></svg>Stays</button>
-        <button data-go="rentals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M9 17h6l-2-8h3M13 9l-2-3H8"/></svg>Rentals</button>
         <button data-go="food"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13v5a6 6 0 0 1-6 6h-1a6 6 0 0 1-6-6z"/><path d="M17 9h2a2 2 0 0 1 0 4h-2M8 3v2M12 3v2"/></svg>Food</button>
-        <button data-go="tours"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V10M12 10C10 6 6 5 3 7M12 10c2-4 6-5 9-3M12 10c-3-1-6 1-7 4M12 10c3-1 6 1 7 4"/></svg>Things to do</button>
+        <button data-go="rentals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M9 17h6l-2-8h3M13 9l-2-3H8"/></svg>Rentals</button>
+        <button data-go="stays"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V20H4z"/><path d="M10 20v-5h4v5"/></svg>Stays<span class="soonb" data-soonb="stays">Soon</span></button>
+        <button data-go="tours"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V10M12 10C10 6 6 5 3 7M12 10c2-4 6-5 9-3M12 10c-3-1-6 1-7 4M12 10c3-1 6 1 7 4"/></svg>Things to do<span class="soonb" data-soonb="tours">Soon</span></button>
       </div>
     </div>
     <button class="lbstrip" data-go="list"><span><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9 5.5 4h13L20 9M4 9h16v11H4zM4 9a2.7 2.7 0 0 0 5.3 0 2.7 2.7 0 0 0 5.4 0 2.7 2.7 0 0 0 5.3 0"/><path d="M10 20v-5h4v5"/></svg></span><span><b>Own a business in Romblon?</b><br>List your stay, rental, food or tour — apply in 5 minutes</span><span class="arr">→</span></button>
   </div>
   <section><div class="wrap">
-    <div class="shead"><h2>Where to stay</h2><button class="link" data-go="stays">See all →</button></div>
-    <div class="hscroll" id="homeStays"></div>
+    <div class="shead"><h2 id="homeFoodT">Where to eat</h2><button class="link" data-go="food">See all →</button></div>
+    <div class="hscroll stores" id="homeFood"></div>
   </div></section>
   <section style="padding-top:0"><div class="wrap">
     <div class="shead"><h2>Ride around Romblon</h2><button class="link" data-go="rentals">See all →</button></div>
     <div class="hscroll" id="homeRides"></div>
   </div></section>
-  <section style="padding-top:0"><div class="wrap">
-    <div class="shead"><h2 id="homeFoodT">Where to eat</h2><button class="link" data-go="food">See all →</button></div>
-    <div class="hscroll stores" id="homeFood"></div>
+  <section style="padding-top:0" id="homeStaysSec"><div class="wrap">
+    <div class="shead"><h2>Where to stay</h2><button class="link" data-go="stays">See all →</button></div>
+    <div class="hscroll" id="homeStays"></div>
   </div></section>
   <section style="padding-top:0"><div class="wrap">
     <div class="lbcta"><div><span class="eyebrow2">List Business</span><h2>Grow your business with travellers to Romblon</h2><p>Resorts, homestays, rentals, restaurants, tour and boat operators from all 17 towns are welcome. Get online bookings, e-wallet payments and your own merchant portal.</p></div>
@@ -628,7 +633,7 @@ input,select,textarea,button{font-family:inherit}
   <div class="wrap">
     <div class="fg">
       <div><b id="footBrand">Tara Romblon</b><span id="footContact"></span></div>
-      <div><b>Book</b><button data-go="stays">Stays</button><button data-go="rentals">Scooter rentals</button><button data-go="food">Where to eat</button><button data-go="tours">Tours & services</button></div>
+      <div><b>Book</b><button data-go="food">Where to eat</button><button data-go="rentals">Scooter rentals</button><button data-go="stays">Stays (soon)</button><button data-go="tours">Tours & services (soon)</button></div>
       <div><b>Account</b><button data-go="account">Sign in / My bookings</button><button data-go="messages">Messages</button></div>
       <div><b>For businesses</b><button data-go="list">List your business</button><button data-go="rider">Deliver with us</button><a href="merchant.html" id="merchantLink">Merchant login</a></div>
     </div>
@@ -981,7 +986,9 @@ var Rules = {
 var DEFAULT_SETTINGS = {
   requireIdVerification: true, idUploadAtCheckout: 'optional', proofUpload: 'required', transferEnabled: true,
   transferInstructions: 'Send your payment to GCash 0917 000 0000 (MJV Services OPC) or BPI 0000-0000-00 (MJV Services OPC), then upload a screenshot of your receipt.',
-  riderSharePct: 100, codCashTo: 'merchant', email: { customers: true, merchants: true, admins: true, riders: true }
+  riderSharePct: 100, codCashTo: 'merchant', email: { customers: true, merchants: true, admins: true, riders: true },
+  /* Stays and Things to do show "Coming soon" until a Super Admin opens them in Settings */
+  staysLive: false, toursLive: false
 };
 /* env (all methods may return a value or a Promise):
    db.all(table) · db.get(table, id) · db.byToken(table, token) (optional) · db.put(table, obj) · db.tail(table, n) · db.replaceAll(table, list) · db.kvGet(key) · db.kvPut(key, value)
@@ -1144,6 +1151,8 @@ function createCore(env) {
       if (!p.agree) err('Please agree to the cancellation & refund policy.');
       if (st.requireIdVerification && (!me.verify || me.verify.status !== 'verified')) err(me.verify && me.verify.status === 'pending' ? 'ID_PENDING: Your ID is being reviewed. You can book stays and rentals once it is approved.' : 'ID_REQUIRED: Please upload a valid ID before booking stays and rentals.');
       if (['online', 'transfer'].indexOf(p.payMethod) < 0 || (p.payMethod === 'transfer' && !st.transferEnabled)) err('Choose a payment option.');
+      if (!st.staysLive && p.lines.some(function (l) { return l.type === 'stay'; })) err('Stays are coming soon. For now you can rent a scooter or order food.');
+      if (!st.toursLive && p.lines.some(function (l) { return l.type === 'tour'; })) err('Things to do are coming soon. For now you can rent a scooter or order food.');
       var all = Pricing.booking(cat, p.lines); if (all.error) err(all.error);
       var bz = await busy();
       all.lines.forEach(function (l) {
@@ -2475,7 +2484,18 @@ function stayCard(st) {
   <div class="cbody"><span class="brandl">${esc(st.location)}</span><h3>${esc(st.name)}</h3><span class="meta">${ic('pin', 14)} ${esc(townOf(st))} · up to ${st.maxGuests} guests</span>
   <div class="price">${Pricing.promo(st) ? `<span class="was">${peso(st.rate)}</span>` : ''}<b>${peso(Pricing.off(st.rate, Pricing.promo(st)))}</b> / night${Pricing.promo(st) ? `<span class="promo">-${Pricing.promo(st)}%</span>` : ''}${n > 1 ? ` · ${peso(Pricing.off(st.rate * n, Pricing.promo(st)))} for ${n} nights` : ''}</div></div></button>`;
 }
+/* Stays and Things to do are "coming soon" until a Super Admin opens them (Settings) */
+const isLive = k => !!(CAT.settings || {})[k + 'Live'];
+function soonBlock(icon, title, text) { return `<div class="empty soonbox" style="grid-column:1/-1;padding-top:30px"><div class="big">${ic(icon, 40)}</div><span class="soonb on">Coming soon</span><h2 style="font-size:28px;color:var(--ink);margin-top:8px">${title}</h2><p style="margin:8px auto 16px;max-width:420px">${text}</p><div class="rowbtns" style="justify-content:center"><button class="btn" data-go="food">Order food</button><button class="btn ghost" data-go="rentals">Rent a scooter</button></div></div>`; }
+function renderSoon() {
+  document.querySelectorAll('[data-soonb]').forEach(el => el.classList.toggle('on', !isLive(el.dataset.soonb)));
+  const sec = $('#homeStaysSec'); if (sec) sec.style.display = isLive('stays') ? '' : 'none';
+  const sb = $('#v-stays .sbar'); if (sb) sb.style.display = isLive('stays') ? '' : 'none';
+  const sh = $('#v-stays .shead'); if (sh) sh.style.display = isLive('stays') ? '' : 'none';
+}
 function renderStays() {
+  renderSoon();
+  if (!isLive('stays')) { $('#staysGrid').innerHTML = soonBlock('home', 'Stays are coming soon', 'Beach houses, resorts and homestays across Romblon, bookable right here. Meanwhile, order food or rent a scooter.'); $('#homeStays').innerHTML = ''; setTxt('#hStays', ''); return; }
   const list = CAT.stays.filter(s => s.active && inTown(townOf(s)));
   const g = +S.guests;
   $('#staysGrid').innerHTML = !list.length ? emptyTown('stays') : list.filter(s => s.maxGuests >= g).map(stayCard).join('') || `<div class="empty" style="grid-column:1/-1">No accommodation in ${esc(locLabel())} fits ${g} guests.</div>`;
@@ -2651,6 +2671,7 @@ function tourCard(t) {
 }
 function renderTours() {
   const el = $('#toursBody'); if (!el) return;
+  if (!isLive('tours')) { el.innerHTML = `<div class="locslot" style="margin-bottom:10px"></div>` + soonBlock('boat', 'Things to do are coming soon', 'Island hopping, guided tours and other services from local operators. Meanwhile, order food or rent a scooter.'); renderLocSlots(); return; }
   const all = CAT.tours.filter(t => t.active), list = all.filter(t => inTown(townOf(t))), T = list.filter(t => t.category !== 'service'), Sv = list.filter(t => t.category === 'service');
   if (!all.length) { el.innerHTML = `<div class="empty" style="padding-top:30px"><div class="big">${ic('boat', 40)}</div><h2 style="font-size:28px;color:var(--ink)">Tours & other services</h2><p style="margin-top:8px">Coming soon! Island hopping, guided tours, transfers and more from partners across Romblon.</p><div class="soonlist"><span>Island hopping</span><span>Waterfall & river trips</span><span>Port & airport transfers</span><span>Laundry & errands</span></div><button class="btn ghost mt" data-go="list">List your tour or service</button></div>`; return; }
   el.innerHTML = `<div class="locslot" style="margin-bottom:10px"></div><h2 class="kh" style="margin-top:0">Things to do</h2>
@@ -3147,9 +3168,9 @@ function searchAll(q) {
   const food = [];
   Pricing.stores(CAT).forEach(F => { const catName = id => (F.categories.find(c => c.id === id) || {}).name || ''; if (inTown(townOf(F))) F.items.forEach(i => { if (hit(i.name, i.desc, catName(i.catId), F.storeName, townOf(F), isl(townOf(F)), 'food drink eat restaurant')) food.push(Object.assign({ store: F }, i)); }); });
   return {
-    stays: CAT.stays.filter(s => s.active && inTown(townOf(s)) && hit(s.name, s.location, s.amenities, townOf(s), isl(townOf(s)), 'stay accommodation room beach house')),
+    stays: !isLive('stays') ? [] : CAT.stays.filter(s => s.active && inTown(townOf(s)) && hit(s.name, s.location, s.amenities, townOf(s), isl(townOf(s)), 'stay accommodation room beach house')),
     rides: CAT.rentals.units.filter(u => u.active && inTown(townOf(u)) && hit(u.name, u.desc, townOf(u), isl(townOf(u)), 'scooter motor rental rent ride')),
-    tours: CAT.tours.filter(t => t.active && inTown(townOf(t)) && hit(t.name, t.desc, t.location, townOf(t), isl(townOf(t)), bizName(t.bizId), t.category === 'service' ? 'service' : 'tour activity trip island')),
+    tours: !isLive('tours') ? [] : CAT.tours.filter(t => t.active && inTown(townOf(t)) && hit(t.name, t.desc, t.location, townOf(t), isl(townOf(t)), bizName(t.bizId), t.category === 'service' ? 'service' : 'tour activity trip island')),
     food
   };
 }
@@ -3158,7 +3179,7 @@ function renderExplore() {
   const q = $('#exQ').value, r = searchAll(q);
   const n = r.stays.length + r.rides.length + r.food.length + r.tours.length;
   let h = '';
-  if (!q) h += `<div class="kpills" style="margin:0 0 6px"><button data-go="stays">${ic('home')} Stays</button><button data-go="rentals">${ic('scooter')} Rentals</button><button data-go="food">${ic('cup')} Food</button><button data-go="tours">${ic('palm')} Things to do</button></div>`;
+  if (!q) h += `<div class="kpills" style="margin:0 0 6px"><button data-go="food">${ic('cup')} Food</button><button data-go="rentals">${ic('scooter')} Rentals</button><button data-go="stays">${ic('home')} Stays${isLive('stays') ? '' : '<span class="soonb on">Soon</span>'}</button><button data-go="tours">${ic('palm')} Things to do${isLive('tours') ? '' : '<span class="soonb on">Soon</span>'}</button></div>`;
   if (q) h += `<p class="meta" style="margin-top:14px">${n} result${n === 1 ? '' : 's'} for “${esc(q)}”</p>`;
   if (r.stays.length) h += `<div class="xsec">Stays</div>` + r.stays.map(s => xrow(s.photo, 'bed', s.name, s.location + ' · up to ' + s.maxGuests + ' guests', peso(s.rate) + '/night', `openStay('${s.id}')`)).join('');
   if (r.rides.length) h += `<div class="xsec">Scooter rentals</div>` + r.rides.map(u => xrow(u.photo, 'scooter', u.name, u.desc, peso(u.dailyRate) + '/day', `openRide('${u.id}')`)).join('');
@@ -3166,7 +3187,7 @@ function renderExplore() {
   if (r.food.length) h += `<div class="xsec">Food</div>` + r.food.map(i => xrow(i.photo, 'cup', i.name, i.store.storeName + ' · ' + i.desc, peso(Pricing.off(i.price, Pricing.promo(i))), `S.store='${esc(i.store.bizId)}';openItem('${i.id}','${esc(i.store.bizId)}')`)).join('');
   const tq = q.trim().toLowerCase(), townHit = tq && TOWNS.find(t => t.toLowerCase() === tq || t.toLowerCase().startsWith(tq));
   if (!n && townHit) h += emptyTown('listings').replace(esc(locLabel()), esc(townHit));
-  else if (!n) h += `<div class="empty"><div class="big">${ic('search', 40)}</div>Nothing found in ${esc(locLabel())}. Try “beach”, “NMAX”, “ramen” or “latte”.</div>`;
+  else if (!n) h += `<div class="empty"><div class="big">${ic('search', 40)}</div>Nothing found in ${esc(locLabel())}. Try “NMAX”, “ramen”, “pizza” or “latte”.</div>`;
   if (!q) { const c = townCounts(); h += `<div class="xsec">Browse by town</div>` + ISLANDS.map(i => `<div class="tisl"><div class="tislh2">${esc(i.name)}</div><div class="tgrid">${i.towns.map(t => `<button class="tbtn ${S.town === t ? 'on' : ''}" onclick="setTown('${t}')">${t}${c[t] ? '<i>' + c[t] + '</i>' : ''}</button>`).join('')}</div></div>`).join(''); }
   $('#exResults').innerHTML = h;
 }

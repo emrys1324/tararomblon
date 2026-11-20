@@ -35,6 +35,11 @@ source/                  editable source + build.py + tests
 
 There are no npm packages to install. The functions use Node's built-in `fetch` and `crypto`.
 
+## New: Food and Rentals first; Stays and Things to do "coming soon"
+- **Customer home:** the order is now **Food, Rentals, Stays, Things to do**. Stays and Things to do carry a **Soon** badge. The home page lists *Where to eat* first, then *Ride around Romblon*; *Where to stay* is hidden.
+- **Stays and Things to do pages** show a *Coming soon* message with **Order food** / **Rent a scooter** buttons. They're left out of search, and the server refuses stay or tour bookings while closed.
+- **To open them later:** go to **Super Admin → Settings → Open to customers**, switch on *Stays* and/or *Things to do*, then **Save**. The badges disappear and the listings come back. Nothing else to change.
+
 ## New: one email, several businesses
 - **Super Admin → Businesses & users:** you can add the same email under several businesses, with a different role in each. For example, Merchant Admin of Pahuway Café and Merchant Staff of Hiraya Beach House. Each business still has up to 4 users.
 - **Merchant app:** people with more than one business see a **Business** picker under the header. Orders, calendar, team, listings, store settings and reports all follow the chosen business, and so does the person's role there. The app remembers the last business used on that device.

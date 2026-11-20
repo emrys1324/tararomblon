@@ -68,7 +68,18 @@ function stayCard(st) {
   <div class="cbody"><span class="brandl">${esc(st.location)}</span><h3>${esc(st.name)}</h3><span class="meta">${ic('pin', 14)} ${esc(townOf(st))} · up to ${st.maxGuests} guests</span>
   <div class="price">${Pricing.promo(st) ? `<span class="was">${peso(st.rate)}</span>` : ''}<b>${peso(Pricing.off(st.rate, Pricing.promo(st)))}</b> / night${Pricing.promo(st) ? `<span class="promo">-${Pricing.promo(st)}%</span>` : ''}${n > 1 ? ` · ${peso(Pricing.off(st.rate * n, Pricing.promo(st)))} for ${n} nights` : ''}</div></div></button>`;
 }
+/* Stays and Things to do are "coming soon" until a Super Admin opens them (Settings) */
+const isLive = k => !!(CAT.settings || {})[k + 'Live'];
+function soonBlock(icon, title, text) { return `<div class="empty soonbox" style="grid-column:1/-1;padding-top:30px"><div class="big">${ic(icon, 40)}</div><span class="soonb on">Coming soon</span><h2 style="font-size:28px;color:var(--ink);margin-top:8px">${title}</h2><p style="margin:8px auto 16px;max-width:420px">${text}</p><div class="rowbtns" style="justify-content:center"><button class="btn" data-go="food">Order food</button><button class="btn ghost" data-go="rentals">Rent a scooter</button></div></div>`; }
+function renderSoon() {
+  document.querySelectorAll('[data-soonb]').forEach(el => el.classList.toggle('on', !isLive(el.dataset.soonb)));
+  const sec = $('#homeStaysSec'); if (sec) sec.style.display = isLive('stays') ? '' : 'none';
+  const sb = $('#v-stays .sbar'); if (sb) sb.style.display = isLive('stays') ? '' : 'none';
+  const sh = $('#v-stays .shead'); if (sh) sh.style.display = isLive('stays') ? '' : 'none';
+}
 function renderStays() {
+  renderSoon();
+  if (!isLive('stays')) { $('#staysGrid').innerHTML = soonBlock('home', 'Stays are coming soon', 'Beach houses, resorts and homestays across Romblon, bookable right here. Meanwhile, order food or rent a scooter.'); $('#homeStays').innerHTML = ''; setTxt('#hStays', ''); return; }
   const list = CAT.stays.filter(s => s.active && inTown(townOf(s)));
   const g = +S.guests;
   $('#staysGrid').innerHTML = !list.length ? emptyTown('stays') : list.filter(s => s.maxGuests >= g).map(stayCard).join('') || `<div class="empty" style="grid-column:1/-1">No accommodation in ${esc(locLabel())} fits ${g} guests.</div>`;
@@ -244,6 +255,7 @@ function tourCard(t) {
 }
 function renderTours() {
   const el = $('#toursBody'); if (!el) return;
+  if (!isLive('tours')) { el.innerHTML = `<div class="locslot" style="margin-bottom:10px"></div>` + soonBlock('boat', 'Things to do are coming soon', 'Island hopping, guided tours and other services from local operators. Meanwhile, order food or rent a scooter.'); renderLocSlots(); return; }
   const all = CAT.tours.filter(t => t.active), list = all.filter(t => inTown(townOf(t))), T = list.filter(t => t.category !== 'service'), Sv = list.filter(t => t.category === 'service');
   if (!all.length) { el.innerHTML = `<div class="empty" style="padding-top:30px"><div class="big">${ic('boat', 40)}</div><h2 style="font-size:28px;color:var(--ink)">Tours & other services</h2><p style="margin-top:8px">Coming soon! Island hopping, guided tours, transfers and more from partners across Romblon.</p><div class="soonlist"><span>Island hopping</span><span>Waterfall & river trips</span><span>Port & airport transfers</span><span>Laundry & errands</span></div><button class="btn ghost mt" data-go="list">List your tour or service</button></div>`; return; }
   el.innerHTML = `<div class="locslot" style="margin-bottom:10px"></div><h2 class="kh" style="margin-top:0">Things to do</h2>
@@ -740,9 +752,9 @@ function searchAll(q) {
   const food = [];
   Pricing.stores(CAT).forEach(F => { const catName = id => (F.categories.find(c => c.id === id) || {}).name || ''; if (inTown(townOf(F))) F.items.forEach(i => { if (hit(i.name, i.desc, catName(i.catId), F.storeName, townOf(F), isl(townOf(F)), 'food drink eat restaurant')) food.push(Object.assign({ store: F }, i)); }); });
   return {
-    stays: CAT.stays.filter(s => s.active && inTown(townOf(s)) && hit(s.name, s.location, s.amenities, townOf(s), isl(townOf(s)), 'stay accommodation room beach house')),
+    stays: !isLive('stays') ? [] : CAT.stays.filter(s => s.active && inTown(townOf(s)) && hit(s.name, s.location, s.amenities, townOf(s), isl(townOf(s)), 'stay accommodation room beach house')),
     rides: CAT.rentals.units.filter(u => u.active && inTown(townOf(u)) && hit(u.name, u.desc, townOf(u), isl(townOf(u)), 'scooter motor rental rent ride')),
-    tours: CAT.tours.filter(t => t.active && inTown(townOf(t)) && hit(t.name, t.desc, t.location, townOf(t), isl(townOf(t)), bizName(t.bizId), t.category === 'service' ? 'service' : 'tour activity trip island')),
+    tours: !isLive('tours') ? [] : CAT.tours.filter(t => t.active && inTown(townOf(t)) && hit(t.name, t.desc, t.location, townOf(t), isl(townOf(t)), bizName(t.bizId), t.category === 'service' ? 'service' : 'tour activity trip island')),
     food
   };
 }
@@ -751,7 +763,7 @@ function renderExplore() {
   const q = $('#exQ').value, r = searchAll(q);
   const n = r.stays.length + r.rides.length + r.food.length + r.tours.length;
   let h = '';
-  if (!q) h += `<div class="kpills" style="margin:0 0 6px"><button data-go="stays">${ic('home')} Stays</button><button data-go="rentals">${ic('scooter')} Rentals</button><button data-go="food">${ic('cup')} Food</button><button data-go="tours">${ic('palm')} Things to do</button></div>`;
+  if (!q) h += `<div class="kpills" style="margin:0 0 6px"><button data-go="food">${ic('cup')} Food</button><button data-go="rentals">${ic('scooter')} Rentals</button><button data-go="stays">${ic('home')} Stays${isLive('stays') ? '' : '<span class="soonb on">Soon</span>'}</button><button data-go="tours">${ic('palm')} Things to do${isLive('tours') ? '' : '<span class="soonb on">Soon</span>'}</button></div>`;
   if (q) h += `<p class="meta" style="margin-top:14px">${n} result${n === 1 ? '' : 's'} for “${esc(q)}”</p>`;
   if (r.stays.length) h += `<div class="xsec">Stays</div>` + r.stays.map(s => xrow(s.photo, 'bed', s.name, s.location + ' · up to ' + s.maxGuests + ' guests', peso(s.rate) + '/night', `openStay('${s.id}')`)).join('');
   if (r.rides.length) h += `<div class="xsec">Scooter rentals</div>` + r.rides.map(u => xrow(u.photo, 'scooter', u.name, u.desc, peso(u.dailyRate) + '/day', `openRide('${u.id}')`)).join('');
@@ -759,7 +771,7 @@ function renderExplore() {
   if (r.food.length) h += `<div class="xsec">Food</div>` + r.food.map(i => xrow(i.photo, 'cup', i.name, i.store.storeName + ' · ' + i.desc, peso(Pricing.off(i.price, Pricing.promo(i))), `S.store='${esc(i.store.bizId)}';openItem('${i.id}','${esc(i.store.bizId)}')`)).join('');
   const tq = q.trim().toLowerCase(), townHit = tq && TOWNS.find(t => t.toLowerCase() === tq || t.toLowerCase().startsWith(tq));
   if (!n && townHit) h += emptyTown('listings').replace(esc(locLabel()), esc(townHit));
-  else if (!n) h += `<div class="empty"><div class="big">${ic('search', 40)}</div>Nothing found in ${esc(locLabel())}. Try “beach”, “NMAX”, “ramen” or “latte”.</div>`;
+  else if (!n) h += `<div class="empty"><div class="big">${ic('search', 40)}</div>Nothing found in ${esc(locLabel())}. Try “NMAX”, “ramen”, “pizza” or “latte”.</div>`;
   if (!q) { const c = townCounts(); h += `<div class="xsec">Browse by town</div>` + ISLANDS.map(i => `<div class="tisl"><div class="tislh2">${esc(i.name)}</div><div class="tgrid">${i.towns.map(t => `<button class="tbtn ${S.town === t ? 'on' : ''}" onclick="setTown('${t}')">${t}${c[t] ? '<i>' + c[t] + '</i>' : ''}</button>`).join('')}</div></div>`).join(''); }
   $('#exResults').innerHTML = h;
 }

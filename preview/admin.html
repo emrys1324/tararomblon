@@ -514,6 +514,11 @@ input,select,textarea,button{font-family:inherit}
 .bizbar{display:none;border-top:1px solid var(--line);background:var(--marble-2,#ece7df)}.bizbar.on{display:block}.bizbar .wrap{display:flex;align-items:center;gap:10px;padding-top:8px;padding-bottom:8px}.bizbar label{font-size:12px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.04em}
 .bizpick{flex:1;min-width:0;max-width:420px;font:inherit;font-size:14px;font-weight:600;border:1px solid var(--line);border-radius:12px;padding:8px 10px;background:#fff;color:var(--ink)}
 
+/* Coming soon badges (Stays, Things to do) */
+.soonb{display:none;margin-left:6px;padding:1px 7px;border-radius:999px;background:#f6a457;color:#13305a;font-size:10px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;vertical-align:middle}.soonb.on{display:inline-block}
+.soonbox .soonb{margin-left:0;font-size:11px;padding:3px 10px}
+.kpills button{position:relative}.kpills .soonb{position:absolute;top:-8px;right:10px;margin:0;box-shadow:0 2px 6px rgba(19,48,90,.18)}
+
 </style>
 </head>
 <body class="portal">
@@ -864,7 +869,9 @@ var Rules = {
 var DEFAULT_SETTINGS = {
   requireIdVerification: true, idUploadAtCheckout: 'optional', proofUpload: 'required', transferEnabled: true,
   transferInstructions: 'Send your payment to GCash 0917 000 0000 (MJV Services OPC) or BPI 0000-0000-00 (MJV Services OPC), then upload a screenshot of your receipt.',
-  riderSharePct: 100, codCashTo: 'merchant', email: { customers: true, merchants: true, admins: true, riders: true }
+  riderSharePct: 100, codCashTo: 'merchant', email: { customers: true, merchants: true, admins: true, riders: true },
+  /* Stays and Things to do show "Coming soon" until a Super Admin opens them in Settings */
+  staysLive: false, toursLive: false
 };
 /* env (all methods may return a value or a Promise):
    db.all(table) · db.get(table, id) · db.byToken(table, token) (optional) · db.put(table, obj) · db.tail(table, n) · db.replaceAll(table, list) · db.kvGet(key) · db.kvPut(key, value)
@@ -1027,6 +1034,8 @@ function createCore(env) {
       if (!p.agree) err('Please agree to the cancellation & refund policy.');
       if (st.requireIdVerification && (!me.verify || me.verify.status !== 'verified')) err(me.verify && me.verify.status === 'pending' ? 'ID_PENDING: Your ID is being reviewed. You can book stays and rentals once it is approved.' : 'ID_REQUIRED: Please upload a valid ID before booking stays and rentals.');
       if (['online', 'transfer'].indexOf(p.payMethod) < 0 || (p.payMethod === 'transfer' && !st.transferEnabled)) err('Choose a payment option.');
+      if (!st.staysLive && p.lines.some(function (l) { return l.type === 'stay'; })) err('Stays are coming soon. For now you can rent a scooter or order food.');
+      if (!st.toursLive && p.lines.some(function (l) { return l.type === 'tour'; })) err('Things to do are coming soon. For now you can rent a scooter or order food.');
       var all = Pricing.booking(cat, p.lines); if (all.error) err(all.error);
       var bz = await busy();
       all.lines.forEach(function (l) {
@@ -2825,7 +2834,8 @@ function vDiscounts() {
 function vSettings() {
   const st = ADM.draft.settings = Object.assign({}, DEFAULT_SETTINGS, ADM.draft.settings || {}); st.email = Object.assign({}, DEFAULT_SETTINGS.email, st.email || {});
   const three = (path, v) => `<div class="seg">${[['required', 'Required'], ['optional', 'Optional'], ['off', 'Off']].map(o => `<button type="button" class="${v === o[0] ? 'on' : ''}" data-set="${path}" data-val="${o[0]}">${o[1]}</button>`).join('')}</div>`;
-  P(`<div class="acard"><h3><span class="hl">${ic('id')} Customer verification</span></h3>${aIn('settings.requireIdVerification', 'Require an approved ID before a customer\'s first stay or rental booking', 'bool')}<p class="hint">Customers upload an ID once; Super Admins approve it in Customers.</p></div>
+  P(`<div class="acard"><h3><span class="hl">${ic('home')} Open to customers</span></h3>${aIn('settings.staysLive', 'Stays are open for booking (off = shown as Coming soon)', 'bool')}${aIn('settings.toursLive', 'Things to do (tours & services) are open for booking (off = shown as Coming soon)', 'bool')}<p class="hint">Food and Rentals are always open. Turn these on when the listings are ready, then Save.</p></div>
+    <div class="acard"><h3><span class="hl">${ic('id')} Customer verification</span></h3>${aIn('settings.requireIdVerification', 'Require an approved ID before a customer\'s first stay or rental booking', 'bool')}<p class="hint">Customers upload an ID once; Super Admins approve it in Customers.</p></div>
     <div class="acard"><h3><span class="hl">${ic('upload')} Photo uploads at checkout</span></h3><div class="field mt"><label>Valid ID photo (stays & rentals)</label></div>${three('settings.idUploadAtCheckout', st.idUploadAtCheckout)}
       <div class="field mt"><label>Payment proof (bank / e-wallet transfers)</label></div>${three('settings.proofUpload', st.proofUpload)}</div>
     <div class="acard"><h3><span class="hl">${ic('wallet')} Payments</span></h3>${aIn('settings.transferEnabled', 'Offer bank / e-wallet transfer with proof (in addition to HitPay)', 'bool')}${aIn('settings.transferInstructions', 'Transfer instructions shown to customers', 'textarea', 3)}<div class="agrid mt">${aIn('business.downpaymentPct', 'Downpayment for stays & rentals (%)', 'num')}</div></div>

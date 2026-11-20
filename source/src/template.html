@@ -22,7 +22,7 @@
       <span id="brandName">Tara Romblon</span>
     </button>
     <nav class="nav">
-      <button data-go="home">Home</button><button data-go="explore">Explore</button><button data-go="stays">Stays</button><button data-go="rentals">Rentals</button><button data-go="food">Food</button><button data-go="messages">Messages</button><button data-go="list" class="navlb">List Business</button>
+      <button data-go="home">Home</button><button data-go="explore">Explore</button><button data-go="food">Food</button><button data-go="rentals">Rentals</button><button data-go="stays">Stays</button><button data-go="messages">Messages</button><button data-go="list" class="navlb">List Business</button>
     </nav>
     <div class="hright">
       <span id="bellSlot"></span><button class="loginpill" data-go="account" id="loginPill">Log in</button>
@@ -41,25 +41,25 @@
       <h1>Book <em>Romblon</em><br>with local hosts.</h1>
       <form class="ksearch" id="homeSearch" role="search"><input id="homeQ" placeholder="Where to?" aria-label="Search" autocomplete="off"><button aria-label="Search"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button></form>
       <div class="kpills">
-        <button data-go="stays"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V20H4z"/><path d="M10 20v-5h4v5"/></svg>Stays</button>
-        <button data-go="rentals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M9 17h6l-2-8h3M13 9l-2-3H8"/></svg>Rentals</button>
         <button data-go="food"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13v5a6 6 0 0 1-6 6h-1a6 6 0 0 1-6-6z"/><path d="M17 9h2a2 2 0 0 1 0 4h-2M8 3v2M12 3v2"/></svg>Food</button>
-        <button data-go="tours"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V10M12 10C10 6 6 5 3 7M12 10c2-4 6-5 9-3M12 10c-3-1-6 1-7 4M12 10c3-1 6 1 7 4"/></svg>Things to do</button>
+        <button data-go="rentals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M9 17h6l-2-8h3M13 9l-2-3H8"/></svg>Rentals</button>
+        <button data-go="stays"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V20H4z"/><path d="M10 20v-5h4v5"/></svg>Stays<span class="soonb" data-soonb="stays">Soon</span></button>
+        <button data-go="tours"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V10M12 10C10 6 6 5 3 7M12 10c2-4 6-5 9-3M12 10c-3-1-6 1-7 4M12 10c3-1 6 1 7 4"/></svg>Things to do<span class="soonb" data-soonb="tours">Soon</span></button>
       </div>
     </div>
     <button class="lbstrip" data-go="list"><span><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9 5.5 4h13L20 9M4 9h16v11H4zM4 9a2.7 2.7 0 0 0 5.3 0 2.7 2.7 0 0 0 5.4 0 2.7 2.7 0 0 0 5.3 0"/><path d="M10 20v-5h4v5"/></svg></span><span><b>Own a business in Romblon?</b><br>List your stay, rental, food or tour — apply in 5 minutes</span><span class="arr">→</span></button>
   </div>
   <section><div class="wrap">
-    <div class="shead"><h2>Where to stay</h2><button class="link" data-go="stays">See all →</button></div>
-    <div class="hscroll" id="homeStays"></div>
+    <div class="shead"><h2 id="homeFoodT">Where to eat</h2><button class="link" data-go="food">See all →</button></div>
+    <div class="hscroll stores" id="homeFood"></div>
   </div></section>
   <section style="padding-top:0"><div class="wrap">
     <div class="shead"><h2>Ride around Romblon</h2><button class="link" data-go="rentals">See all →</button></div>
     <div class="hscroll" id="homeRides"></div>
   </div></section>
-  <section style="padding-top:0"><div class="wrap">
-    <div class="shead"><h2 id="homeFoodT">Where to eat</h2><button class="link" data-go="food">See all →</button></div>
-    <div class="hscroll stores" id="homeFood"></div>
+  <section style="padding-top:0" id="homeStaysSec"><div class="wrap">
+    <div class="shead"><h2>Where to stay</h2><button class="link" data-go="stays">See all →</button></div>
+    <div class="hscroll" id="homeStays"></div>
   </div></section>
   <section style="padding-top:0"><div class="wrap">
     <div class="lbcta"><div><span class="eyebrow2">List Business</span><h2>Grow your business with travellers to Romblon</h2><p>Resorts, homestays, rentals, restaurants, tour and boat operators from all 17 towns are welcome. Get online bookings, e-wallet payments and your own merchant portal.</p></div>
@@ -125,7 +125,7 @@
   <div class="wrap">
     <div class="fg">
       <div><b id="footBrand">Tara Romblon</b><span id="footContact"></span></div>
-      <div><b>Book</b><button data-go="stays">Stays</button><button data-go="rentals">Scooter rentals</button><button data-go="food">Where to eat</button><button data-go="tours">Tours & services</button></div>
+      <div><b>Book</b><button data-go="food">Where to eat</button><button data-go="rentals">Scooter rentals</button><button data-go="stays">Stays (soon)</button><button data-go="tours">Tours & services (soon)</button></div>
       <div><b>Account</b><button data-go="account">Sign in / My bookings</button><button data-go="messages">Messages</button></div>
       <div><b>For businesses</b><button data-go="list">List your business</button><button data-go="rider">Deliver with us</button><a href="merchant.html" id="merchantLink">Merchant login</a></div>
     </div>

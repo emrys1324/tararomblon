@@ -130,6 +130,14 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   const fileKey = Object.keys(STORE)[0]; assert(fileKey.startsWith('uploads/'), 'ID stored in private uploads bucket');
   await ok('adminVerify', { token: admin, email: 'ana@mail.com', decision: 'verified' });
 
+  console.log('Stays and Things to do: coming soon until a Super Admin opens them');
+  assert(!(await ok('getCatalog')).catalog.settings || !(await ok('getCatalog')).catalog.settings.staysLive, 'stays start as coming soon');
+  await fails('createBooking', { token: cust, kind: 'stay', agree: true, payMethod: 'online', lines: [stayLine] }, /Stays are coming soon/);
+  const tour0 = CATALOG.tours.find(t => t.active) || CATALOG.tours[0];
+  if (tour0) await fails('createBooking', { token: cust, kind: 'tour', agree: true, payMethod: 'transfer', proofPhoto: IMG, lines: [{ type: 'tour', itemId: tour0.id, date: ph(7), time: '08:00', pax: 2 }] }, /Things to do are coming soon/);
+  CATALOG.settings = Object.assign({}, CATALOG.settings, { staysLive: true, toursLive: true });
+  await ok('saveCatalog', { token: admin, catalog: CATALOG });
+
   console.log('Stay booking paid with HitPay');
   const bk = await ok('createBooking', { token: cust, kind: 'stay', agree: true, payMethod: 'online', lines: [stayLine] });
   assert(bk.payUrl && bk.payUrl.startsWith('https://pay.test/'), 'HitPay link created');

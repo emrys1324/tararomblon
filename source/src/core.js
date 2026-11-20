@@ -2,7 +2,9 @@
 var DEFAULT_SETTINGS = {
   requireIdVerification: true, idUploadAtCheckout: 'optional', proofUpload: 'required', transferEnabled: true,
   transferInstructions: 'Send your payment to GCash 0917 000 0000 (MJV Services OPC) or BPI 0000-0000-00 (MJV Services OPC), then upload a screenshot of your receipt.',
-  riderSharePct: 100, codCashTo: 'merchant', email: { customers: true, merchants: true, admins: true, riders: true }
+  riderSharePct: 100, codCashTo: 'merchant', email: { customers: true, merchants: true, admins: true, riders: true },
+  /* Stays and Things to do show "Coming soon" until a Super Admin opens them in Settings */
+  staysLive: false, toursLive: false
 };
 /* env (all methods may return a value or a Promise):
    db.all(table) · db.get(table, id) · db.byToken(table, token) (optional) · db.put(table, obj) · db.tail(table, n) · db.replaceAll(table, list) · db.kvGet(key) · db.kvPut(key, value)
@@ -165,6 +167,8 @@ function createCore(env) {
       if (!p.agree) err('Please agree to the cancellation & refund policy.');
       if (st.requireIdVerification && (!me.verify || me.verify.status !== 'verified')) err(me.verify && me.verify.status === 'pending' ? 'ID_PENDING: Your ID is being reviewed. You can book stays and rentals once it is approved.' : 'ID_REQUIRED: Please upload a valid ID before booking stays and rentals.');
       if (['online', 'transfer'].indexOf(p.payMethod) < 0 || (p.payMethod === 'transfer' && !st.transferEnabled)) err('Choose a payment option.');
+      if (!st.staysLive && p.lines.some(function (l) { return l.type === 'stay'; })) err('Stays are coming soon. For now you can rent a scooter or order food.');
+      if (!st.toursLive && p.lines.some(function (l) { return l.type === 'tour'; })) err('Things to do are coming soon. For now you can rent a scooter or order food.');
       var all = Pricing.booking(cat, p.lines); if (all.error) err(all.error);
       var bz = await busy();
       all.lines.forEach(function (l) {
