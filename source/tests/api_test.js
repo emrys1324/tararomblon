@@ -379,8 +379,33 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   const tm = await ok('mSaveTeam', { token: pm2, team: [{ email: 'mgr@pahuway.ph', name: 'Mgr', role: 'manager' }, { email: 'cashier2@p.ph', name: 'Cashier', role: 'staff' }] });
   assert(tm.team.length === 2 && tm.team.some(u => u.email === 'cashier2@p.ph'), 'Merchant Admin added staff');
   await fails('mSaveTeam', { token: pm2, team: [{ email: 'cashier2@p.ph', role: 'manager' }] }, /own Merchant Admin/);
-  await fails('mSaveTeam', { token: pm2, team: [{ email: 'mgr@pahuway.ph', role: 'manager' }, { email: 'boss@mjv.ph', role: 'staff' }] }, /another account/);
+  await fails('mSaveTeam', { token: pm2, team: [{ email: 'mgr@pahuway.ph', role: 'manager' }, { email: 'boss@mjv.ph', role: 'staff' }] }, /Super Admin account/);
   await fails('mSaveTeam', { token: pm2, team: [1, 2, 3, 4, 5].map(i => ({ email: i === 1 ? 'mgr@pahuway.ph' : 'u' + i + '@p.ph', role: i === 1 ? 'manager' : 'staff' })) }, /up to 4/);
+
+  console.log('One email, several businesses');
+  const rows1 = (await ok('adminData', { token: admin })).staff.map(s => ({ email: s.email, name: s.name, role: s.role, bizId: s.bizId }));
+  await ok('adminSaveStaff', { token: admin, staff: rows1.concat([{ email: 'mgr@pahuway.ph', name: 'Mgr', role: 'staff', bizId: 'hiraya' }]) });
+  const multi = (await ok('adminData', { token: admin })).staff.filter(s => s.email === 'mgr@pahuway.ph');
+  assert(multi.length === 2 && multi.some(r => r.bizId === 'pahuway' && r.role === 'manager') && multi.some(r => r.bizId === 'hiraya' && r.role === 'staff'), 'Super Admin gives one email two businesses (Admin of Pahuway, Staff of Hiraya); the editor shows one row per business');
+  const mm = (await ok('staffMe', { token: pm2 })).me;
+  assert(mm.access.length === 2 && mm.access[0].bizId === 'pahuway', 'their sign-in keeps working and lists both businesses');
+  const tP = await ok('mTeam', { token: pm2, biz: 'pahuway' }), tH = await ok('mTeam', { token: pm2, biz: 'hiraya' });
+  assert(tP.team.some(u => u.email === 'mgr@pahuway.ph' && u.role === 'manager') && tH.team.some(u => u.email === 'mgr@pahuway.ph' && u.role === 'staff') && tH.team.some(u => u.email === 'mgr@hiraya.ph'), 'each business shows its own team, with this person\'s role there');
+  await fails('mSaveTeam', { token: pm2, biz: 'hiraya', team: [{ email: 'mgr@pahuway.ph', role: 'manager' }] }, /Merchant Admin access only/);
+  const bP = await ok('mBookings', { token: pm2, biz: 'pahuway' }), bH = await ok('mBookings', { token: pm2, biz: 'hiraya' });
+  assert(bP.bookings.length > 0 && bP.bookings.every(b => b.bizId === 'pahuway') && bH.bookings.every(b => b.bizId === 'hiraya'), 'orders and bookings are kept apart per business');
+  assert((await ok('mTeam', { token: pm2 })).team.some(u => u.email === 'mgr@pahuway.ph' && u.role === 'manager'), 'without a choice, the first business is used (older app versions keep working)');
+  await fails('mTeam', { token: pm2, biz: 'kusina' }, /no longer have access/);
+  const pmH = await staffLogin('mgr@hiraya.ph', 'merchant');
+  const tH2 = await ok('mSaveTeam', { token: pmH, team: tH.team.map(u => ({ email: u.email, name: u.name, role: u.role })).concat([{ email: 'cashier2@p.ph', name: 'Cashier', role: 'staff' }]) });
+  assert(tH2.team.some(u => u.email === 'cashier2@p.ph') && (await ok('mTeam', { token: pm2, biz: 'pahuway' })).team.some(u => u.email === 'cashier2@p.ph'), 'a Merchant Admin can add someone who already works for another business; they keep that access');
+  const tH3 = await ok('mSaveTeam', { token: pmH, team: tH2.team.filter(u => u.email !== 'cashier2@p.ph').map(u => ({ email: u.email, name: u.name, role: u.role })) });
+  assert(!tH3.team.some(u => u.email === 'cashier2@p.ph') && (await ok('mTeam', { token: pm2, biz: 'pahuway' })).team.some(u => u.email === 'cashier2@p.ph'), 'removing them from one business leaves the other business untouched');
+  await fails('adminSaveStaff', { token: admin, staff: rows1.concat([{ email: 'mgr@pahuway.ph', role: 'staff', bizId: 'pahuway' }]) }, /twice for the same business/);
+  await fails('adminSaveStaff', { token: admin, staff: rows1.concat([{ email: 'boss@mjv.ph', role: 'staff', bizId: 'hiraya' }]) }, /Super Admin or rider/);
+  const mailsBefore = MAILS.length;
+  await ok('mSaveTeam', { token: pmH, team: tH3.team.map(u => ({ email: u.email, name: u.name, role: u.role })).concat([{ email: 'cashier2@p.ph', name: 'Cashier', role: 'staff' }]) });
+  assert(MAILS.slice(mailsBefore).some(m => m.to[0] === 'cashier2@p.ph' && /pick the business/.test(m.text)), 'someone added to a second business is told to pick it at the top of the Merchant app');
 
   console.log('\nALL PASSED · ' + calls + ' simulated network calls · ' + MAILS.length + ' emails');
 })().catch(e => { console.error('\nFAILED:', e.stack || e); process.exit(1); });

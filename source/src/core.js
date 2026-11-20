@@ -24,7 +24,14 @@ function createCore(env) {
   function bizName(cat, id) { var b = biz(cat, id); return b ? b.name : id; }
   async function staffAll() { return await env.db.all(T.staff); }
   function newRef(prefix) { return (prefix || 'TR') + '-' + env.today().slice(2).replace(/-/g, '') + '-' + env.uuid().replace(/[^a-z0-9]/gi, '').slice(-5).toUpperCase(); }
-  function pubStaff(s) { return { email: s.email, name: s.name, role: s.role, bizId: s.bizId || '', phone: s.phone || '', available: !!s.available, lastSeen: s.lastSeen || '' }; }
+  /* Merchant users can work for several businesses: access = [{ bizId, role }]. role/bizId hold the first one (older records have only those). */
+  function isMerchantRole(r) { return r === 'manager' || r === 'staff'; }
+  function accessOf(s) { return s && isMerchantRole(s.role) ? (s.access && s.access.length ? s.access : [{ bizId: s.bizId || '', role: s.role }]).filter(function (a) { return a.bizId && isMerchantRole(a.role); }) : []; }
+  function roleIn(s, bizId) { var a = accessOf(s).filter(function (x) { return x.bizId === bizId; })[0]; return a ? a.role : ''; }
+  function setAccess(s, list) { s.access = list; if (list.length) { s.role = list[0].role; s.bizId = list[0].bizId; } return s; }
+  function pubStaff(s) { var o = { email: s.email, name: s.name, role: s.role, bizId: s.bizId || '', phone: s.phone || '', available: !!s.available, lastSeen: s.lastSeen || '' }; if (isMerchantRole(s.role)) o.access = accessOf(s); return o; }
+  /* one row per business, for the Super Admin user editor */
+  function staffRows(list) { var out = []; list.forEach(function (s) { var a = accessOf(s); if (a.length > 1) a.forEach(function (x) { out.push(Object.assign(adminStaff(s), { role: x.role, bizId: x.bizId })); }); else out.push(adminStaff(s)); }); return out; }
   var RIDER_FIELDS = ['address', 'town', 'vehicle', 'plate', 'licenseNo', 'licenseExpiry', 'licenseFile', 'licenseStatus', 'licenseNote', 'active', 'joined', 'appId'];
   function adminStaff(s) { var o = pubStaff(s); if (s.role === 'rider') RIDER_FIELDS.forEach(function (k) { if (s[k] != null) o[k] = s[k]; }); return o; }
   function str(v, n) { return String(v == null ? '' : v).trim().slice(0, n || 200); }
@@ -37,6 +44,7 @@ function createCore(env) {
 
   /* ---------- auth ---------- */
   function addToken(rec) { var t = env.uuid() + env.uuid().slice(0, 8); rec.tokens = [t].concat(rec.tokens || []).slice(0, 5); return t; }
+  var reqBiz = ''; /* the business a merchant user is working on (sent by the Merchant app as "biz") */
   async function auth(token, need) {
     if (!token) err('Please sign in again.');
     var c = env.db.byToken ? await env.db.byToken(T.cust, token) : (await env.db.all(T.cust)).filter(function (x) { return (x.tokens || []).indexOf(token) >= 0; })[0];
@@ -44,10 +52,15 @@ function createCore(env) {
     var s = env.db.byToken ? await env.db.byToken(T.staff, token) : (await staffAll()).filter(function (x) { return (x.tokens || []).indexOf(token) >= 0; })[0];
     if (!s) err('Please sign in again.');
     var who = { kind: 'staff', role: s.role, bizId: s.bizId || '', email: s.email, name: s.name || s.email, rec: s };
+    if (isMerchantRole(s.role)) {
+      var acc = accessOf(s), pick = acc.filter(function (a) { return a.bizId === reqBiz; })[0] || acc[0];
+      if (reqBiz && pick.bizId !== reqBiz) err('You no longer have access to that business. Please sign in again.');
+      if (pick) { who.role = pick.role; who.bizId = pick.bizId; }
+    }
     if (need === 'customer') err('Not allowed.');
     if (need === 'super' && s.role !== 'super') err('Super Admin access only.');
-    if (need === 'merchant' && ['manager', 'staff'].indexOf(s.role) < 0) err('Merchant access only.');
-    if (need === 'manager' && s.role !== 'manager') err('Merchant Admin access only.');
+    if (need === 'merchant' && !isMerchantRole(who.role)) err('Merchant access only.');
+    if (need === 'manager' && who.role !== 'manager') err('Merchant Admin access only.');
     if (need === 'rider' && s.role !== 'rider') err('Rider access only.');
     return who;
   }
@@ -71,7 +84,7 @@ function createCore(env) {
     if (a.indexOf('cust:') === 0 || a.indexOf('rider:') === 0) return [a.slice(a.indexOf(':') + 1)];
     var all = await staffAll();
     if (a === 'super') return all.filter(function (s) { return s.role === 'super'; }).map(function (s) { return s.email; }).concat(env.notifyEmail ? [env.notifyEmail] : []);
-    if (a.indexOf('biz:') === 0) { var id = a.slice(4), b = biz(cat, id); return all.filter(function (s) { return s.bizId === id && (s.role === 'manager' || s.role === 'staff'); }).map(function (s) { return s.email; }).concat(b && b.email ? [low(b.email)] : []); }
+    if (a.indexOf('biz:') === 0) { var id = a.slice(4), b = biz(cat, id); return all.filter(function (s) { return !!roleIn(s, id); }).map(function (s) { return s.email; }).concat(b && b.email ? [low(b.email)] : []); }
     return [];
   }
   function emailOk(a, st) { return a.indexOf('cust:') === 0 ? st.email.customers : a.indexOf('biz:') === 0 ? st.email.merchants : a === 'super' ? st.email.admins : st.email.riders; }
@@ -498,17 +511,24 @@ function createCore(env) {
     await env.db.kvPut('secrets', sec); return { loyverseConnected: !!tok };
   };
   A.mSaveTeam = async function (p) {
-    var who = await auth(p.token, 'manager'), all = await staffAll(), team = (p.team || []).map(function (u) { return { email: low(u.email), name: str(u.name, 80), role: u.role === 'manager' ? 'manager' : 'staff', bizId: who.bizId, phone: str(u.phone, 30) }; }).filter(function (u) { return u.email; });
+    var who = await auth(p.token, 'manager'), all = await staffAll(), bid = who.bizId;
+    var team = (p.team || []).map(function (u) { return { email: low(u.email), name: str(u.name, 80), role: u.role === 'manager' ? 'manager' : 'staff', bizId: bid, phone: str(u.phone, 30) }; }).filter(function (u) { return u.email; });
     if (!team.some(function (u) { return u.email === who.email && u.role === 'manager'; })) err('You can\'t remove your own Merchant Admin access.');
-    var others = all.filter(function (s) { return !((s.role === 'manager' || s.role === 'staff') && s.bizId === who.bizId); });
-    team.forEach(function (u) { if (others.some(function (s) { return s.email === u.email; })) err(u.email + ' already has another account. Use a different email.'); });
-    var list = others.map(function (s) { return { email: s.email, name: s.name, role: s.role, bizId: s.bizId, phone: s.phone || '' }; }).concat(team);
-    var e = Rules.staffCheck(list); if (e) err(e);
-    var old = {}; all.forEach(function (s) { old[s.email] = s; });
-    await env.db.replaceAll(T.staff, list.map(function (s) { var o = old[s.email] || {}, r = Object.assign({}, o, s); r.id = s.email; r.tokens = o.role === s.role && o.bizId === s.bizId ? o.tokens || [] : []; return r; }));
-    var added = team.filter(function (u) { return !old[u.email]; });
-    for (var i = 0; i < added.length; i++) { try { await env.mail(added[i].email, 'You have been added to ' + bizName(await catalog(), who.bizId), 'Hi ' + (added[i].name || '') + ',\n\n' + who.name + ' added you as ' + Rules.ROLE_LABEL[added[i].role] + '. Sign in to the Merchant app with this email.' + (env.siteUrl ? '\n\n' + env.siteUrl.replace(/\/+$/, '') + '/merchant' : '')); } catch (x) { } }
-    return { team: list.filter(function (s) { return s.bizId === who.bizId && s.role !== 'rider'; }).map(pubStaff) };
+    var byEmail = {}; all.forEach(function (s) { byEmail[s.email] = s; });
+    team.forEach(function (u) { var o = byEmail[u.email]; if (o && !isMerchantRole(o.role)) err(u.email + ' is a ' + (Rules.ROLE_LABEL[o.role] || o.role) + ' account and can\'t be added to a business. Use a different email.'); });
+    var check = []; all.forEach(function (s) { accessOf(s).forEach(function (x) { if (x.bizId !== bid) check.push({ email: s.email, role: x.role, bizId: x.bizId }); }); if (!isMerchantRole(s.role)) check.push({ email: s.email, role: s.role, bizId: '' }); });
+    var e = Rules.staffCheck(check.concat(team)); if (e) err(e);
+    var added = [], out = [];
+    all.forEach(function (s) {
+      if (!isMerchantRole(s.role)) { out.push(s); return; }
+      var keep = accessOf(s).filter(function (x) { return x.bizId !== bid; }), mine = team.filter(function (u) { return u.email === s.email; })[0];
+      if (mine) { keep = keep.concat([{ bizId: bid, role: mine.role }]); if (mine.name) s.name = mine.name; if (mine.phone) s.phone = mine.phone; if (!roleIn(s, bid)) added.push(mine); }
+      if (keep.length) out.push(setAccess(s, keep));
+    });
+    team.forEach(function (u) { if (!byEmail[u.email]) { out.push(setAccess({ id: u.email, email: u.email, name: u.name, phone: u.phone, tokens: [] }, [{ bizId: bid, role: u.role }])); added.push(u); } });
+    await env.db.replaceAll(T.staff, out);
+    for (var i = 0; i < added.length; i++) { try { await env.mail(added[i].email, 'You have been added to ' + bizName(await catalog(), bid), 'Hi ' + (added[i].name || '') + ',\n\n' + who.name + ' added you as ' + Rules.ROLE_LABEL[added[i].role] + ' of ' + bizName(await catalog(), bid) + '. Sign in to the Merchant app with this email' + (byEmail[added[i].email] ? ' and pick the business at the top.' : '.') + (env.siteUrl ? '\n\n' + env.siteUrl.replace(/\/+$/, '') + '/merchant' : '')); } catch (x) { } }
+    return { team: teamOf(out, bid) };
   };
   A.mRewardsReport = async function (p) {
     var who = await auth(p.token, 'manager'), cat = await catalog(true), rows = await pointsRows('', who.bizId), bk = (await allBookings()).filter(function (b) { return b.bizId === who.bizId && Rules.FREE.indexOf(b.status) < 0; });
@@ -629,7 +649,8 @@ function createCore(env) {
     await event('listing', who.name + ' updated pricing for ' + (it.name || it.id), ['super', 'biz:' + who.bizId], '', who.bizId, [], '', '', who.email);
     return { listing: it };
   };
-  A.mTeam = async function (p) { var who = await auth(p.token, 'merchant'); return { team: (await staffAll()).filter(function (s) { return s.bizId === who.bizId && s.role !== 'rider'; }).map(pubStaff) }; };
+  function teamOf(all, bizId) { return all.filter(function (s) { return !!roleIn(s, bizId); }).map(function (s) { return Object.assign(pubStaff(s), { role: roleIn(s, bizId), bizId: bizId }); }); }
+  A.mTeam = async function (p) { var who = await auth(p.token, 'merchant'); return { team: teamOf(await staffAll(), who.bizId) }; };
   A.viewUpload = async function (p) {
     var who = await auth(p.token), id = p.fileId, ok = who.role === 'super';
     if (!ok && who.role === 'manager') ok = (await allBookings()).some(function (b) { return b.bizId === who.bizId && (b.idFile === id || b.proofFile === id); });
@@ -690,7 +711,7 @@ function createCore(env) {
   A.uploadPhoto = async function (p) { await auth(p.token, 'super'); return { url: (await env.files.save(p.dataUrl, p.name, false)).url }; };
   A.adminData = async function (p) {
     await auth(p.token, 'super');
-    return { bookings: (await allBookings()).map(function (b) { return strip(b, true); }), customers: (await env.db.all(T.cust)).map(pubCust), applications: await env.db.all(T.app), staff: (await staffAll()).map(adminStaff),
+    return { bookings: (await allBookings()).map(function (b) { return strip(b, true); }), customers: (await env.db.all(T.cust)).map(pubCust), applications: await env.db.all(T.app), staff: staffRows(await staffAll()),
       threads: await env.db.all(T.thr), events: await env.db.tail(T.ev, 100), payees: await payees(), payouts: await env.db.all(T.pay), discounts: await discounts() };
   };
   A.adminUpdate = async function (p) {
@@ -719,11 +740,25 @@ function createCore(env) {
   };
   A.adminSaveStaff = async function (p) {
     var me = await auth(p.token, 'super');
-    var list = (p.staff || []).map(function (s) { return { email: low(s.email), name: String(s.name || '').slice(0, 80), role: s.role, bizId: s.role === 'super' || s.role === 'rider' ? '' : String(s.bizId || ''), phone: String(s.phone || '').slice(0, 30) }; });
-    var e = Rules.staffCheck(list); if (e) err(e);
-    if (!list.some(function (s) { return s.email === me.email && s.role === 'super'; })) err('You can\'t remove your own Super Admin access.');
+    var rows = (p.staff || []).map(function (s) { return { email: low(s.email), name: String(s.name || '').slice(0, 80), role: s.role, bizId: s.role === 'super' || s.role === 'rider' ? '' : String(s.bizId || ''), phone: String(s.phone || '').slice(0, 30) }; });
+    var e = Rules.staffCheck(rows); if (e) err(e);
+    if (!rows.some(function (s) { return s.email === me.email && s.role === 'super'; })) err('You can\'t remove your own Super Admin access.');
     var old = {}; (await staffAll()).forEach(function (s) { old[s.email] = s; });
-    await env.db.replaceAll(T.staff, list.map(function (s) { var o = old[s.email]; s.id = s.email; s.tokens = o && o.role === s.role && o.bizId === s.bizId ? o.tokens || [] : []; s.available = o ? !!o.available : false; s.lastSeen = o ? o.lastSeen || '' : ''; if (o && s.role === 'rider') RIDER_FIELDS.forEach(function (k) { if (o[k] != null) s[k] = o[k]; }); return s; }));
+    var merged = {}, order = [];
+    rows.forEach(function (r) {
+      var m = merged[r.email];
+      if (!m) { m = merged[r.email] = { id: r.email, email: r.email, name: r.name, role: r.role, bizId: r.bizId, phone: r.phone, access: [] }; order.push(r.email); }
+      if (!m.name && r.name) m.name = r.name;
+      if (isMerchantRole(r.role)) m.access.push({ bizId: r.bizId, role: r.role });
+    });
+    await env.db.replaceAll(T.staff, order.map(function (k) {
+      var s = merged[k], o = old[k];
+      if (isMerchantRole(s.role)) setAccess(s, s.access); else delete s.access;
+      var sameKind = o && (isMerchantRole(o.role) ? isMerchantRole(s.role) : o.role === s.role);
+      s.tokens = sameKind ? o.tokens || [] : []; s.available = o ? !!o.available : false; s.lastSeen = o ? o.lastSeen || '' : '';
+      if (o && s.role === 'rider') RIDER_FIELDS.forEach(function (f) { if (o[f] != null) s[f] = o[f]; });
+      return s;
+    }));
     return {};
   };
   /* Riders: profile, driver's license and payout account */
@@ -786,7 +821,8 @@ function createCore(env) {
     var pf = p.platformFee || a.platformFee || { type: 'percent', value: 10 }; pf = { type: pf.type === 'fixed' ? 'fixed' : 'percent', value: Math.max(0, +pf.value || 0) };
     var mgrEmail = low(p.managerEmail || a.email), staff = await staffAll();
     if (!validEmail(mgrEmail)) err('Enter a valid Merchant Admin email.');
-    if (staff.some(function (s) { return s.email === mgrEmail; })) err(mgrEmail + ' already has an account. Use another email.');
+    var existing = staff.filter(function (s) { return s.email === mgrEmail; })[0];
+    if (existing && !isMerchantRole(existing.role)) err(mgrEmail + ' is a ' + (Rules.ROLE_LABEL[existing.role] || existing.role) + ' account. Use another email for the Merchant Admin.');
     cat.businesses.push({ id: bid, name: a.businessName, type: type, town: a.town, email: a.email, phone: a.phone, active: true, platformFee: pf });
     var town = a.town || 'San Agustin', base = { bizId: bid, town: town, photo: '', promoPct: 0 }, cap = Math.max(1, parseInt(a.capacity, 10) || 0);
     if (type === 'Stay') cat.stays.push(Object.assign({ id: bid, name: a.businessName, location: a.address || town + ', Romblon', rate: 0, maxGuests: cap > 1 ? cap : 2, deposit: 0, checkInTime: '2:00 PM', checkOutTime: '12:00 NN', amenities: a.description, active: false }, base));
@@ -795,7 +831,8 @@ function createCore(env) {
       deliveryEnabled: true, pickupEnabled: true, codEnabled: true, onlineEnabled: true, matrix: clone((cat.foods[0] && cat.foods[0].matrix) || [{ upToKm: 3, fee: 50 }]), categories: [{ id: 'menu', name: 'Menu' }], items: [] });
     if (type === 'Tour' || type === 'Service') cat.tours.push(Object.assign({ id: bid, category: type === 'Service' ? 'service' : 'tour', name: a.businessName, location: a.address || town + ', Romblon', desc: a.description, rate: 0, rateUnit: 'person', maxPax: cap > 1 ? cap : 10, durationHours: type === 'Service' ? 1 : 4, times: '08:00', deposit: 0, active: false }, base));
     await env.db.kvPut('catalog', cat);
-    await env.db.put(T.staff, { id: mgrEmail, email: mgrEmail, name: str(p.managerName || a.contactName, 80), role: 'manager', bizId: bid, phone: a.phone || '', tokens: [] });
+    if (existing) await env.db.put(T.staff, setAccess(existing, accessOf(existing).concat([{ bizId: bid, role: 'manager' }])));
+    else await env.db.put(T.staff, setAccess({ id: mgrEmail, email: mgrEmail, name: str(p.managerName || a.contactName, 80), phone: a.phone || '', tokens: [] }, [{ bizId: bid, role: 'manager' }]));
     if (a.bank) await savePayee('biz:' + bid, a.bank);
     a.status = 'Approved'; a.platformFee = pf; a.bizId = bid; a.decided = now(); a.adminNotes = (a.adminNotes ? a.adminNotes + '\n' : '') + 'Approved as ' + bid; await env.db.put(T.app, a);
     await event('application', 'Business approved: ' + a.businessName + ' (' + type + ')', ['super', 'biz:' + bid], '', bid, ['biz:' + bid], 'Welcome to ' + ((cat.business && cat.business.name) || 'Tara Romblon'),
@@ -828,7 +865,7 @@ function createCore(env) {
   };
 
   return {
-    handle: async function (action, p) { var h = A[action]; if (!h) err('Unknown action: ' + action); return await h(p || {}); },
+    handle: async function (action, p) { var h = A[action]; if (!h) err('Unknown action: ' + action); reqBiz = String((p && p.biz) || ''); return await h(p || {}); },
     /* Confirms HitPay payments found by the webhook or the daily check, and expires unpaid online bookings after 60 minutes */
     paymentWebhook: async function (ref) { var bs = (await allBookings()).filter(function (b) { return b.group === ref || b.ref === ref; }); if (bs.length) return await checkHitpay(bs[0].group); return false; },
     reconcile: async function () {

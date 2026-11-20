@@ -497,3 +497,7 @@ input,select,textarea,button{font-family:inherit}
 .ordiv{display:flex;align-items:center;gap:10px;margin:16px 0 4px;color:var(--mute);font-size:13px}.ordiv::before,.ordiv::after{content:"";flex:1;height:1px;background:var(--line)}
 .swap{text-align:center;margin-top:16px}.swap .link{font-weight:600}
 .acbtns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+
+/* merchant: business switcher for users with several businesses */
+.bizbar{display:none;border-top:1px solid var(--line);background:var(--marble-2,#ece7df)}.bizbar.on{display:block}.bizbar .wrap{display:flex;align-items:center;gap:10px;padding-top:8px;padding-bottom:8px}.bizbar label{font-size:12px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.04em}
+.bizpick{flex:1;min-width:0;max-width:420px;font:inherit;font-size:14px;font-weight:600;border:1px solid var(--line);border-radius:12px;padding:8px 10px;background:#fff;color:var(--ink)}

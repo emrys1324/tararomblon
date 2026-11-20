@@ -17,13 +17,22 @@ async function initPortal() {
   staffLogin('merchant', v => start(v.token, v.me));
 }
 async function start(token, me) {
+  /* one email can work for several businesses: pick the last one used on this device, else the first */
+  const access = (me.access && me.access.length) ? me.access : [{ bizId: me.bizId, role: me.role }];
+  const saved = store('tr5_merchant_biz'), cur = access.find(a => a.bizId === saved) || access[0];
+  me = Object.assign({}, me, { bizId: cur.bizId, role: cur.role, access });
+  window.API_BIZ = cur.bizId;
   MP.token = token; MP.me = me; MP.tab = me.role === 'manager' ? 'orders' : 'today';
   Chat.token = () => MP.token; Chat.me = { email: me.email, name: me.name, role: me.role };
   $('#who').innerHTML = `<span>${esc(me.name || me.email)} · ${Rules.ROLE_LABEL[me.role]}</span><button class="link" onclick="signOutStaff()">Sign out</button>`;
+  if (access.length > 1) { $('#bizbar').innerHTML = `<div class="wrap"><label for="bizPick">Business</label><select id="bizPick" class="bizpick">${access.map(a => `<option value="${esc(a.bizId)}" ${a.bizId === cur.bizId ? 'selected' : ''}>${esc(bizName(a.bizId))} · ${Rules.ROLE_LABEL[a.role]}</option>`).join('')}</select></div>`; $('#bizbar').classList.add('on'); }
+  if ($('#bizPick')) $('#bizPick').onchange = e => switchBiz(e.target.value);
   $('#ptitle').textContent = bizName(me.bizId); $('#bellSlot').innerHTML = bellBtn();
   await reload(); render();
-  Notif.start(token, 'm_' + me.email, async () => { await reload(true); render(); });
+  Notif.start(token, 'm_' + me.email + (access.length > 1 ? '_' + cur.bizId : ''), async () => { await reload(true); render(); });
 }
+/* switch to another business this user has access to */
+function switchBiz(id) { store('tr5_merchant_biz', id); Notif.stop(); location.reload(); }
 function signOutStaff() { store('tr5_staff_merchant', null); Notif.stop(); location.reload(); }
 async function reload(quiet) {
   if (!quiet) loading(true, 'Loading…');

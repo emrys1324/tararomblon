@@ -139,16 +139,21 @@ var Rules = {
   staffCheck: function (list) {
     var supers = list.filter(function (s) { return s.role === 'super'; });
     if (supers.length > Rules.MAX_SUPER) return 'Only ' + Rules.MAX_SUPER + ' Super Admin users are allowed.';
-    var per = {}, emails = {};
+    var per = {}, kinds = {}, seen = {};
     for (var i = 0; i < list.length; i++) {
-      var s = list[i], e = String(s.email || '').trim().toLowerCase();
+      var s = list[i], e = String(s.email || '').trim().toLowerCase(), merchant = s.role === 'manager' || s.role === 'staff';
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return 'Invalid email: ' + (s.email || '(blank)');
-      if (emails[e]) return e + ' is listed twice. Each person can only have one role.'; emails[e] = 1;
-      if (s.role === 'manager' || s.role === 'staff') {
+      if (!merchant && ['super', 'rider'].indexOf(s.role) < 0) return 'Unknown role for ' + e;
+      /* one email can be Merchant Admin / Staff of several businesses, but a Super Admin or rider email can't also be a merchant user */
+      var kind = merchant ? 'merchant' : s.role;
+      if (kinds[e] && (kinds[e] !== kind || !merchant)) return e + ' is listed twice. A Super Admin or rider email can only have that one role.';
+      kinds[e] = kind;
+      if (merchant) {
         if (!s.bizId) return e + ' needs a business.';
+        if (seen[e + '|' + s.bizId]) return e + ' is listed twice for the same business.'; seen[e + '|' + s.bizId] = 1;
         per[s.bizId] = (per[s.bizId] || 0) + 1;
         if (per[s.bizId] > Rules.MAX_PER_BUSINESS) return 'Each business can have up to ' + Rules.MAX_PER_BUSINESS + ' users (any mix of Merchant Admin and Merchant Staff).';
-      } else if (['super', 'rider'].indexOf(s.role) < 0) return 'Unknown role for ' + e;
+      }
     }
     return '';
   }

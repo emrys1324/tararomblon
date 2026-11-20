@@ -35,6 +35,13 @@ source/                  editable source + build.py + tests
 
 There are no npm packages to install. The functions use Node's built-in `fetch` and `crypto`.
 
+## New: one email, several businesses
+- **Super Admin → Businesses & users:** you can add the same email under several businesses, with a different role in each. For example, Merchant Admin of Pahuway Café and Merchant Staff of Hiraya Beach House. Each business still has up to 4 users.
+- **Merchant app:** people with more than one business see a **Business** picker under the header. Orders, calendar, team, listings, store settings and reports all follow the chosen business, and so does the person's role there. The app remembers the last business used on that device.
+- **Merchant Admins** can add someone who already works for another business; that other access stays. Removing them from one business doesn't touch the others. Super Admin and rider emails still can't also be merchant users.
+- New and order emails for a business go to everyone with access to it.
+- Approving a business application with an email that already manages another business adds the new business to that same login.
+
 ## New: Create account page + Continue with Google
 - **Customer app:** a **Create account** screen (Account tab, or the link `/#signup`) with **Sign up with Google**, or full name + mobile + email followed by a 6-digit code. After that, only the address is asked. The **Sign in** screen also has **Continue with Google**, and both screens link to each other.
 - Google accounts are matched by email, so someone who signed up with an email code and later taps Google gets the same account. Each mobile number still belongs to one account only.
