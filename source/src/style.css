@@ -506,3 +506,19 @@ input,select,textarea,button{font-family:inherit}
 .soonb{display:none;margin-left:6px;padding:1px 7px;border-radius:999px;background:#f6a457;color:#13305a;font-size:10px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;vertical-align:middle}.soonb.on{display:inline-block}
 .soonbox .soonb{margin-left:0;font-size:11px;padding:3px 10px}
 .kpills button{position:relative}.kpills .soonb{position:absolute;top:-8px;right:10px;margin:0;box-shadow:0 2px 6px rgba(19,48,90,.18)}
+/* Merchant menu editor: one draft, one Save bar */
+.mrow{display:grid;grid-template-columns:56px minmax(0,2.4fr) minmax(90px,.7fr) minmax(90px,.7fr) auto auto;grid-template-areas:"ph main price disc tog del";gap:10px;align-items:start;padding:12px 0;border-bottom:1px solid var(--marble-2)}
+.mrow>.lthumb{grid-area:ph;margin-top:2px}.mrow .mmain{grid-area:main;display:grid;gap:6px}.mrow>.fprice{grid-area:price}.mrow>.fdisc{grid-area:disc}.mrow>.toggle{grid-area:tog;margin-top:26px}.mrow>.xbtn{grid-area:del;margin-top:22px}
+.mrow .mmain input,.mrow .mmain select{border:1.5px solid var(--line);border-radius:10px;padding:9px 12px;background:#fff;width:100%;min-width:0}
+.mrow .mmain input:focus,.mrow .mmain select:focus{outline:none;border-color:var(--navy)}
+.mrow .mmain input:first-child{font-weight:700}.mrow .mmain .acts{display:flex;flex-wrap:wrap;gap:6px}
+.mrow .field{margin:0}.mrow .field label{font-size:11px}.mrow.off .mmain input:first-child{color:var(--mute)}
+.mrow.removed{display:flex;align-items:center;gap:10px;opacity:.6}.mrow.removed>div{flex:1}.mrow.removed b{text-decoration:line-through}
+.savebar{position:sticky;bottom:0;z-index:5;display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:14px 0 0;padding:12px 14px;background:#fff;border:1px solid var(--marble-2);border-radius:14px;box-shadow:0 -4px 18px rgba(0,0,0,.06)}
+.savebar #ldMsg{flex:1;font-weight:600;color:var(--mute)}.savebar.dirty{border-color:var(--coral-d)}.savebar.dirty #ldMsg{color:var(--coral-d)}
+.savebar .err{flex-basis:100%;order:5;margin:0}.savebar .err:empty{display:none}
+@media(max-width:720px){
+  .mrow{grid-template-columns:44px 1fr 1fr 40px;grid-template-areas:"ph main main main" "price price disc disc" "tog tog tog del"}
+  .mrow>.toggle{margin-top:0}.mrow>.xbtn{margin-top:0;justify-self:end}
+  .savebar{bottom:8px}.savebar #ldMsg{flex-basis:100%}.savebar .btn{flex:1}
+}

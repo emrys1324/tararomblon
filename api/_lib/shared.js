@@ -1001,6 +1001,30 @@ function createCore(env) {
     await event('listing', who.name + ' updated add-ons for ' + it.name, ['super', 'biz:' + who.bizId], '', who.bizId, [], '', '', who.email);
     return { item: it };
   };
+  /* Merchant Admin: save the whole menu at once — add new items, edit name/category/description/price/discount/availability, remove items.
+     Items not in the list are removed. Photos and add-ons of existing items are kept. */
+  A.mMenu = async function (p) {
+    var who = await auth(p.token, 'manager'), cat = await catalog(true), F = Pricing.store(cat, who.bizId); if (!F) err('This business has no menu.');
+    var list = Array.isArray(p.items) ? p.items : err('Nothing to save.'); if (list.length > 300) err('A menu can have up to 300 items.');
+    var old = {}, cats = {}, used = {}, added = 0, out;
+    F.items.forEach(function (i) { old[i.id] = i; }); (F.categories || []).forEach(function (c) { cats[c.id] = 1; });
+    out = list.map(function (x, n) {
+      var name = str(x.name, 80); if (!name) err('Item ' + (n + 1) + ': enter a name.');
+      var pr = +x.price; if (!(pr > 0)) err(name + ': price must be more than zero.');
+      var pc = x.promoPct == null || x.promoPct === '' ? 0 : +x.promoPct; if (!(pc >= 0) || pc > 90) err(name + ': discount must be 0 to 90%.');
+      var it = x.id && old[x.id] && !used[x.id] ? clone(old[x.id]) : null;
+      if (!it) { var base = slug(name) || 'item', id = base, k = 2; while (old[id] || used[id]) id = base.slice(0, 26) + '-' + k++; it = { id: id, photo: '', addonGroups: [] }; added++; }
+      used[it.id] = 1;
+      it.name = name; it.desc = str(x.desc, 200); it.catId = cats[x.catId] ? x.catId : (it.catId && cats[it.catId] ? it.catId : (F.categories[0] || {}).id || '');
+      it.price = Math.round(pr * 100) / 100; if (pc) it.promoPct = Math.round(pc * 100) / 100; else delete it.promoPct;
+      it.available = x.available !== false;
+      return it;
+    });
+    var removed = F.items.filter(function (i) { return !used[i.id]; }).map(function (i) { return i.name; });
+    F.items = out; await env.db.kvPut('catalog', cat);
+    await event('listing', who.name + ' saved the menu of ' + F.storeName + ' (' + out.length + ' items' + (added ? ', ' + added + ' added' : '') + (removed.length ? ', removed: ' + removed.join(', ') : '') + ')', ['super', 'biz:' + who.bizId], '', who.bizId, [], '', '', who.email);
+    return { items: out, added: added, removed: removed.length };
+  };
   /* Merchant Admin: prices, promo discount and security deposit of their own listings */
   var EDITABLE = { stay: ['rate', 'deposit', 'promoPct'], unit: ['dailyRate', 'hourlyRate', 'deposit', 'promoPct'], tour: ['rate', 'deposit', 'promoPct'], item: ['price', 'promoPct'] };
   A.mListing = async function (p) {

@@ -32,7 +32,7 @@ async function start(token, me) {
   Notif.start(token, 'm_' + me.email + (access.length > 1 ? '_' + cur.bizId : ''), async () => { await reload(true); render(); });
 }
 /* switch to another business this user has access to */
-function switchBiz(id) { store('tr5_merchant_biz', id); Notif.stop(); location.reload(); }
+function switchBiz(id) { if (ldDirty() && !confirm('You have unsaved menu changes. Switch business and discard them?')) { const sel = document.querySelector('#bizbar select'); if (sel) sel.value = MP.me.bizId; return; } MP.ld = null; store('tr5_merchant_biz', id); Notif.stop(); location.reload(); }
 function signOutStaff() { store('tr5_staff_merchant', null); Notif.stop(); location.reload(); }
 async function reload(quiet) {
   if (!quiet) loading(true, 'Loading…');
@@ -203,31 +203,87 @@ function dlMerchant() {
 }
 
 /* ---- Listings: availability (all users) and prices, discounts, deposits (Merchant Admin) ---- */
+const LFIELDS = { stay: [['rate', 'Rate / night (P)'], ['promoPct', 'Discount (%)'], ['deposit', 'Security deposit (P)']], unit: [['dailyRate', 'Daily rate (P)'], ['hourlyRate', 'Extra hour (P)'], ['deposit', 'Security deposit (P)'], ['promoPct', 'Discount (%)']], tour: [['rate', 'Rate (P)'], ['promoPct', 'Discount (%)'], ['deposit', 'Security deposit (P)']] };
+/* Merchant Admin edits go into one draft (MP.ld) and are saved together with one Save button */
+function listingDraft() {
+  const id = MP.me.bizId, F = Pricing.store(CAT, id), o = {};
+  CAT.stays.filter(x => x.bizId === id).forEach(x => o['stay|' + x.id] = x);
+  CAT.rentals.units.filter(x => x.bizId === id).forEach(x => o['unit|' + x.id] = x);
+  CAT.tours.filter(x => x.bizId === id).forEach(x => o['tour|' + x.id] = x);
+  const other = {}; for (const k in o) { const kind = k.split('|')[0], r = { active: o[k].active !== false }; LFIELDS[kind].forEach(f => r[f[0]] = o[k][f[0]] == null ? '' : o[k][f[0]]); other[k] = r; }
+  return { items: F ? F.items.map(i => ({ id: i.id, name: i.name, desc: i.desc || '', catId: i.catId || '', price: i.price, promoPct: i.promoPct || '', available: i.available !== false })) : [], other };
+}
+const ldDirty = () => MP.ld && JSON.stringify(MP.ld) !== JSON.stringify(listingDraft());
+window.addEventListener('beforeunload', e => { if (ldDirty()) { e.preventDefault(); e.returnValue = ''; } });
 function vListings() {
   const id = MP.me.bizId, F = Pricing.store(CAT, id), adm = isAdm();
   const stays = CAT.stays.filter(s => s.bizId === id), units = CAT.rentals.units.filter(u => u.bizId === id), tours = CAT.tours.filter(t => t.bizId === id);
-  const tog = (kind, x, on) => `<label class="toggle"><input type="checkbox" data-av="${kind}|${esc(x)}" ${on ? 'checked' : ''}><span>${on ? 'Available' : 'Off'}</span></label>`;
-  const num = (kind, it, k, label) => `<div class="field"><label>${label}</label><input type="number" min="0" step="any" data-lp="${kind}|${esc(it.id)}|${k}" value="${it[k] == null ? '' : it[k]}" placeholder="0"></div>`;
+  if (adm && !MP.ld) MP.ld = listingDraft();
+  const D = MP.ld;
+  const tog = (kind, x, on, draft) => `<label class="toggle"><input type="checkbox" ${draft ? `data-dav="${draft}"` : `data-av="${kind}|${esc(x)}"`} ${on ? 'checked' : ''}><span>${on ? 'Available' : 'Off'}</span></label>`;
   const pr = it => Pricing.promo(it) ? `<span class="promo">-${Pricing.promo(it)}%</span>` : '';
   const icon = { item: 'cup', stay: 'bed', unit: 'scooter', tour: 'boat' };
-  const thumb = (kind, it) => `<span class="lthumb">${it.photo ? `<img src="${esc(it.photo)}" alt="">` : ic(icon[kind], 24)}</span>`;
-  const photoActs = (kind, it) => `<div class="acts"><label class="btn ghost sm">${ic('upload', 14)} ${it.photo ? 'Change photo' : 'Add photo'}<input type="file" accept="image/*" hidden data-ph="${kind}|${esc(it.id)}"></label>${it.photo ? `<button class="btn ghost sm" data-phx="${kind}|${esc(it.id)}">Remove</button>` : ''}${kind === 'item' ? `<button class="btn ghost sm" data-addons="${esc(it.id)}">${ic('box', 14)} Add-ons (${Pricing.addonGroups(it).length})</button>` : ''}</div>`;
-  const row = (kind, it, label, sub, fields) => adm
-    ? `<div class="lstedit" data-row="${kind}|${esc(it.id)}"><div><div class="lphoto">${thumb(kind, it)}<div><b>${esc(label)}</b>${pr(it)}<span class="hint" style="display:block">${esc(sub)}</span></div></div>${photoActs(kind, it)}${tog(kind, it.id, kind === 'item' ? it.available : it.active)}</div>${fields.map(f => num(kind, it, f[0], f[1])).join('')}${'<div></div>'.repeat(4 - fields.length)}<button class="btn sm" data-save="${kind}|${esc(it.id)}">Save</button></div>`
-    : `<div class="avrow"><div class="lphoto">${thumb(kind, it)}<div><b>${esc(label)}</b>${pr(it)}<span class="hint">${esc(sub)}</span></div></div>${tog(kind, it.id, kind === 'item' ? it.available : it.active)}</div>`;
-  $('#pbody').innerHTML = `<p class="meta" style="margin-bottom:12px">${adm ? 'Turn listings on or off and update prices, discounts and security deposits. Changes show in the customer app right away and apply to new bookings only.' : 'Turn listings and menu items on or off. Changes show in the customer app right away. Prices are managed by your Merchant Admin.'}</p>
-    ${F ? `<div class="acard"><h3>${esc(F.storeName)}</h3><div class="avrow"><div class="lphoto">${thumb('item', F)}<div><b>Accepting orders</b><span class="hint">Turn off to close the store</span></div></div>${tog('store', 'store', F.open)}</div>${adm ? `<div class="acts" style="margin-top:6px"><label class="btn ghost sm">${ic('upload', 14)} ${F.photo ? 'Change' : 'Add'} store logo / photo<input type="file" accept="image/*" hidden data-ph="store|store"></label></div>` : ''}</div>
-      <div class="acard"><h3>Menu items</h3>${F.items.map(i => row('item', i, i.name, peso(Pricing.off(i.price, Pricing.promo(i))) + (Pricing.promo(i) ? ' (was ' + peso(i.price) + ')' : ''), [['price', 'Price (P)'], ['promoPct', 'Discount (%)']])).join('') || '<p class="meta">No menu items yet.</p>'}</div>` : ''}
-    ${stays.length ? `<div class="acard"><h3>Stays</h3>${stays.map(x => row('stay', x, x.name, peso(x.rate) + ' / night', [['rate', 'Rate / night (P)'], ['promoPct', 'Discount (%)'], ['deposit', 'Security deposit (P)']])).join('')}</div>` : ''}
-    ${units.length ? `<div class="acard"><h3>Rental units</h3>${units.map(x => row('unit', x, x.name, peso(x.dailyRate) + ' / day · ' + peso(x.hourlyRate) + ' / extra hour', [['dailyRate', 'Daily rate (P)'], ['hourlyRate', 'Extra hour (P)'], ['deposit', 'Security deposit (P)'], ['promoPct', 'Discount (%)']])).join('')}</div>` : ''}
-    ${tours.length ? `<div class="acard"><h3>Tours & services</h3>${tours.map(x => row('tour', x, x.name, peso(x.rate) + ' / ' + (x.rateUnit === 'group' ? 'group' : 'person'), [['rate', 'Rate (P)'], ['promoPct', 'Discount (%)'], ['deposit', 'Security deposit (P)']])).join('')}</div>` : ''}
-    ${!F && !stays.length && !units.length && !tours.length ? '<div class="empty">No listings yet. Ask MJV Services OPC to add your listings.</div>' : ''}`;
+  const thumb = (kind, it) => `<span class="lthumb">${it && it.photo ? `<img src="${esc(it.photo)}" alt="">` : ic(icon[kind], 24)}</span>`;
+  const photoActs = (kind, it) => `<div class="acts"><label class="btn ghost sm">${ic('upload', 14)} ${it.photo ? 'Change photo' : 'Add photo'}<input type="file" accept="image/*" hidden data-ph="${kind}|${esc(it.id)}"></label>${it.photo ? `<button class="btn ghost sm" data-phx="${kind}|${esc(it.id)}">Remove photo</button>` : ''}${kind === 'item' ? `<button class="btn ghost sm" data-addons="${esc(it.id)}">${ic('box', 14)} Add-ons (${Pricing.addonGroups(it).length})</button>` : ''}</div>`;
+  const staffRow = (kind, it, label, sub) => `<div class="avrow"><div class="lphoto">${thumb(kind, it)}<div><b>${esc(label)}</b>${pr(it)}<span class="hint">${esc(sub)}</span></div></div>${tog(kind, it.id, kind === 'item' ? it.available : it.active)}</div>`;
+  const otherRow = (kind, it, label, sub) => { const k = kind + '|' + it.id, r = D.other[k], fs = LFIELDS[kind];
+    return `<div class="lstedit"><div><div class="lphoto">${thumb(kind, it)}<div><b>${esc(label)}</b>${pr(it)}<span class="hint" style="display:block">${esc(sub)}</span></div></div>${photoActs(kind, it)}${tog(kind, it.id, r.active, k)}</div>${fs.map(f => `<div class="field"><label>${f[1]}</label><input type="number" min="0" step="any" data-dlp="${esc(k)}|${f[0]}" value="${esc(r[f[0]])}" placeholder="0"></div>`).join('')}${'<div></div>'.repeat(4 - fs.length)}<div></div></div>`; };
+  const cats = F ? F.categories : [];
+  const itemRow = (d, i) => { const live = F.items.find(x => x.id === d.id);
+    if (d.removed) return `<div class="mrow removed"><span class="lthumb">${ic('cup', 20)}</span><div><b>${esc(d.name || 'New item')}</b><span class="hint" style="display:block">Will be removed when you save</span></div><button class="btn ghost sm" data-mundo="${i}">Undo</button></div>`;
+    return `<div class="mrow ${d.available ? '' : 'off'}" data-mi="${i}">${thumb('item', live)}
+      <div class="mmain"><input data-m="${i}|name" value="${esc(d.name)}" placeholder="Item name" aria-label="Item name"><input data-m="${i}|desc" value="${esc(d.desc)}" placeholder="Short description (optional)" aria-label="Description">
+        <select data-m="${i}|catId" aria-label="Category">${cats.map(c => `<option value="${esc(c.id)}" ${c.id === d.catId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
+        ${live ? photoActs('item', live) : '<span class="hint">New · save first to add a photo and add-ons</span>'}</div>
+      <div class="field fprice"><label>Price (P)</label><input type="number" min="0" step="any" data-m="${i}|price" value="${esc(d.price)}" placeholder="0"></div>
+      <div class="field fdisc"><label>Discount (%)</label><input type="number" min="0" max="90" step="any" data-m="${i}|promoPct" value="${esc(d.promoPct)}" placeholder="0"></div>
+      ${tog('item', d.id, d.available, 'item|' + i)}
+      <button class="xbtn" title="Remove item" aria-label="Remove ${esc(d.name)}" data-mdel="${i}">${ic('x')}</button></div>`; };
+  const dirty = adm && ldDirty(), nItems = D ? D.items.filter(x => !x.removed).length : 0;
+  $('#pbody').innerHTML = `<p class="meta" style="margin-bottom:12px">${adm ? 'Add, edit or remove menu items and update prices, discounts and availability, then tap <b>Save all changes</b> at the bottom. Changes show in the customer app after saving and apply to new orders only.' : 'Turn listings and menu items on or off. Changes show in the customer app right away. Prices are managed by your Merchant Admin.'}</p>
+    ${F ? `<div class="acard"><h3>${esc(F.storeName)}</h3><div class="avrow"><div class="lphoto">${thumb('item', F)}<div><b>Accepting orders</b><span class="hint">Turn off to close the store (takes effect right away)</span></div></div>${tog('store', 'store', F.open)}</div>${adm ? `<div class="acts" style="margin-top:6px"><label class="btn ghost sm">${ic('upload', 14)} ${F.photo ? 'Change' : 'Add'} store logo / photo<input type="file" accept="image/*" hidden data-ph="store|store"></label></div>` : ''}</div>
+      <div class="acard" id="menuCard"><h3>Menu items <span class="hint">${adm ? nItems : F.items.length} items</span></h3>
+      ${adm ? (D.items.map(itemRow).join('') || '<p class="meta">No menu items yet. Add your first item below.</p>') + `<button class="btn ghost mt" id="mAdd">${ic('plus')} Add menu item</button>`
+        : F.items.map(i => staffRow('item', i, i.name, peso(Pricing.off(i.price, Pricing.promo(i))) + (Pricing.promo(i) ? ' (was ' + peso(i.price) + ')' : ''))).join('') || '<p class="meta">No menu items yet.</p>'}</div>` : ''}
+    ${stays.length ? `<div class="acard"><h3>Stays</h3>${stays.map(x => adm ? otherRow('stay', x, x.name, peso(x.rate) + ' / night') : staffRow('stay', x, x.name, peso(x.rate) + ' / night')).join('')}</div>` : ''}
+    ${units.length ? `<div class="acard"><h3>Rental units</h3>${units.map(x => adm ? otherRow('unit', x, x.name, peso(x.dailyRate) + ' / day · ' + peso(x.hourlyRate) + ' / extra hour') : staffRow('unit', x, x.name, peso(x.dailyRate) + ' / day')).join('')}</div>` : ''}
+    ${tours.length ? `<div class="acard"><h3>Tours & services</h3>${tours.map(x => adm ? otherRow('tour', x, x.name, peso(x.rate) + ' / ' + (x.rateUnit === 'group' ? 'group' : 'person')) : staffRow('tour', x, x.name, peso(x.rate))).join('')}</div>` : ''}
+    ${!F && !stays.length && !units.length && !tours.length ? '<div class="empty">No listings yet. Ask MJV Services OPC to add your listings.</div>' : ''}
+    ${adm && (F || stays.length || units.length || tours.length) ? `<div class="savebar ${dirty ? 'dirty' : ''}" id="ldBar"><span id="ldMsg">${dirty ? 'You have unsaved changes' : 'All changes saved'}</span><div class="err" id="ldErr"></div><button class="btn ghost" id="ldDiscard" ${dirty ? '' : 'disabled'}>Discard</button><button class="btn" id="ldSave" ${dirty ? '' : 'disabled'}>Save all changes</button></div>` : ''}`;
+  const fresh = async () => { const c = await api('getCatalog'); if (c.catalog) CAT = Pricing.norm(c.catalog); };
+  const mark = () => { const d = ldDirty(), bar = $('#ldBar'); if (!bar) return; bar.classList.toggle('dirty', !!d); $('#ldMsg').textContent = d ? 'You have unsaved changes' : 'All changes saved'; $('#ldSave').disabled = $('#ldDiscard').disabled = !d; };
   document.querySelectorAll('[data-av]').forEach(cb => cb.onchange = async () => {
     const [kind, x] = cb.dataset.av.split('|');
-    try { await api('mAvailability', { token: MP.token, kind, id: x, value: cb.checked }); cb.nextElementSibling.textContent = cb.checked ? 'Available' : 'Off'; toast('Updated'); const c = await api('getCatalog'); if (c.catalog) CAT = Pricing.norm(c.catalog); }
+    try { await api('mAvailability', { token: MP.token, kind, id: x, value: cb.checked }); cb.nextElementSibling.textContent = cb.checked ? 'Available' : 'Off'; toast('Updated'); await fresh(); }
     catch (e) { cb.checked = !cb.checked; toast(e.message); }
   });
-  const fresh = async () => { const c = await api('getCatalog'); if (c.catalog) CAT = Pricing.norm(c.catalog); };
+  if (adm) {
+    document.querySelectorAll('[data-dav]').forEach(cb => cb.onchange = () => { const v = cb.dataset.dav, on = cb.checked; if (v.startsWith('item|')) { D.items[+v.split('|')[1]].available = on; cb.closest('.mrow').classList.toggle('off', !on); } else D.other[v].active = on; cb.nextElementSibling.textContent = on ? 'Available' : 'Off'; mark(); });
+    document.querySelectorAll('[data-m]').forEach(x => x.oninput = x.onchange = () => { const [i, k] = x.dataset.m.split('|'); D.items[+i][k] = (k === 'price' || k === 'promoPct') && x.value !== '' ? +x.value : x.value; mark(); });
+    document.querySelectorAll('[data-dlp]').forEach(x => x.oninput = () => { const v = x.dataset.dlp.split('|'); D.other[v[0] + '|' + v[1]][v[2]] = x.value === '' ? '' : +x.value; mark(); });
+    document.querySelectorAll('[data-mdel]').forEach(x => x.onclick = () => { const i = +x.dataset.mdel; if (!D.items[i].id) D.items.splice(i, 1); else D.items[i].removed = true; vListings(); });
+    document.querySelectorAll('[data-mundo]').forEach(x => x.onclick = () => { delete D.items[+x.dataset.mundo].removed; vListings(); });
+    if ($('#mAdd')) $('#mAdd').onclick = () => { D.items.push({ id: '', name: '', desc: '', catId: (cats[0] || {}).id || '', price: '', promoPct: '', available: true }); vListings(); const r = document.querySelectorAll('.mrow'), last = r[r.length - 1]; if (last) { last.scrollIntoView({ block: 'center' }); last.querySelector('input').focus(); } };
+    if ($('#ldDiscard')) $('#ldDiscard').onclick = () => { MP.ld = null; vListings(); toast('Changes discarded'); };
+    if ($('#ldSave')) $('#ldSave').onclick = async () => {
+      const base = listingDraft(), items = D.items.filter(x => !x.removed);
+      const bad = items.findIndex(x => !String(x.name).trim() || !(+x.price > 0));
+      if (bad >= 0) { $('#ldErr').textContent = (items[bad].name ? items[bad].name + ': enter a price.' : 'Enter a name and price for every item.'); const row = document.querySelector(`[data-mi="${D.items.indexOf(items[bad])}"]`); if (row) row.scrollIntoView({ block: 'center' }); return; }
+      const removed = D.items.filter(x => x.removed && x.id).length;
+      if (removed && !confirm('Remove ' + removed + ' menu item' + (removed > 1 ? 's' : '') + '? Customers will no longer see ' + (removed > 1 ? 'them' : 'it') + '.')) return;
+      loading(true, 'Saving…');
+      try {
+        if (F && JSON.stringify(D.items) !== JSON.stringify(base.items)) await api('mMenu', { token: MP.token, items: items.map(x => ({ id: x.id, name: x.name, desc: x.desc, catId: x.catId, price: x.price, promoPct: x.promoPct, available: x.available })) });
+        for (const k in D.other) {
+          const [kind, x] = k.split('|'), now = D.other[k], was = base.other[k]; if (!was) continue;
+          const fields = {}; LFIELDS[kind].forEach(f => { if (now[f[0]] !== was[f[0]]) fields[f[0]] = now[f[0]]; });
+          if (Object.keys(fields).length) await api('mListing', { token: MP.token, kind, id: x, fields });
+          if (now.active !== was.active) await api('mAvailability', { token: MP.token, kind, id: x, value: now.active });
+        }
+        await fresh(); MP.ld = null; loading(false); toast('All changes saved'); vListings();
+      } catch (e) { loading(false); await fresh().catch(() => {}); $('#ldErr').textContent = e.message; }
+    };
+  }
   document.querySelectorAll('[data-ph]').forEach(inp => inp.onchange = async () => {
     const [kind, x] = inp.dataset.ph.split('|'), f = inp.files[0]; if (!f) return;
     loading(true, 'Uploading photo…');
@@ -239,13 +295,6 @@ function vListings() {
     try { await api('mPhoto', { token: MP.token, kind, id: x, remove: true }); await fresh(); toast('Photo removed'); vListings(); } catch (e) { toast(e.message); }
   });
   document.querySelectorAll('[data-addons]').forEach(bt => bt.onclick = () => addonEditor(bt.dataset.addons));
-  document.querySelectorAll('[data-save]').forEach(bt => bt.onclick = async () => {
-    const [kind, x] = bt.dataset.save.split('|'), fields = {};
-    document.querySelectorAll(`[data-lp^="${kind}|${x}|"]`).forEach(i => fields[i.dataset.lp.split('|')[2]] = i.value);
-    loading(true, 'Saving…');
-    try { await api('mListing', { token: MP.token, kind, id: x, fields }); const c = await api('getCatalog'); if (c.catalog) CAT = Pricing.norm(c.catalog); loading(false); toast('Prices saved'); vListings(); }
-    catch (e) { loading(false); toast(e.message); }
-  });
 }
 /* ---- Add-on groups editor (food merchants): name, on/off, required or optional, customers pick up to 1-3, choices with prices ---- */
 function addonEditor(itemId) {

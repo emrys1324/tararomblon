@@ -35,6 +35,14 @@ source/                  editable source + build.py + tests
 
 There are no npm packages to install. The functions use Node's built-in `fetch` and `crypto`.
 
+## New: edit the whole menu, then Save once (Merchant app → Listings & prices)
+
+- **Add menu item** adds a row: name, short description, category, price, discount and Available.
+- The **✕** button marks an item for removal (with Undo). You're asked to confirm before it's removed.
+- All edits (menu, stays, rental units, tours) stay as a draft until you tap **Save all changes** in the bar at the bottom. **Discard** throws the draft away. The app warns you before you leave or switch business with unsaved changes.
+- Photos and add-ons are still saved as soon as you change them. New items get these after their first save.
+- "Accepting orders" (open/close the store) still takes effect right away. Merchant Staff still only turn items on/off, which also takes effect right away.
+
 ## New: delivery fee rule (Super Admin → Settings → Delivery fee)
 
 | Distance from the store | Customer pays | Store pays | Rider earns |

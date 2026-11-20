@@ -372,6 +372,24 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   mr = (await ok('myRewards', { token: cust })).rewards.find(r => r.bizId === 'pahuway');
   assert(mr.history.some(h => h.type === 'birthday' && h.points === 50), 'birthday bonus credited on the birthday');
 
+  console.log('Merchant Admin saves the whole menu at once');
+  const menu0 = Pricing.store((await ok('getCatalog')).catalog, 'pahuway').items, lat0 = menu0.find(i => i.id === 'latte');
+  const edits = menu0.filter(i => i.id !== menu0[menu0.length - 1].id).map(i => ({ id: i.id, name: i.name, desc: i.desc, catId: i.catId, price: i.price, promoPct: i.promoPct || '', available: i.available !== false }));
+  edits.find(x => x.id === 'latte').price = 155; edits.find(x => x.id === 'latte').available = false;
+  edits.push({ id: '', name: 'Ube Latte', desc: 'Purple yam latte', catId: 'nope', price: 170, promoPct: 10, available: true }, { name: 'Ube Latte', price: 175 });
+  await fails('mMenu', { token: pstaff, items: edits }, /Merchant Admin access/);
+  await fails('mMenu', { token: pm2, items: edits.concat([{ name: '', price: 10 }]) }, /enter a name/);
+  await fails('mMenu', { token: pm2, items: edits.concat([{ name: 'Free thing', price: 0 }]) }, /more than zero/);
+  await fails('mMenu', { token: pm2, items: edits.concat([{ name: 'Deal', price: 50, promoPct: 95 }]) }, /0 to 90%/);
+  const mmr = await ok('mMenu', { token: pm2, items: edits });
+  const menu1 = Pricing.store((await ok('getCatalog')).catalog, 'pahuway').items, lat1 = menu1.find(i => i.id === 'latte'), ube = menu1.filter(i => /^ube-latte/.test(i.id));
+  assert(mmr.added === 2 && mmr.removed === 1 && menu1.length === menu0.length + 1 && !menu1.find(i => i.id === menu0[menu0.length - 1].id), 'one save adds 2 items and removes 1');
+  assert(lat1.price === 155 && lat1.available === false && JSON.stringify(lat1.addonGroups) === JSON.stringify(lat0.addonGroups) && lat1.photo === lat0.photo, 'edited item keeps its photo and add-ons');
+  assert(ube.length === 2 && ube[0].id !== ube[1].id && ube[0].promoPct === 10 && ube[0].catId === menu1[0].catId, 'new items get unique ids, a valid category and the discount');
+  assert(DB.events.some(r => /saved the menu of .*2 added, removed/.test(r.data.text || r.data.msg || JSON.stringify(r.data))), 'menu save is logged for the Super Admin');
+  await ok('mMenu', { token: pm2, items: menu0.map(i => ({ id: i.id, name: i.name, desc: i.desc, catId: i.catId, price: i.price, promoPct: i.promoPct, available: i.available !== false })) });
+  assert(JSON.stringify(Pricing.store((await ok('getCatalog')).catalog, 'pahuway').items.map(i => i.name)) === JSON.stringify(menu0.map(i => i.name)), 'menu restored (a removed item comes back as a new item)');
+
   console.log('Points follow the registered mobile number');
   await ok('sendOtp', { email: 'ben@mail.com' }); const ben = (await ok('verifyOtp', { email: 'ben@mail.com', code: lastCode('ben@mail.com') })).token;
   await fails('saveProfile', { token: ben, profile: { name: 'Ben', phone: '+63 917 123 4567', address: 'Odiongan' } }, /already registered/);
