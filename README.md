@@ -48,7 +48,7 @@ Example: 3.2 km → 2 started km → ₱20 fee: customer ₱14, store ₱6, ride
 - All five numbers (free km, ₱ per km, customer %, base fee, longest delivery) can be changed in Settings.
 - Orders placed before this change still use the old "Rider share of delivery fee (%)".
 
-## New: Cash on delivery limits (Super Admin → Settings → Payments)
+## New: Cash on delivery limits (Super Admin → Settings → Riders)
 
 - Cash on delivery appears only after the customer has **3 completed** orders or bookings (any kind). Until then checkout explains why and offers online payment.
 - Cash on delivery is only for orders up to **₱500** (total including the delivery fee). Bigger orders must pay online.
