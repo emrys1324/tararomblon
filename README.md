@@ -52,7 +52,7 @@ Example: 3.2 km → 2 started km → ₱20 fee: customer ₱14, store ₱6, ride
 
 - Cash on delivery appears only after the customer has **3 completed** orders or bookings (any kind). Until then checkout explains why and offers online payment.
 - Cash on delivery is only for orders up to **₱500** (total including the delivery fee). Bigger orders must pay online.
-- Customers who signed up before 20 Nov 2026 (Philippine time) skip the 3-completed rule; the ₱500 ceiling still applies to them. Change or clear the date in Settings.
+- Customers who signed up before 21 Nov 2026 (Philippine time) skip the 3-completed rule; the ₱500 ceiling still applies to them. Change or clear the date in Settings.
 - The server enforces both rules too, so they can't be bypassed. Both numbers can be changed (0 = no ceiling).
 
 ## New: Food and Rentals first; Stays and Things to do "coming soon"
