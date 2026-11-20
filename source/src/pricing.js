@@ -102,6 +102,18 @@ var Pricing = {
     for (var i = 0; i < b.length; i++) if (km <= +b[i].upToKm) return +b[i].fee;
     return null;
   },
+  /* Delivery fee rule (Super Admin > Settings > Delivery): free within freeKm of the store, then perKm for each started km.
+     The customer pays customerPct % of that fee, the store pays the rest, and the rider earns the whole fee.
+     Within freeKm the customer pays nothing and the store pays the rider baseFee. Beyond the store's delivery area: null. */
+  DELIVERY: { freeKm: 1.5, perKm: 10, customerPct: 70, baseFee: 20, maxKm: 10 },
+  deliveryRule: function (cat) { var d = (cat && cat.settings && cat.settings.delivery) || {}, D = Pricing.DELIVERY, o = {}; for (var k in D) o[k] = d[k] == null || d[k] === '' || isNaN(+d[k]) ? D[k] : +d[k]; return o; },
+  deliverySplit: function (cat, food, km) {
+    var R = Pricing.deliveryRule(cat), b = Pricing.bands(food), max = +food.maxKm || (b.length ? +b[b.length - 1].upToKm : R.maxKm);
+    if (km == null || km > max + 1e-9) return null;
+    if (km <= R.freeKm + 1e-9) return { km: km, fee: 0, riderFee: R.baseFee, storeShare: R.baseFee, extraKm: 0 };
+    var extra = Math.ceil(Pricing.round(km - R.freeKm) - 1e-9), full = extra * R.perKm, cust = Math.round(full * R.customerPct / 100);
+    return { km: km, fee: cust, riderFee: full, storeShare: Pricing.round(full - cust), extraKm: extra };
+  },
 
   /* Add-on groups on a menu item: [{ id, name, active, required, max (1-3), options: [{ id, name, price, active }] }].
      Older menus had a flat "addons" list; it becomes one optional group. */
@@ -146,16 +158,18 @@ var Pricing = {
       out.push({ bizId: F.bizId || 'pahuway', itemId: it.id, name: it.name, qty: qty, unit: unit, addons: adds, note: l.note || '', total: lt });
       sub += lt;
     }
-    var fee = 0, km = null;
+    var fee = 0, km = null, split = null;
     if (p.fulfillment === 'delivery') {
       if (!F.deliveryEnabled) return { error: 'Delivery is not available right now.' };
       if (p.lat != null && p.lng != null) km = Pricing.round(Pricing.km(+F.lat, +F.lng, +p.lat, +p.lng));
       else if (p.band != null && Pricing.bands(F)[+p.band]) km = +Pricing.bands(F)[+p.band].upToKm;
       else return { error: 'Pin your delivery location.' };
-      fee = Pricing.deliveryFee(F, km);
-      if (fee === null) return { error: 'Sorry, that location is outside our delivery area.' };
+      split = Pricing.deliverySplit(cat, F, km);
+      if (!split) return { error: 'Sorry, that location is outside our delivery area.' };
+      fee = split.fee;
     } else if (p.fulfillment === 'pickup' && !F.pickupEnabled) return { error: 'Pick-up is not available right now.' };
-    return { ok: true, bizId: F.bizId, storeName: F.storeName, lines: out, subtotal: Pricing.round(sub), km: km, deliveryFee: fee, total: Pricing.round(sub + fee) };
+    return { ok: true, bizId: F.bizId, storeName: F.storeName, lines: out, subtotal: Pricing.round(sub), km: km, deliveryFee: fee, total: Pricing.round(sub + fee),
+      riderFee: split ? split.riderFee : 0, storeDeliveryShare: split ? split.storeShare : 0 };
   }
 };
 /* ===== END PRICING ===== */

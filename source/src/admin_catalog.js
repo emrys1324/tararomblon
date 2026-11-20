@@ -1,6 +1,6 @@
 /* ===== Listings & rates editor (Super Admin) ===== */
 const getP = (o, p) => p.split('.').reduce((a, k) => a == null ? a : a[k], o);
-const setP = (o, p, v) => { const k = p.split('.'); let a = o; for (let i = 0; i < k.length - 1; i++) a = a[k[i]]; a[k[k.length - 1]] = v; };
+const setP = (o, p, v) => { const k = p.split('.'); let a = o; for (let i = 0; i < k.length - 1; i++) a = a[k[i]] = a[k[i]] || {}; a[k[k.length - 1]] = v; };
 function aIn(path, label, type, extra) {
   const v = getP(ADM.draft, path);
   if (type === 'textarea') return `<div class="field mt"><label>${label}</label><textarea data-b="${path}" rows="${extra || 5}">${esc(v)}</textarea></div>`;

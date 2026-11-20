@@ -4,7 +4,8 @@ const tm = s => new Date(s).toLocaleTimeString('en-PH', { hour: 'numeric', minut
 const dt = s => new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
 const dayOf = s => { const d = new Date(s); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); };
 const DONE = ['Delivered', 'Payment Collected', 'Completed'];
-const share = () => (Object.assign({}, DEFAULT_SETTINGS, CAT.settings || {}).riderSharePct) / 100;
+const ST = () => Object.assign({}, DEFAULT_SETTINGS, CAT.settings || {});
+const earn = b => Rules.riderEarning(b, ST()); /* rider earns the full delivery fee (customer part + store part), or the base fee within the free distance */
 
 async function initPortal() {
   if (DEMO) document.body.classList.add('demo');
@@ -72,16 +73,16 @@ function mapsLink(b) { return b.lat != null ? `https://www.google.com/maps/dir/?
 function vList(list, empty) {
   $('#pbody').innerHTML = list.map(b => {
     const F = Pricing.store(CAT, b.bizId) || { storeName: bizName(b.bizId), address: '', lat: 12.57, lng: 122.13 };
-    const fee = (+b.quote.deliveryFee || 0) * share(), cash = b.payMethod === 'cod';
+    const fee = earn(b), cash = b.payMethod === 'cod', custFee = +b.quote.deliveryFee || 0, storeFee = +b.quote.storeDeliveryShare || 0;
     return `<div class="ordcard"><div class="th"><div><span class="ref">${esc(b.ref)}</span><br><span class="mini">${esc(bizName(b.bizId))} · placed ${tm(b.created)}</span></div>${statusChip(b.status)}</div>
       ${timeline(b)}
       <div class="rstops"><div><span class="lbl">Pick up</span><b>${esc(F.storeName)}</b><span class="hint">${esc(F.address)}</span><a class="link" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${F.lat},${F.lng}">${ic('nav', 14)} Directions</a></div>
         <div><span class="lbl">Deliver to</span><b>${esc(b.customer.name)}</b><span class="hint">${esc(b.landmark || b.customer.address)}</span><span class="rowbtns" style="margin:4px 0 0"><a class="link" target="_blank" rel="noopener" href="${mapsLink(b)}">${ic('nav', 14)} Directions</a><a class="link" href="tel:${esc(String(b.customer.phone).replace(/\s/g, ''))}">${ic('phone', 14)} ${esc(b.customer.phone)}</a></span></div></div>
       <div class="hint">${b.lines.map(l => esc(l.qty + ' x ' + l.name + (l.addons && l.addons.length ? ' (' + l.addons.join(', ') + ')' : ''))).join(' · ')}</div>
-      <div class="rmoney"><div><span>${cash ? 'Collect from customer' : 'Already paid'}</span><b>${cash ? peso(Rules.payable(b)) : peso(0)}</b></div><div><span>Your delivery fee</span><b>${peso(fee)}</b></div></div>
+      <div class="rmoney"><div><span>${cash ? 'Collect from customer' : 'Already paid'}</span><b>${cash ? peso(Rules.payable(b)) : peso(0)}</b></div><div><span>Your delivery fee</span><b>${peso(fee)}</b><small class="hint">${b.quote.km != null ? b.quote.km + ' km · ' : ''}customer ${peso(custFee)} + store ${peso(storeFee)}</small></div></div>
       ${b.notes ? `<div class="warn">Customer note: ${esc(b.notes)}</div>` : ''}
       ${!b.riderAccepted && !Rules.CLOSED.includes(b.status) ? `<div class="sact"><button class="btn" onclick="respond('${esc(b.ref)}',true)">${ic('check')} Accept delivery</button><button class="btn ghost danger" onclick="respond('${esc(b.ref)}',false)">Decline</button></div>` : statusActions(b, { role: 'rider', email: RP.me.email })}
-      ${cash && b.status === 'Delivered' ? `<div class="hint" style="margin-top:8px">Hand ${peso(Rules.cashExpected(b))} to ${esc(F.storeName)} and keep your ${peso(+b.quote.deliveryFee || 0)} delivery fee. The store records the cash received.</div>` : ''}
+      ${cash && b.status === 'Delivered' ? `<div class="hint" style="margin-top:8px">Hand ${peso(Rules.cashExpected(b))} to ${esc(F.storeName)} and keep the customer's ${peso(custFee)} delivery fee.${storeFee ? ` The store's ${peso(storeFee)} share is added to your payout.` : ''} The store records the cash received.</div>` : ''}
       <div class="rowbtns" style="margin:10px 0 0"><button class="btn ghost sm" onclick="Chat.open({ref:'${esc(b.ref)}',chan:'customer'})">${ic('chat')} Message customer</button><button class="btn ghost sm" onclick="Chat.open({ref:'${esc(b.ref)}',chan:'merchant'})">${ic('store')} Message ${esc(F.storeName)}</button></div></div>`;
   }).join('') || `<div class="empty"><div class="big">${ic('bike', 40)}</div>${empty}</div>`;
   wireStatus($('#pbody'), () => RP.token, async () => { await reload(true); render(); }, ref => RP.orders.find(b => b.ref === ref));
@@ -92,13 +93,13 @@ async function respond(ref, accept) {
 function vEarn() {
   const now = new Date(), weekAgo = dayOf(new Date(now.getTime() - 6 * 864e5));
   const inR = b => RP.range === 'all' || (RP.range === 'today' ? dayOf(b.updated || b.created) === today : dayOf(b.updated || b.created) >= weekAgo);
-  const done = RP.orders.filter(b => DONE.includes(b.status) && inR(b)), fee = b => (+b.quote.deliveryFee || 0) * share();
-  const earned = done.reduce((t, b) => t + fee(b), 0), unpaid = done.filter(b => !b.riderPaidAt).reduce((t, b) => t + fee(b), 0), cash = done.filter(b => b.payMethod === 'cod').reduce((t, b) => t + Rules.payable(b), 0);
+  const done = RP.orders.filter(b => DONE.includes(b.status) && inR(b)), fee = earn;
+  const earned = done.reduce((t, b) => t + fee(b), 0), unpaid = done.filter(b => !b.riderPaidAt).reduce((t, b) => t + Math.max(0, Rules.ledger(b, ST()).riderNet), 0), cash = done.filter(b => b.payMethod === 'cod').reduce((t, b) => t + Rules.payable(b), 0);
   $('#pbody').innerHTML = `<div class="seg" style="margin-bottom:12px">${[['today', 'Today'], ['week', 'Last 7 days'], ['all', 'All time']].map(x => `<button class="${RP.range === x[0] ? 'on' : ''}" onclick="RP.range='${x[0]}';vEarn()">${x[1]}</button>`).join('')}</div>
-    <div class="kpis"><div class="kpi"><span>Completed deliveries</span><b>${done.length}</b><small>${Math.round(share() * 100)}% of each delivery fee</small></div><div class="kpi"><span>Delivery fees earned</span><b>${peso(earned)}</b><small>${peso(earned - unpaid)} paid out</small></div>
+    <div class="kpis"><div class="kpi"><span>Completed deliveries</span><b>${done.length}</b><small>${(() => { const R = Pricing.deliveryRule(CAT); return peso(R.baseFee) + ' within ' + R.freeKm + ' km · ' + peso(R.perKm) + '/km after'; })()}</small></div><div class="kpi"><span>Delivery fees earned</span><b>${peso(earned)}</b><small>incl. COD delivery fees you kept</small></div>
       <div class="kpi warnk"><span>Due to you</span><b>${peso(unpaid)}</b><small>paid out by MJV Services OPC</small></div><div class="kpi"><span>COD cash collected</span><b>${peso(cash)}</b><small>turn over to the store</small></div></div>
-    <div class="acard"><h3>Breakdown</h3><div class="tscroll"><table class="btable"><tr><th>Ref</th><th>Date</th><th>Store</th><th>Delivered to</th><th>Delivery fee</th><th>Your share</th><th>COD collected</th><th>Paid out</th></tr>
-      ${done.map(b => `<tr><td>${esc(b.ref)}</td><td>${dt(b.updated || b.created)}</td><td>${esc(bizName(b.bizId))}</td><td>${esc(b.landmark || b.customer.address)}</td><td>${peso(b.quote.deliveryFee)}</td><td><b>${peso(fee(b))}</b></td><td>${b.payMethod === 'cod' ? peso(Rules.payable(b)) : '-'}</td><td>${b.riderPaidAt ? fmtD(dayOf(b.riderPaidAt)) : 'Unpaid'}</td></tr>`).join('') || '<tr><td colspan="8">No completed deliveries in this period.</td></tr>'}</table></div></div>`;
+    <div class="acard"><h3>Breakdown</h3><div class="tscroll"><table class="btable"><tr><th>Ref</th><th>Date</th><th>Store</th><th>Delivered to</th><th>Distance</th><th>Customer paid</th><th>Store paid</th><th>You earn</th><th>COD collected</th><th>Paid out</th></tr>
+      ${done.map(b => `<tr><td>${esc(b.ref)}</td><td>${dt(b.updated || b.created)}</td><td>${esc(bizName(b.bizId))}</td><td>${esc(b.landmark || b.customer.address)}</td><td>${b.quote.km != null ? b.quote.km + ' km' : '-'}</td><td>${peso(b.quote.deliveryFee)}</td><td>${peso(b.quote.storeDeliveryShare || 0)}</td><td><b>${peso(fee(b))}</b></td><td>${b.payMethod === 'cod' ? peso(Rules.payable(b)) : '-'}</td><td>${b.riderPaidAt ? fmtD(dayOf(b.riderPaidAt)) : 'Unpaid'}</td></tr>`).join('') || '<tr><td colspan="10">No completed deliveries in this period.</td></tr>'}</table></div></div>`;
 }
 function vMsgs() {
   const cu = RP.threads.filter(t => t.with === 'customer'), st = RP.threads.filter(t => t.with === 'merchant');

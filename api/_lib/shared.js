@@ -103,6 +103,18 @@ var Pricing = {
     for (var i = 0; i < b.length; i++) if (km <= +b[i].upToKm) return +b[i].fee;
     return null;
   },
+  /* Delivery fee rule (Super Admin > Settings > Delivery): free within freeKm of the store, then perKm for each started km.
+     The customer pays customerPct % of that fee, the store pays the rest, and the rider earns the whole fee.
+     Within freeKm the customer pays nothing and the store pays the rider baseFee. Beyond the store's delivery area: null. */
+  DELIVERY: { freeKm: 1.5, perKm: 10, customerPct: 70, baseFee: 20, maxKm: 10 },
+  deliveryRule: function (cat) { var d = (cat && cat.settings && cat.settings.delivery) || {}, D = Pricing.DELIVERY, o = {}; for (var k in D) o[k] = d[k] == null || d[k] === '' || isNaN(+d[k]) ? D[k] : +d[k]; return o; },
+  deliverySplit: function (cat, food, km) {
+    var R = Pricing.deliveryRule(cat), b = Pricing.bands(food), max = +food.maxKm || (b.length ? +b[b.length - 1].upToKm : R.maxKm);
+    if (km == null || km > max + 1e-9) return null;
+    if (km <= R.freeKm + 1e-9) return { km: km, fee: 0, riderFee: R.baseFee, storeShare: R.baseFee, extraKm: 0 };
+    var extra = Math.ceil(Pricing.round(km - R.freeKm) - 1e-9), full = extra * R.perKm, cust = Math.round(full * R.customerPct / 100);
+    return { km: km, fee: cust, riderFee: full, storeShare: Pricing.round(full - cust), extraKm: extra };
+  },
 
   /* Add-on groups on a menu item: [{ id, name, active, required, max (1-3), options: [{ id, name, price, active }] }].
      Older menus had a flat "addons" list; it becomes one optional group. */
@@ -147,16 +159,18 @@ var Pricing = {
       out.push({ bizId: F.bizId || 'pahuway', itemId: it.id, name: it.name, qty: qty, unit: unit, addons: adds, note: l.note || '', total: lt });
       sub += lt;
     }
-    var fee = 0, km = null;
+    var fee = 0, km = null, split = null;
     if (p.fulfillment === 'delivery') {
       if (!F.deliveryEnabled) return { error: 'Delivery is not available right now.' };
       if (p.lat != null && p.lng != null) km = Pricing.round(Pricing.km(+F.lat, +F.lng, +p.lat, +p.lng));
       else if (p.band != null && Pricing.bands(F)[+p.band]) km = +Pricing.bands(F)[+p.band].upToKm;
       else return { error: 'Pin your delivery location.' };
-      fee = Pricing.deliveryFee(F, km);
-      if (fee === null) return { error: 'Sorry, that location is outside our delivery area.' };
+      split = Pricing.deliverySplit(cat, F, km);
+      if (!split) return { error: 'Sorry, that location is outside our delivery area.' };
+      fee = split.fee;
     } else if (p.fulfillment === 'pickup' && !F.pickupEnabled) return { error: 'Pick-up is not available right now.' };
-    return { ok: true, bizId: F.bizId, storeName: F.storeName, lines: out, subtotal: Pricing.round(sub), km: km, deliveryFee: fee, total: Pricing.round(sub + fee) };
+    return { ok: true, bizId: F.bizId, storeName: F.storeName, lines: out, subtotal: Pricing.round(sub), km: km, deliveryFee: fee, total: Pricing.round(sub + fee),
+      riderFee: split ? split.riderFee : 0, storeDeliveryShare: split ? split.storeShare : 0 };
   }
 };
 /* ===== END PRICING ===== */
@@ -239,13 +253,22 @@ var Rules = {
     if (b.payMethod === 'pickup') return Rules.payable(b);
     return Rules.r2(Math.max(0, Rules.payable(b) - (+b.dueNow || 0) - (+b.discount || 0)));
   },
+  /* rider's earning on a delivered food order: the full delivery fee under the per-km rule (customer part + store part);
+     older orders: riderSharePct % of the fee the customer paid */
+  riderEarning: function (b, st) {
+    if (b.quote && b.quote.riderFee != null) return Rules.r2(+b.quote.riderFee || 0);
+    var pct = !st || st.riderSharePct == null ? 100 : +st.riderSharePct; return Rules.r2((+(b.quote || {}).deliveryFee || 0) * pct / 100);
+  },
+  /* what the store pays toward a delivery (its share of the fee, or the base fee within the free distance) */
+  storeDelivery: function (b) { return b.kind === 'food' && b.fulfillment === 'delivery' && b.rider && Rules.DELIVERED.indexOf(b.status) >= 0 ? Rules.r2(+(b.quote || {}).storeDeliveryShare || 0) : 0; },
   money: function (b) {
     var ok = Rules.confirmed(b), gross = Rules.gross(b), R = Rules.reductions(b), manual = +b.discount || 0;
     var disc = Math.min(manual + R.codeMerch + R.points, gross), fee = ok ? Math.min(+b.fee || 0, gross) : 0;
     var delivery = b.kind === 'food' ? +b.quote.deliveryFee || 0 : 0;
     var online = Rules.NONCASH.indexOf(b.payMethod) >= 0 && b.payStatus === 'Paid' ? +b.dueNow || 0 : 0;
-    return { counted: ok, gross: ok ? gross : 0, discount: ok ? disc : 0, fee: fee, net: ok ? gross - disc - fee : 0, delivery: ok ? delivery : 0, codeTara: ok ? R.codeTara : 0,
-      collectedOnline: online, remit: online ? Rules.r2(online - (b.kind === 'food' ? delivery : 0) + R.codeTara - Math.min(manual, gross) - fee) : 0 };
+    var sd = ok ? Rules.storeDelivery(b) : 0;
+    return { counted: ok, gross: ok ? gross : 0, discount: ok ? disc : 0, fee: fee, net: ok ? gross - disc - fee - sd : 0, delivery: ok ? delivery : 0, codeTara: ok ? R.codeTara : 0, storeDelivery: sd,
+      collectedOnline: online, remit: online ? Rules.r2(online - (b.kind === 'food' ? delivery : 0) + R.codeTara - Math.min(manual, gross) - fee - sd) : 0 };
   },
   /* Who holds what money for one transaction, for payouts.
      Business: Tara Romblon pays out what it collected for the business (HitPay / transfers, and COD cash when riders remit it to Tara)
@@ -262,10 +285,10 @@ var Rules = {
     var recorded = b.cashCollected && !(cod && codTara) ? +b.cashCollected.amount : null;
     o.cashBiz = Rules.r2(recorded != null && recorded >= 0 ? recorded : Math.max(0, due - taraBiz));
     o.cashRecorded = recorded != null; o.cashExpected = Rules.r2(Math.max(0, due - taraBiz));
-    o.bizNet = Rules.r2(due - m.fee - o.cashBiz);
+    o.storeDelivery = m.storeDelivery;
+    o.bizNet = Rules.r2(due - m.fee - o.cashBiz - o.storeDelivery);
     if (b.rider && b.kind === 'food' && Rules.DELIVERED.indexOf(b.status) >= 0) {
-      var pct = st.riderSharePct == null ? 100 : +st.riderSharePct;
-      o.riderShare = Rules.r2(m.delivery * pct / 100);
+      o.riderShare = Rules.riderEarning(b, st);
       o.riderCash = cod ? (codTara ? Rules.payable(b) : m.delivery) : 0;
       o.riderNet = Rules.r2(o.riderShare - o.riderCash);
     }

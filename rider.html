@@ -641,6 +641,18 @@ var Pricing = {
     for (var i = 0; i < b.length; i++) if (km <= +b[i].upToKm) return +b[i].fee;
     return null;
   },
+  /* Delivery fee rule (Super Admin > Settings > Delivery): free within freeKm of the store, then perKm for each started km.
+     The customer pays customerPct % of that fee, the store pays the rest, and the rider earns the whole fee.
+     Within freeKm the customer pays nothing and the store pays the rider baseFee. Beyond the store's delivery area: null. */
+  DELIVERY: { freeKm: 1.5, perKm: 10, customerPct: 70, baseFee: 20, maxKm: 10 },
+  deliveryRule: function (cat) { var d = (cat && cat.settings && cat.settings.delivery) || {}, D = Pricing.DELIVERY, o = {}; for (var k in D) o[k] = d[k] == null || d[k] === '' || isNaN(+d[k]) ? D[k] : +d[k]; return o; },
+  deliverySplit: function (cat, food, km) {
+    var R = Pricing.deliveryRule(cat), b = Pricing.bands(food), max = +food.maxKm || (b.length ? +b[b.length - 1].upToKm : R.maxKm);
+    if (km == null || km > max + 1e-9) return null;
+    if (km <= R.freeKm + 1e-9) return { km: km, fee: 0, riderFee: R.baseFee, storeShare: R.baseFee, extraKm: 0 };
+    var extra = Math.ceil(Pricing.round(km - R.freeKm) - 1e-9), full = extra * R.perKm, cust = Math.round(full * R.customerPct / 100);
+    return { km: km, fee: cust, riderFee: full, storeShare: Pricing.round(full - cust), extraKm: extra };
+  },
 
   /* Add-on groups on a menu item: [{ id, name, active, required, max (1-3), options: [{ id, name, price, active }] }].
      Older menus had a flat "addons" list; it becomes one optional group. */
@@ -685,16 +697,18 @@ var Pricing = {
       out.push({ bizId: F.bizId || 'pahuway', itemId: it.id, name: it.name, qty: qty, unit: unit, addons: adds, note: l.note || '', total: lt });
       sub += lt;
     }
-    var fee = 0, km = null;
+    var fee = 0, km = null, split = null;
     if (p.fulfillment === 'delivery') {
       if (!F.deliveryEnabled) return { error: 'Delivery is not available right now.' };
       if (p.lat != null && p.lng != null) km = Pricing.round(Pricing.km(+F.lat, +F.lng, +p.lat, +p.lng));
       else if (p.band != null && Pricing.bands(F)[+p.band]) km = +Pricing.bands(F)[+p.band].upToKm;
       else return { error: 'Pin your delivery location.' };
-      fee = Pricing.deliveryFee(F, km);
-      if (fee === null) return { error: 'Sorry, that location is outside our delivery area.' };
+      split = Pricing.deliverySplit(cat, F, km);
+      if (!split) return { error: 'Sorry, that location is outside our delivery area.' };
+      fee = split.fee;
     } else if (p.fulfillment === 'pickup' && !F.pickupEnabled) return { error: 'Pick-up is not available right now.' };
-    return { ok: true, bizId: F.bizId, storeName: F.storeName, lines: out, subtotal: Pricing.round(sub), km: km, deliveryFee: fee, total: Pricing.round(sub + fee) };
+    return { ok: true, bizId: F.bizId, storeName: F.storeName, lines: out, subtotal: Pricing.round(sub), km: km, deliveryFee: fee, total: Pricing.round(sub + fee),
+      riderFee: split ? split.riderFee : 0, storeDeliveryShare: split ? split.storeShare : 0 };
   }
 };
 /* ===== END PRICING ===== */
@@ -779,13 +793,22 @@ var Rules = {
     if (b.payMethod === 'pickup') return Rules.payable(b);
     return Rules.r2(Math.max(0, Rules.payable(b) - (+b.dueNow || 0) - (+b.discount || 0)));
   },
+  /* rider's earning on a delivered food order: the full delivery fee under the per-km rule (customer part + store part);
+     older orders: riderSharePct % of the fee the customer paid */
+  riderEarning: function (b, st) {
+    if (b.quote && b.quote.riderFee != null) return Rules.r2(+b.quote.riderFee || 0);
+    var pct = !st || st.riderSharePct == null ? 100 : +st.riderSharePct; return Rules.r2((+(b.quote || {}).deliveryFee || 0) * pct / 100);
+  },
+  /* what the store pays toward a delivery (its share of the fee, or the base fee within the free distance) */
+  storeDelivery: function (b) { return b.kind === 'food' && b.fulfillment === 'delivery' && b.rider && Rules.DELIVERED.indexOf(b.status) >= 0 ? Rules.r2(+(b.quote || {}).storeDeliveryShare || 0) : 0; },
   money: function (b) {
     var ok = Rules.confirmed(b), gross = Rules.gross(b), R = Rules.reductions(b), manual = +b.discount || 0;
     var disc = Math.min(manual + R.codeMerch + R.points, gross), fee = ok ? Math.min(+b.fee || 0, gross) : 0;
     var delivery = b.kind === 'food' ? +b.quote.deliveryFee || 0 : 0;
     var online = Rules.NONCASH.indexOf(b.payMethod) >= 0 && b.payStatus === 'Paid' ? +b.dueNow || 0 : 0;
-    return { counted: ok, gross: ok ? gross : 0, discount: ok ? disc : 0, fee: fee, net: ok ? gross - disc - fee : 0, delivery: ok ? delivery : 0, codeTara: ok ? R.codeTara : 0,
-      collectedOnline: online, remit: online ? Rules.r2(online - (b.kind === 'food' ? delivery : 0) + R.codeTara - Math.min(manual, gross) - fee) : 0 };
+    var sd = ok ? Rules.storeDelivery(b) : 0;
+    return { counted: ok, gross: ok ? gross : 0, discount: ok ? disc : 0, fee: fee, net: ok ? gross - disc - fee - sd : 0, delivery: ok ? delivery : 0, codeTara: ok ? R.codeTara : 0, storeDelivery: sd,
+      collectedOnline: online, remit: online ? Rules.r2(online - (b.kind === 'food' ? delivery : 0) + R.codeTara - Math.min(manual, gross) - fee - sd) : 0 };
   },
   /* Who holds what money for one transaction, for payouts.
      Business: Tara Romblon pays out what it collected for the business (HitPay / transfers, and COD cash when riders remit it to Tara)
@@ -802,10 +825,10 @@ var Rules = {
     var recorded = b.cashCollected && !(cod && codTara) ? +b.cashCollected.amount : null;
     o.cashBiz = Rules.r2(recorded != null && recorded >= 0 ? recorded : Math.max(0, due - taraBiz));
     o.cashRecorded = recorded != null; o.cashExpected = Rules.r2(Math.max(0, due - taraBiz));
-    o.bizNet = Rules.r2(due - m.fee - o.cashBiz);
+    o.storeDelivery = m.storeDelivery;
+    o.bizNet = Rules.r2(due - m.fee - o.cashBiz - o.storeDelivery);
     if (b.rider && b.kind === 'food' && Rules.DELIVERED.indexOf(b.status) >= 0) {
-      var pct = st.riderSharePct == null ? 100 : +st.riderSharePct;
-      o.riderShare = Rules.r2(m.delivery * pct / 100);
+      o.riderShare = Rules.riderEarning(b, st);
       o.riderCash = cod ? (codTara ? Rules.payable(b) : m.delivery) : 0;
       o.riderNet = Rules.r2(o.riderShare - o.riderCash);
     }
@@ -2303,7 +2326,8 @@ const tm = s => new Date(s).toLocaleTimeString('en-PH', { hour: 'numeric', minut
 const dt = s => new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
 const dayOf = s => { const d = new Date(s); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); };
 const DONE = ['Delivered', 'Payment Collected', 'Completed'];
-const share = () => (Object.assign({}, DEFAULT_SETTINGS, CAT.settings || {}).riderSharePct) / 100;
+const ST = () => Object.assign({}, DEFAULT_SETTINGS, CAT.settings || {});
+const earn = b => Rules.riderEarning(b, ST()); /* rider earns the full delivery fee (customer part + store part), or the base fee within the free distance */
 
 async function initPortal() {
   if (DEMO) document.body.classList.add('demo');
@@ -2371,16 +2395,16 @@ function mapsLink(b) { return b.lat != null ? `https://www.google.com/maps/dir/?
 function vList(list, empty) {
   $('#pbody').innerHTML = list.map(b => {
     const F = Pricing.store(CAT, b.bizId) || { storeName: bizName(b.bizId), address: '', lat: 12.57, lng: 122.13 };
-    const fee = (+b.quote.deliveryFee || 0) * share(), cash = b.payMethod === 'cod';
+    const fee = earn(b), cash = b.payMethod === 'cod', custFee = +b.quote.deliveryFee || 0, storeFee = +b.quote.storeDeliveryShare || 0;
     return `<div class="ordcard"><div class="th"><div><span class="ref">${esc(b.ref)}</span><br><span class="mini">${esc(bizName(b.bizId))} · placed ${tm(b.created)}</span></div>${statusChip(b.status)}</div>
       ${timeline(b)}
       <div class="rstops"><div><span class="lbl">Pick up</span><b>${esc(F.storeName)}</b><span class="hint">${esc(F.address)}</span><a class="link" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${F.lat},${F.lng}">${ic('nav', 14)} Directions</a></div>
         <div><span class="lbl">Deliver to</span><b>${esc(b.customer.name)}</b><span class="hint">${esc(b.landmark || b.customer.address)}</span><span class="rowbtns" style="margin:4px 0 0"><a class="link" target="_blank" rel="noopener" href="${mapsLink(b)}">${ic('nav', 14)} Directions</a><a class="link" href="tel:${esc(String(b.customer.phone).replace(/\s/g, ''))}">${ic('phone', 14)} ${esc(b.customer.phone)}</a></span></div></div>
       <div class="hint">${b.lines.map(l => esc(l.qty + ' x ' + l.name + (l.addons && l.addons.length ? ' (' + l.addons.join(', ') + ')' : ''))).join(' · ')}</div>
-      <div class="rmoney"><div><span>${cash ? 'Collect from customer' : 'Already paid'}</span><b>${cash ? peso(Rules.payable(b)) : peso(0)}</b></div><div><span>Your delivery fee</span><b>${peso(fee)}</b></div></div>
+      <div class="rmoney"><div><span>${cash ? 'Collect from customer' : 'Already paid'}</span><b>${cash ? peso(Rules.payable(b)) : peso(0)}</b></div><div><span>Your delivery fee</span><b>${peso(fee)}</b><small class="hint">${b.quote.km != null ? b.quote.km + ' km · ' : ''}customer ${peso(custFee)} + store ${peso(storeFee)}</small></div></div>
       ${b.notes ? `<div class="warn">Customer note: ${esc(b.notes)}</div>` : ''}
       ${!b.riderAccepted && !Rules.CLOSED.includes(b.status) ? `<div class="sact"><button class="btn" onclick="respond('${esc(b.ref)}',true)">${ic('check')} Accept delivery</button><button class="btn ghost danger" onclick="respond('${esc(b.ref)}',false)">Decline</button></div>` : statusActions(b, { role: 'rider', email: RP.me.email })}
-      ${cash && b.status === 'Delivered' ? `<div class="hint" style="margin-top:8px">Hand ${peso(Rules.cashExpected(b))} to ${esc(F.storeName)} and keep your ${peso(+b.quote.deliveryFee || 0)} delivery fee. The store records the cash received.</div>` : ''}
+      ${cash && b.status === 'Delivered' ? `<div class="hint" style="margin-top:8px">Hand ${peso(Rules.cashExpected(b))} to ${esc(F.storeName)} and keep the customer's ${peso(custFee)} delivery fee.${storeFee ? ` The store's ${peso(storeFee)} share is added to your payout.` : ''} The store records the cash received.</div>` : ''}
       <div class="rowbtns" style="margin:10px 0 0"><button class="btn ghost sm" onclick="Chat.open({ref:'${esc(b.ref)}',chan:'customer'})">${ic('chat')} Message customer</button><button class="btn ghost sm" onclick="Chat.open({ref:'${esc(b.ref)}',chan:'merchant'})">${ic('store')} Message ${esc(F.storeName)}</button></div></div>`;
   }).join('') || `<div class="empty"><div class="big">${ic('bike', 40)}</div>${empty}</div>`;
   wireStatus($('#pbody'), () => RP.token, async () => { await reload(true); render(); }, ref => RP.orders.find(b => b.ref === ref));
@@ -2391,13 +2415,13 @@ async function respond(ref, accept) {
 function vEarn() {
   const now = new Date(), weekAgo = dayOf(new Date(now.getTime() - 6 * 864e5));
   const inR = b => RP.range === 'all' || (RP.range === 'today' ? dayOf(b.updated || b.created) === today : dayOf(b.updated || b.created) >= weekAgo);
-  const done = RP.orders.filter(b => DONE.includes(b.status) && inR(b)), fee = b => (+b.quote.deliveryFee || 0) * share();
-  const earned = done.reduce((t, b) => t + fee(b), 0), unpaid = done.filter(b => !b.riderPaidAt).reduce((t, b) => t + fee(b), 0), cash = done.filter(b => b.payMethod === 'cod').reduce((t, b) => t + Rules.payable(b), 0);
+  const done = RP.orders.filter(b => DONE.includes(b.status) && inR(b)), fee = earn;
+  const earned = done.reduce((t, b) => t + fee(b), 0), unpaid = done.filter(b => !b.riderPaidAt).reduce((t, b) => t + Math.max(0, Rules.ledger(b, ST()).riderNet), 0), cash = done.filter(b => b.payMethod === 'cod').reduce((t, b) => t + Rules.payable(b), 0);
   $('#pbody').innerHTML = `<div class="seg" style="margin-bottom:12px">${[['today', 'Today'], ['week', 'Last 7 days'], ['all', 'All time']].map(x => `<button class="${RP.range === x[0] ? 'on' : ''}" onclick="RP.range='${x[0]}';vEarn()">${x[1]}</button>`).join('')}</div>
-    <div class="kpis"><div class="kpi"><span>Completed deliveries</span><b>${done.length}</b><small>${Math.round(share() * 100)}% of each delivery fee</small></div><div class="kpi"><span>Delivery fees earned</span><b>${peso(earned)}</b><small>${peso(earned - unpaid)} paid out</small></div>
+    <div class="kpis"><div class="kpi"><span>Completed deliveries</span><b>${done.length}</b><small>${(() => { const R = Pricing.deliveryRule(CAT); return peso(R.baseFee) + ' within ' + R.freeKm + ' km · ' + peso(R.perKm) + '/km after'; })()}</small></div><div class="kpi"><span>Delivery fees earned</span><b>${peso(earned)}</b><small>incl. COD delivery fees you kept</small></div>
       <div class="kpi warnk"><span>Due to you</span><b>${peso(unpaid)}</b><small>paid out by MJV Services OPC</small></div><div class="kpi"><span>COD cash collected</span><b>${peso(cash)}</b><small>turn over to the store</small></div></div>
-    <div class="acard"><h3>Breakdown</h3><div class="tscroll"><table class="btable"><tr><th>Ref</th><th>Date</th><th>Store</th><th>Delivered to</th><th>Delivery fee</th><th>Your share</th><th>COD collected</th><th>Paid out</th></tr>
-      ${done.map(b => `<tr><td>${esc(b.ref)}</td><td>${dt(b.updated || b.created)}</td><td>${esc(bizName(b.bizId))}</td><td>${esc(b.landmark || b.customer.address)}</td><td>${peso(b.quote.deliveryFee)}</td><td><b>${peso(fee(b))}</b></td><td>${b.payMethod === 'cod' ? peso(Rules.payable(b)) : '-'}</td><td>${b.riderPaidAt ? fmtD(dayOf(b.riderPaidAt)) : 'Unpaid'}</td></tr>`).join('') || '<tr><td colspan="8">No completed deliveries in this period.</td></tr>'}</table></div></div>`;
+    <div class="acard"><h3>Breakdown</h3><div class="tscroll"><table class="btable"><tr><th>Ref</th><th>Date</th><th>Store</th><th>Delivered to</th><th>Distance</th><th>Customer paid</th><th>Store paid</th><th>You earn</th><th>COD collected</th><th>Paid out</th></tr>
+      ${done.map(b => `<tr><td>${esc(b.ref)}</td><td>${dt(b.updated || b.created)}</td><td>${esc(bizName(b.bizId))}</td><td>${esc(b.landmark || b.customer.address)}</td><td>${b.quote.km != null ? b.quote.km + ' km' : '-'}</td><td>${peso(b.quote.deliveryFee)}</td><td>${peso(b.quote.storeDeliveryShare || 0)}</td><td><b>${peso(fee(b))}</b></td><td>${b.payMethod === 'cod' ? peso(Rules.payable(b)) : '-'}</td><td>${b.riderPaidAt ? fmtD(dayOf(b.riderPaidAt)) : 'Unpaid'}</td></tr>`).join('') || '<tr><td colspan="10">No completed deliveries in this period.</td></tr>'}</table></div></div>`;
 }
 function vMsgs() {
   const cu = RP.threads.filter(t => t.with === 'customer'), st = RP.threads.filter(t => t.with === 'merchant');

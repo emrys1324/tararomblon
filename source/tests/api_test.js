@@ -285,7 +285,18 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   console.log('Payouts');
   const all = (await ok('adminData', { token: admin })).bookings, done = all.find(b => b.ref === fref);
   assert(done.status === 'Completed', 'COD order completed');
-  const L = Rules.ledger(done, {}); assert(L.bizNet === -L.fee && L.cashBiz === Rules.gross(done) && L.cashRecorded, 'cash order: merchant recorded cash, owes only the fee');
+  const L = Rules.ledger(done, {}); assert(L.bizNet === -L.fee - L.storeDelivery && L.cashBiz === Rules.gross(done) && L.cashRecorded, 'cash order: merchant recorded cash, owes the fee and its delivery share');
+  assert(L.riderShare === done.quote.riderFee && L.riderNet === done.quote.storeDeliveryShare && L.riderShare === done.quote.deliveryFee + done.quote.storeDeliveryShare, 'COD delivery: rider keeps the customer part in cash, store share paid out (km ' + done.quote.km + ', rider ₱' + L.riderShare + ')');
+  console.log('Delivery fee rule');
+  const DC = { settings: {} }, DF = { maxKm: 10 };
+  const d1 = Pricing.deliverySplit(DC, DF, 1.2), d2 = Pricing.deliverySplit(DC, DF, 3.2), d3 = Pricing.deliverySplit(DC, DF, 1.5), d4 = Pricing.deliverySplit(DC, DF, 2.0);
+  assert(d1.fee === 0 && d1.storeShare === 20 && d1.riderFee === 20, 'within 1.5 km: customer free, store pays rider ₱20');
+  assert(d3.fee === 0 && d3.riderFee === 20, 'exactly 1.5 km is still free');
+  assert(d4.fee === 7 && d4.storeShare === 3 && d4.riderFee === 10, '2.0 km: 1 started km = ₱10 (customer ₱7, store ₱3)');
+  assert(d2.fee === 14 && d2.storeShare === 6 && d2.riderFee === 20, '3.2 km: 2 started km = ₱20 (customer ₱14, store ₱6)');
+  assert(Pricing.deliverySplit(DC, DF, 10.5) === null, 'beyond the longest distance: no delivery');
+  const d5 = Pricing.deliverySplit({ settings: { delivery: { freeKm: 2, perKm: 15, customerPct: 50, baseFee: 25 } } }, DF, 4.1);
+  assert(d5.fee === 23 && d5.storeShare === 22 && d5.riderFee === 45, 'Super Admin can change km, rate, split and base fee');
   const stayB = all.find(b => b.ref === bk.refs[0]);
   await ok('setStatus', { token: hmgr, ref: stayB.ref, status: 'Completed' });
   const po1 = await ok('adminPayout', { token: admin, party: 'biz:hiraya', refs: [stayB.ref], adjustment: -50, adjustmentNote: 'towel' });
@@ -293,7 +304,7 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   assert(po1.payout.net === Rules.r2(m2.bizNet - 50) && po1.payout.cash === m2.cashBiz, 'stay payout = downpayment - fee - discount... net ' + po1.payout.net);
   await fails('adminPayout', { token: admin, party: 'biz:hiraya', refs: [stayB.ref] }, /not ready/);
   const po2 = await ok('adminPayout', { token: admin, party: 'biz:pahuway', refs: [fref] }); assert(po2.payout.net < 0 && po2.payout.direction === 'collect', 'cash-only merchant: collect platform fee');
-  const po3 = await ok('adminPayout', { token: admin, party: 'rider:rider@tara.ph', refs: [fref] }); assert(po3.payout.net === 0, 'COD rider kept the delivery fee: net 0 at 100% share');
+  const po3 = await ok('adminPayout', { token: admin, party: 'rider:rider@tara.ph', refs: [fref] }); assert(po3.payout.net === L.storeDelivery && L.storeDelivery === 20, 'COD rider: keeps the customer part in cash and is paid the store share ₱' + po3.payout.net);
   const ad4 = await ok('adminData', { token: admin }); assert(ad4.payouts.length === 3 && ad4.bookings.find(b => b.ref === fref).riderPaidAt && ad4.bookings.find(b => b.ref === fref).bizPaidAt, 'payouts recorded and bookings settled');
   assert(MAILS.some(m => /Payout statement/.test(m.subject)), 'payout statement emailed');
 

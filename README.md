@@ -35,6 +35,18 @@ source/                  editable source + build.py + tests
 
 There are no npm packages to install. The functions use Node's built-in `fetch` and `crypto`.
 
+## New: delivery fee rule (Super Admin → Settings → Delivery fee)
+
+| Distance from the store | Customer pays | Store pays | Rider earns |
+|---|---|---|---|
+| Up to 1.5 km | Free | ₱20 | ₱20 |
+| Each started km after 1.5 km | 70% of ₱10/km | 30% | The whole fee |
+
+Example: 3.2 km → 2 started km → ₱20 fee: customer ₱14, store ₱6, rider ₱20.
+- COD: the rider keeps the customer's part in cash; the store's part is taken from the store's payout and paid to the rider.
+- All five numbers (free km, ₱ per km, customer %, base fee, longest delivery) can be changed in Settings.
+- Orders placed before this change still use the old "Rider share of delivery fee (%)".
+
 ## New: Food and Rentals first; Stays and Things to do "coming soon"
 - **Customer home:** the order is now **Food, Rentals, Stays, Things to do**. Stays and Things to do carry a **Soon** badge. The home page lists *Where to eat* first, then *Ride around Romblon*; *Where to stay* is hidden.
 - **Stays and Things to do pages** show a *Coming soon* message with **Order food** / **Rent a scooter** buttons. They're left out of search, and the server refuses stay or tour bookings while closed.

@@ -76,13 +76,22 @@ var Rules = {
     if (b.payMethod === 'pickup') return Rules.payable(b);
     return Rules.r2(Math.max(0, Rules.payable(b) - (+b.dueNow || 0) - (+b.discount || 0)));
   },
+  /* rider's earning on a delivered food order: the full delivery fee under the per-km rule (customer part + store part);
+     older orders: riderSharePct % of the fee the customer paid */
+  riderEarning: function (b, st) {
+    if (b.quote && b.quote.riderFee != null) return Rules.r2(+b.quote.riderFee || 0);
+    var pct = !st || st.riderSharePct == null ? 100 : +st.riderSharePct; return Rules.r2((+(b.quote || {}).deliveryFee || 0) * pct / 100);
+  },
+  /* what the store pays toward a delivery (its share of the fee, or the base fee within the free distance) */
+  storeDelivery: function (b) { return b.kind === 'food' && b.fulfillment === 'delivery' && b.rider && Rules.DELIVERED.indexOf(b.status) >= 0 ? Rules.r2(+(b.quote || {}).storeDeliveryShare || 0) : 0; },
   money: function (b) {
     var ok = Rules.confirmed(b), gross = Rules.gross(b), R = Rules.reductions(b), manual = +b.discount || 0;
     var disc = Math.min(manual + R.codeMerch + R.points, gross), fee = ok ? Math.min(+b.fee || 0, gross) : 0;
     var delivery = b.kind === 'food' ? +b.quote.deliveryFee || 0 : 0;
     var online = Rules.NONCASH.indexOf(b.payMethod) >= 0 && b.payStatus === 'Paid' ? +b.dueNow || 0 : 0;
-    return { counted: ok, gross: ok ? gross : 0, discount: ok ? disc : 0, fee: fee, net: ok ? gross - disc - fee : 0, delivery: ok ? delivery : 0, codeTara: ok ? R.codeTara : 0,
-      collectedOnline: online, remit: online ? Rules.r2(online - (b.kind === 'food' ? delivery : 0) + R.codeTara - Math.min(manual, gross) - fee) : 0 };
+    var sd = ok ? Rules.storeDelivery(b) : 0;
+    return { counted: ok, gross: ok ? gross : 0, discount: ok ? disc : 0, fee: fee, net: ok ? gross - disc - fee - sd : 0, delivery: ok ? delivery : 0, codeTara: ok ? R.codeTara : 0, storeDelivery: sd,
+      collectedOnline: online, remit: online ? Rules.r2(online - (b.kind === 'food' ? delivery : 0) + R.codeTara - Math.min(manual, gross) - fee - sd) : 0 };
   },
   /* Who holds what money for one transaction, for payouts.
      Business: Tara Romblon pays out what it collected for the business (HitPay / transfers, and COD cash when riders remit it to Tara)
@@ -99,10 +108,10 @@ var Rules = {
     var recorded = b.cashCollected && !(cod && codTara) ? +b.cashCollected.amount : null;
     o.cashBiz = Rules.r2(recorded != null && recorded >= 0 ? recorded : Math.max(0, due - taraBiz));
     o.cashRecorded = recorded != null; o.cashExpected = Rules.r2(Math.max(0, due - taraBiz));
-    o.bizNet = Rules.r2(due - m.fee - o.cashBiz);
+    o.storeDelivery = m.storeDelivery;
+    o.bizNet = Rules.r2(due - m.fee - o.cashBiz - o.storeDelivery);
     if (b.rider && b.kind === 'food' && Rules.DELIVERED.indexOf(b.status) >= 0) {
-      var pct = st.riderSharePct == null ? 100 : +st.riderSharePct;
-      o.riderShare = Rules.r2(m.delivery * pct / 100);
+      o.riderShare = Rules.riderEarning(b, st);
       o.riderCash = cod ? (codTara ? Rules.payable(b) : m.delivery) : 0;
       o.riderNet = Rules.r2(o.riderShare - o.riderCash);
     }
