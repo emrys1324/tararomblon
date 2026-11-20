@@ -586,13 +586,14 @@ function checkoutFood() {
       <h3 style="margin:18px 0 0;font-size:18px">Your details</h3>${profileFields(p)}
       <div class="field mt"><label>Notes</label><input id="ckN"></div>
       ${promoHtml()}
-      <h3 style="margin:18px 0 0;font-size:18px">Payment</h3><div class="opts one" id="payOpts"></div>
+      <h3 style="margin:18px 0 0;font-size:18px">Payment</h3><div class="opts one" id="payOpts"></div><div id="codWhy"></div>
       <div id="ftrBox" style="display:none"><div class="warn">${esc(SET().transferInstructions)}</div>${uploadField('fProof', 'Payment proof (receipt screenshot)', SET().proofUpload)}</div>
       <div class="sum" id="fSum"></div><div class="err" id="ckErr"></div>
       <button class="btn full mt" id="ckBtn" style="padding:15px">Place order</button></div>`);
     const payOpts = () => {
       const o = [];
-      if (st.ful === 'delivery' && F.codEnabled) o.push(['cod', 'Cash on delivery']);
+      const qq = quote(), codWhy = st.ful === 'delivery' && F.codEnabled ? Rules.codBlock(SET(), window._myB ? Rules.completedCount(window._myB) : 0, qq.error ? (Pricing.food(CAT, { bizId: F.bizId, lines: cart.food, fulfillment: 'quote' }).subtotal || 0) : qq.total) : null;
+      if (st.ful === 'delivery' && F.codEnabled && !codWhy) o.push(['cod', 'Cash on delivery']);
       if (st.ful === 'pickup') o.push(['pickup', 'Pay upon pick-up']);
       if (F.onlineEnabled) o.push(['online', 'Pay online via HitPay — GCash, Maya & other e-wallets, QR Ph or card']);
       if (SET().transferEnabled) o.push(['transfer', 'Bank or e-wallet transfer (upload proof)']);
@@ -600,6 +601,7 @@ function checkoutFood() {
       $('#payOpts').innerHTML = o.map((x, i) => `<label><input type="radio" name="pay" value="${x[0]}" ${(cur ? cur === x[0] : i === 0) ? 'checked' : ''}> ${ic(x[0] === 'online' ? 'card' : x[0] === 'transfer' ? 'wallet' : x[0] === 'cod' ? 'cash' : 'store')} ${x[1]}</label>`).join('');
       if (!document.querySelector('input[name=pay]:checked') && o.length) document.querySelector('input[name=pay]').checked = true;
       $('#ftrBox').style.display = (document.querySelector('input[name=pay]:checked') || {}).value === 'transfer' ? '' : 'none';
+      $('#codWhy').innerHTML = codWhy ? `<div class="hint" data-codwhy>${ic('cash', 14)} ${esc(codWhy)}</div>` : '';
     };
     const quote = () => Pricing.food(CAT, { bizId: F.bizId, lines: cart.food, fulfillment: st.ful, lat: st.lat, lng: st.lng, band: st.lat == null ? (st.band === '' ? null : st.band) : null });
     const calc = () => {
@@ -633,7 +635,7 @@ function checkoutFood() {
       window._mk.on('dragend', e => { const ll = e.target.getLatLng(); setPin(ll.lat, ll.lng); });
       map.on('click', e => setPin(e.latlng.lat, e.latlng.lng));
     });
-    calc(); wireUpload('fProof'); wirePromo(() => ({ [F.bizId]: Pricing.food(CAT, { bizId: F.bizId, lines: cart.food, fulfillment: 'quote' }).subtotal || 0 }), calc);
+    calc(); if (F.codEnabled) api('myBookings', { token: session.token }).then(r => { window._myB = r.bookings; calc(); }).catch(() => {}); wireUpload('fProof'); wirePromo(() => ({ [F.bizId]: Pricing.food(CAT, { bizId: F.bizId, lines: cart.food, fulfillment: 'quote' }).subtotal || 0 }), calc);
     $('#ckBtn').onclick = async () => {
       const q = calc(); if (!q || q.error) return;
       if ((document.querySelector('input[name=pay]:checked') || {}).value === 'transfer' && SET().proofUpload === 'required' && !UP.fProof) { $('#ckErr').textContent = 'Please upload your payment proof.'; return; }

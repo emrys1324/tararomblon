@@ -25,6 +25,14 @@ var Rules = {
     if (b.fulfillment === 'delivery') return pre.concat(['Preparing', 'Ready for Pick-up', 'Out for Delivery', 'Delivered'], b.payMethod === 'cod' ? ['Payment Collected', 'Completed'] : ['Completed']);
     return pre.concat(['Preparing', 'Ready for Pick-up', 'Order Picked Up'], b.payMethod === 'pickup' ? ['Payment Collected', 'Completed'] : ['Completed']);
   },
+  /* Cash on delivery: only after N completed transactions, and only up to a ceiling. Returns null when allowed, else the reason. */
+  codBlock: function (st, completed, total) {
+    var need = +st.codMinCompleted || 0, max = +st.codMax || 0;
+    if (completed < need) return 'Cash on delivery unlocks after ' + need + ' completed orders or bookings (you have ' + completed + '). Please pay online for now.';
+    if (max && total > max + 1e-9) return 'Cash on delivery is for orders up to ₱' + max + '. Please pay online for this order.';
+    return null;
+  },
+  completedCount: function (list, email) { return (list || []).filter(function (b) { return (!email || b.email === email) && b.status === 'Completed'; }).length; },
   next: function (b) { var f = Rules.flow(b), i = f.indexOf(b.status); return i >= 0 && i < f.length - 1 ? f[i + 1] : null; },
   /* Which status changes each role may make */
   allowed: function (b, actor) {

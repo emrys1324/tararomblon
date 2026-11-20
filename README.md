@@ -43,9 +43,16 @@ There are no npm packages to install. The functions use Node's built-in `fetch` 
 | Each started km after 1.5 km | 70% of ₱10/km | 30% | The whole fee |
 
 Example: 3.2 km → 2 started km → ₱20 fee: customer ₱14, store ₱6, rider ₱20.
+- Minimum rider earning ₱20: if the fee is less (1.6–2.5 km = ₱10), the customer still pays 70% (₱7) and the store pays the rest up to ₱20 (₱13).
 - COD: the rider keeps the customer's part in cash; the store's part is taken from the store's payout and paid to the rider.
 - All five numbers (free km, ₱ per km, customer %, base fee, longest delivery) can be changed in Settings.
 - Orders placed before this change still use the old "Rider share of delivery fee (%)".
+
+## New: Cash on delivery limits (Super Admin → Settings → Payments)
+
+- Cash on delivery appears only after the customer has **3 completed** orders or bookings (any kind). Until then checkout explains why and offers online payment.
+- Cash on delivery is only for orders up to **₱500** (total including the delivery fee). Bigger orders must pay online.
+- The server enforces both rules too, so they can't be bypassed. Both numbers can be changed (0 = no ceiling).
 
 ## New: Food and Rentals first; Stays and Things to do "coming soon"
 - **Customer home:** the order is now **Food, Rentals, Stays, Things to do**. Stays and Things to do carry a **Soon** badge. The home page lists *Where to eat* first, then *Ride around Romblon*; *Where to stay* is hidden.

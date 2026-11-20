@@ -105,14 +105,15 @@ var Pricing = {
   /* Delivery fee rule (Super Admin > Settings > Delivery): free within freeKm of the store, then perKm for each started km.
      The customer pays customerPct % of that fee, the store pays the rest, and the rider earns the whole fee.
      Within freeKm the customer pays nothing and the store pays the rider baseFee. Beyond the store's delivery area: null. */
-  DELIVERY: { freeKm: 1.5, perKm: 10, customerPct: 70, baseFee: 20, maxKm: 10 },
+  DELIVERY: { freeKm: 1.5, perKm: 10, customerPct: 70, baseFee: 20, maxKm: 10, minRider: 20 },
   deliveryRule: function (cat) { var d = (cat && cat.settings && cat.settings.delivery) || {}, D = Pricing.DELIVERY, o = {}; for (var k in D) o[k] = d[k] == null || d[k] === '' || isNaN(+d[k]) ? D[k] : +d[k]; return o; },
   deliverySplit: function (cat, food, km) {
     var R = Pricing.deliveryRule(cat), b = Pricing.bands(food), max = +food.maxKm || (b.length ? +b[b.length - 1].upToKm : R.maxKm);
     if (km == null || km > max + 1e-9) return null;
     if (km <= R.freeKm + 1e-9) return { km: km, fee: 0, riderFee: R.baseFee, storeShare: R.baseFee, extraKm: 0 };
     var extra = Math.ceil(Pricing.round(km - R.freeKm) - 1e-9), full = extra * R.perKm, cust = Math.round(full * R.customerPct / 100);
-    return { km: km, fee: cust, riderFee: full, storeShare: Pricing.round(full - cust), extraKm: extra };
+    var rider = Math.max(full, R.minRider);
+    return { km: km, fee: cust, riderFee: rider, storeShare: Pricing.round(rider - cust), extraKm: extra };
   },
 
   /* Add-on groups on a menu item: [{ id, name, active, required, max (1-3), options: [{ id, name, price, active }] }].

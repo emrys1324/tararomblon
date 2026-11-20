@@ -170,8 +170,20 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
 
   console.log('Food COD with rider');
   const item = CATALOG.foods[0].items.find(i => i.available !== false);
+  const codP = { token: cust, kind: 'food', bizId: 'pahuway', fulfillment: 'delivery', payMethod: 'cod', lat: 12.5720, lng: 122.1330, landmark: 'Near plaza', lines: [{ itemId: item.id, qty: 2, addons: [] }] };
+  await fails('createBooking', codP, /unlocks after 3 completed orders or bookings \(you have 0\)/);
+  const fakeDone = [1, 2].map(i => ({ id: 'TR-FAKE-' + i, data: { ref: 'TR-FAKE-' + i, email: 'ana@mail.com', status: 'Completed', kind: 'food', created: '2026-01-0' + i } }));
+  tbl('bookings').push(...fakeDone);
+  await fails('createBooking', codP, /you have 2/);
+  tbl('bookings').push({ id: 'TR-FAKE-3', data: { ref: 'TR-FAKE-3', email: 'ana@mail.com', status: 'Completed', kind: 'rental', created: '2026-01-03' } });
+  await fails('createBooking', Object.assign({}, codP, { lines: [{ itemId: item.id, qty: Math.ceil(501 / item.price), addons: [] }] }), /up to ₱500/);
+  assert(Rules.codBlock({ codMinCompleted: 3, codMax: 500 }, 3, 500) === null && Rules.codBlock({ codMinCompleted: 3, codMax: 0 }, 5, 9000) === null, 'COD allowed after 3 completed, up to ₱500 (0 = no ceiling)');
+  for (const id of ['TR-FAKE-1', 'TR-FAKE-2', 'TR-FAKE-3']) { const k = DB.bookings.findIndex(r => r.id === id); DB.bookings.splice(k, 1); }
+  tbl('bookings').push(...[1, 2, 3].map(i => ({ id: 'TR-FAKE-' + i, data: { ref: 'TR-FAKE-' + i, email: 'ana@mail.com', status: 'Completed', kind: 'food', created: '2026-01-0' + i } })));
   const food = await ok('createBooking', { token: cust, kind: 'food', bizId: 'pahuway', fulfillment: 'delivery', payMethod: 'cod', lat: 12.5720, lng: 122.1330, landmark: 'Near plaza', lines: [{ itemId: item.id, qty: 2, addons: [] }] });
   const fref = food.refs[0];
+  for (const id of ['TR-FAKE-1', 'TR-FAKE-2', 'TR-FAKE-3']) DB.bookings.splice(DB.bookings.findIndex(r => r.id === id), 1);
+  assert(food.refs.length === 1, 'COD order placed once 3 transactions are completed');
   const pstaff = await staffLogin('staff@pahuway.ph', 'merchant');
   await fails('setStatus', { token: pstaff, ref: fref, status: 'Completed' }, /next step/);
   for (const s of ['Accepted', 'Preparing']) await ok('setStatus', { token: pstaff, ref: fref, status: s });
@@ -292,11 +304,12 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   const d1 = Pricing.deliverySplit(DC, DF, 1.2), d2 = Pricing.deliverySplit(DC, DF, 3.2), d3 = Pricing.deliverySplit(DC, DF, 1.5), d4 = Pricing.deliverySplit(DC, DF, 2.0);
   assert(d1.fee === 0 && d1.storeShare === 20 && d1.riderFee === 20, 'within 1.5 km: customer free, store pays rider ₱20');
   assert(d3.fee === 0 && d3.riderFee === 20, 'exactly 1.5 km is still free');
-  assert(d4.fee === 7 && d4.storeShare === 3 && d4.riderFee === 10, '2.0 km: 1 started km = ₱10 (customer ₱7, store ₱3)');
+  assert(d4.fee === 7 && d4.storeShare === 13 && d4.riderFee === 20, '2.0 km: ₱10 fee, customer ₱7, store tops up to the ₱20 rider minimum (₱13)');
+  const d6 = Pricing.deliverySplit(DC, DF, 4.0); assert(d6.fee === 21 && d6.storeShare === 9 && d6.riderFee === 30, '4.0 km: ₱30 fee above the minimum (customer ₱21, store ₱9)');
   assert(d2.fee === 14 && d2.storeShare === 6 && d2.riderFee === 20, '3.2 km: 2 started km = ₱20 (customer ₱14, store ₱6)');
   assert(Pricing.deliverySplit(DC, DF, 10.5) === null, 'beyond the longest distance: no delivery');
   const d5 = Pricing.deliverySplit({ settings: { delivery: { freeKm: 2, perKm: 15, customerPct: 50, baseFee: 25 } } }, DF, 4.1);
-  assert(d5.fee === 23 && d5.storeShare === 22 && d5.riderFee === 45, 'Super Admin can change km, rate, split and base fee');
+  assert(d5.fee === 23 && d5.storeShare === 22 && d5.riderFee === 45 && Pricing.deliverySplit({ settings: { delivery: { minRider: 0 } } }, DF, 2).riderFee === 10, 'Super Admin can change km, rate, split and base fee');
   const stayB = all.find(b => b.ref === bk.refs[0]);
   await ok('setStatus', { token: hmgr, ref: stayB.ref, status: 'Completed' });
   const po1 = await ok('adminPayout', { token: admin, party: 'biz:hiraya', refs: [stayB.ref], adjustment: -50, adjustmentNote: 'towel' });
