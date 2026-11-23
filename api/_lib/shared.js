@@ -1007,7 +1007,22 @@ function createCore(env) {
     var who = await auth(p.token, 'manager'), cat = await catalog(true), F = Pricing.store(cat, who.bizId); if (!F) err('This business has no menu.');
     var list = Array.isArray(p.items) ? p.items : err('Nothing to save.'); if (list.length > 300) err('A menu can have up to 300 items.');
     var old = {}, cats = {}, used = {}, added = 0, out;
-    F.items.forEach(function (i) { old[i.id] = i; }); (F.categories || []).forEach(function (c) { cats[c.id] = 1; });
+    F.items.forEach(function (i) { old[i.id] = i; });
+    /* categories: optional full list [{id, name}]; new ones (no or unknown id) get an id from their name, and items may refer to them by the id the app sent */
+    var newCats = F.categories || [], cmap = {};
+    if (Array.isArray(p.categories)) {
+      if (p.categories.length > 50) err('A menu can have up to 50 categories.');
+      var oldC = {}, names = {}, cused = {}; newCats.forEach(function (c) { oldC[c.id] = c; });
+      newCats = p.categories.map(function (c) {
+        var nm = str(c.name, 40); if (!nm) err('Give each category a name.');
+        if (names[nm.toLowerCase()]) err('There are two categories named "' + nm + '".'); names[nm.toLowerCase()] = 1;
+        var cid = c.id && oldC[c.id] && !cused[c.id] ? c.id : null;
+        if (!cid) { var b0 = slug(nm) || 'cat', k0 = 2; cid = b0; while (oldC[cid] || cused[cid]) cid = b0.slice(0, 26) + '-' + k0++; }
+        cused[cid] = 1; if (c.id) cmap[c.id] = cid; cmap[cid] = cid;
+        return { id: cid, name: nm };
+      });
+    }
+    newCats.forEach(function (c) { cats[c.id] = 1; cmap[c.id] = cmap[c.id] || c.id; });
     out = list.map(function (x, n) {
       var name = str(x.name, 80); if (!name) err('Item ' + (n + 1) + ': enter a name.');
       var pr = +x.price; if (!(pr > 0)) err(name + ': price must be more than zero.');
@@ -1015,13 +1030,13 @@ function createCore(env) {
       var it = x.id && old[x.id] && !used[x.id] ? clone(old[x.id]) : null;
       if (!it) { var base = slug(name) || 'item', id = base, k = 2; while (old[id] || used[id]) id = base.slice(0, 26) + '-' + k++; it = { id: id, photo: '', addonGroups: [] }; added++; }
       used[it.id] = 1;
-      it.name = name; it.desc = str(x.desc, 200); it.catId = cats[x.catId] ? x.catId : (it.catId && cats[it.catId] ? it.catId : (F.categories[0] || {}).id || '');
+      it.name = name; it.desc = str(x.desc, 200); var want = cmap[x.catId]; if (x.catId && !want && Array.isArray(p.categories)) err(name + ': choose a category.'); it.catId = want || (it.catId && cats[it.catId] ? it.catId : (newCats[0] || {}).id || '');
       it.price = Math.round(pr * 100) / 100; if (pc) it.promoPct = Math.round(pc * 100) / 100; else delete it.promoPct;
       it.available = x.available !== false;
       return it;
     });
     var removed = F.items.filter(function (i) { return !used[i.id]; }).map(function (i) { return i.name; });
-    F.items = out; await env.db.kvPut('catalog', cat);
+    F.items = out; F.categories = newCats; await env.db.kvPut('catalog', cat);
     await event('listing', who.name + ' saved the menu of ' + F.storeName + ' (' + out.length + ' items' + (added ? ', ' + added + ' added' : '') + (removed.length ? ', removed: ' + removed.join(', ') : '') + ')', ['super', 'biz:' + who.bizId], '', who.bizId, [], '', '', who.email);
     return { items: out, added: added, removed: removed.length };
   };

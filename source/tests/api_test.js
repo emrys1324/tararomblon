@@ -390,6 +390,22 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   await ok('mMenu', { token: pm2, items: menu0.map(i => ({ id: i.id, name: i.name, desc: i.desc, catId: i.catId, price: i.price, promoPct: i.promoPct, available: i.available !== false })) });
   assert(JSON.stringify(Pricing.store((await ok('getCatalog')).catalog, 'pahuway').items.map(i => i.name)) === JSON.stringify(menu0.map(i => i.name)), 'menu restored (a removed item comes back as a new item)');
 
+  console.log('Merchant Admin adds, renames, reorders and removes categories');
+  const mc0 = Pricing.store((await ok('getCatalog')).catalog, 'pahuway'), cats0 = mc0.categories.map(c => ({ id: c.id, name: c.name }));
+  const itemsC = mc0.items.map(i => ({ id: i.id, name: i.name, desc: i.desc, catId: i.catId, price: i.price, promoPct: i.promoPct, available: i.available !== false }));
+  const emptyCat = cats0.find(c => !mc0.items.some(i => i.catId === c.id));
+  const catsC = [{ id: 'new:a', name: 'Rice Meals' }].concat(cats0.filter(c => c !== emptyCat).map((c, i) => i ? c : { id: c.id, name: c.name + ' (renamed)' }));
+  itemsC[0].catId = 'new:a';
+  await fails('mMenu', { token: pm2, categories: catsC.concat([{ name: 'rice meals' }]), items: itemsC }, /two categories named/);
+  await fails('mMenu', { token: pm2, categories: catsC.concat([{ name: ' ' }]), items: itemsC }, /Give each category a name/);
+  await fails('mMenu', { token: pm2, categories: catsC.filter(c => c.id !== itemsC[1].catId || c.id === 'new:a'), items: itemsC.map((x, i) => i === 1 && x.catId !== itemsC[0].catId ? x : x) }, /choose a category/);
+  await ok('mMenu', { token: pm2, categories: catsC, items: itemsC });
+  const mc1 = Pricing.store((await ok('getCatalog')).catalog, 'pahuway');
+  assert(mc1.categories[0].id === 'rice-meals' && mc1.categories[0].name === 'Rice Meals' && mc1.items[0].catId === 'rice-meals', 'new category gets an id from its name, is first, and the item is in it');
+  assert(mc1.categories[1].name.endsWith('(renamed)') && mc1.categories[1].id === cats0.filter(c => c !== emptyCat)[0].id && (!emptyCat || !mc1.categories.some(c => c.id === emptyCat.id)), 'rename keeps the id; empty category removed');
+  await ok('mMenu', { token: pm2, categories: cats0, items: mc0.items.map(i => ({ id: i.id, name: i.name, desc: i.desc, catId: i.catId, price: i.price, promoPct: i.promoPct, available: i.available !== false })) });
+  assert(JSON.stringify(Pricing.store((await ok('getCatalog')).catalog, 'pahuway').categories) === JSON.stringify(cats0), 'categories restored');
+
   console.log('Points follow the registered mobile number');
   await ok('sendOtp', { email: 'ben@mail.com' }); const ben = (await ok('verifyOtp', { email: 'ben@mail.com', code: lastCode('ben@mail.com') })).token;
   await fails('saveProfile', { token: ben, profile: { name: 'Ben', phone: '+63 917 123 4567', address: 'Odiongan' } }, /already registered/);

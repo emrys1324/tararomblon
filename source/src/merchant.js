@@ -211,7 +211,7 @@ function listingDraft() {
   CAT.rentals.units.filter(x => x.bizId === id).forEach(x => o['unit|' + x.id] = x);
   CAT.tours.filter(x => x.bizId === id).forEach(x => o['tour|' + x.id] = x);
   const other = {}; for (const k in o) { const kind = k.split('|')[0], r = { active: o[k].active !== false }; LFIELDS[kind].forEach(f => r[f[0]] = o[k][f[0]] == null ? '' : o[k][f[0]]); other[k] = r; }
-  return { items: F ? F.items.map(i => ({ id: i.id, name: i.name, desc: i.desc || '', catId: i.catId || '', price: i.price, promoPct: i.promoPct || '', available: i.available !== false })) : [], other };
+  return { cats: F ? F.categories.map(c => ({ id: c.id, name: c.name })) : [], items: F ? F.items.map(i => ({ id: i.id, name: i.name, desc: i.desc || '', catId: i.catId || '', price: i.price, promoPct: i.promoPct || '', available: i.available !== false })) : [], other };
 }
 const ldDirty = () => MP.ld && JSON.stringify(MP.ld) !== JSON.stringify(listingDraft());
 window.addEventListener('beforeunload', e => { if (ldDirty()) { e.preventDefault(); e.returnValue = ''; } });
@@ -228,7 +228,7 @@ function vListings() {
   const staffRow = (kind, it, label, sub) => `<div class="avrow"><div class="lphoto">${thumb(kind, it)}<div><b>${esc(label)}</b>${pr(it)}<span class="hint">${esc(sub)}</span></div></div>${tog(kind, it.id, kind === 'item' ? it.available : it.active)}</div>`;
   const otherRow = (kind, it, label, sub) => { const k = kind + '|' + it.id, r = D.other[k], fs = LFIELDS[kind];
     return `<div class="lstedit"><div><div class="lphoto">${thumb(kind, it)}<div><b>${esc(label)}</b>${pr(it)}<span class="hint" style="display:block">${esc(sub)}</span></div></div>${photoActs(kind, it)}${tog(kind, it.id, r.active, k)}</div>${fs.map(f => `<div class="field"><label>${f[1]}</label><input type="number" min="0" step="any" data-dlp="${esc(k)}|${f[0]}" value="${esc(r[f[0]])}" placeholder="0"></div>`).join('')}${'<div></div>'.repeat(4 - fs.length)}<div></div></div>`; };
-  const cats = F ? F.categories : [];
+  const cats = D ? D.cats : (F ? F.categories : []);
   const itemRow = (d, i) => { const live = F.items.find(x => x.id === d.id);
     if (d.removed) return `<div class="mrow removed"><span class="lthumb">${ic('cup', 20)}</span><div><b>${esc(d.name || 'New item')}</b><span class="hint" style="display:block">Will be removed when you save</span></div><button class="btn ghost sm" data-mundo="${i}">Undo</button></div>`;
     return `<div class="mrow ${d.available ? '' : 'off'}" data-mi="${i}">${thumb('item', live)}
@@ -239,10 +239,18 @@ function vListings() {
       <div class="field fdisc"><label>Discount (%)</label><input type="number" min="0" max="90" step="any" data-m="${i}|promoPct" value="${esc(d.promoPct)}" placeholder="0"></div>
       ${tog('item', d.id, d.available, 'item|' + i)}
       <button class="xbtn" title="Remove item" aria-label="Remove ${esc(d.name)}" data-mdel="${i}">${ic('x')}</button></div>`; };
+  const catEditor = () => { const use = id => D.items.filter(x => !x.removed && x.catId === id).length;
+    return `<details class="catbox" ${MP.catOpen ? 'open' : ''}><summary>${ic('box', 16)} Categories <span class="hint">${D.cats.length} · tap to add, rename, reorder or remove</span></summary>
+      ${D.cats.map((c, i) => `<div class="catrow"><input data-c="${i}" value="${esc(c.name)}" placeholder="Category name" aria-label="Category name"><span class="hint">${use(c.id)} item${use(c.id) === 1 ? '' : 's'}</span>
+        <button class="btn ghost sm" data-cmv="${i}|-1" ${i ? '' : 'disabled'} aria-label="Move up">↑</button><button class="btn ghost sm" data-cmv="${i}|1" ${i < D.cats.length - 1 ? '' : 'disabled'} aria-label="Move down">↓</button>
+        <button class="xbtn" data-cdel="${i}" title="${use(c.id) ? 'Move its items to another category first' : 'Remove category'}" ${use(c.id) ? 'disabled' : ''}>${ic('x')}</button></div>`).join('') || '<p class="meta">No categories yet.</p>'}
+      <div class="catrow"><input id="cNew" placeholder="New category, e.g. Rice meals" maxlength="40"><button class="btn ghost sm" id="cAdd">${ic('plus', 14)} Add category</button></div>
+      <p class="hint">Categories show as tabs in the customer menu, in this order. A category can be removed once no items use it.</p></details>`; };
   const dirty = adm && ldDirty(), nItems = D ? D.items.filter(x => !x.removed).length : 0;
   $('#pbody').innerHTML = `<p class="meta" style="margin-bottom:12px">${adm ? 'Add, edit or remove menu items and update prices, discounts and availability, then tap <b>Save all changes</b> at the bottom. Changes show in the customer app after saving and apply to new orders only.' : 'Turn listings and menu items on or off. Changes show in the customer app right away. Prices are managed by your Merchant Admin.'}</p>
     ${F ? `<div class="acard"><h3>${esc(F.storeName)}</h3><div class="avrow"><div class="lphoto">${thumb('item', F)}<div><b>Accepting orders</b><span class="hint">Turn off to close the store (takes effect right away)</span></div></div>${tog('store', 'store', F.open)}</div>${adm ? `<div class="acts" style="margin-top:6px"><label class="btn ghost sm">${ic('upload', 14)} ${F.photo ? 'Change' : 'Add'} store logo / photo<input type="file" accept="image/*" hidden data-ph="store|store"></label></div>` : ''}</div>
       <div class="acard" id="menuCard"><h3>Menu items <span class="hint">${adm ? nItems : F.items.length} items</span></h3>
+      ${adm ? catEditor() : ''}
       ${adm ? (D.items.map(itemRow).join('') || '<p class="meta">No menu items yet. Add your first item below.</p>') + `<button class="btn ghost mt" id="mAdd">${ic('plus')} Add menu item</button>`
         : F.items.map(i => staffRow('item', i, i.name, peso(Pricing.off(i.price, Pricing.promo(i))) + (Pricing.promo(i) ? ' (was ' + peso(i.price) + ')' : ''))).join('') || '<p class="meta">No menu items yet.</p>'}</div>` : ''}
     ${stays.length ? `<div class="acard"><h3>Stays</h3>${stays.map(x => adm ? otherRow('stay', x, x.name, peso(x.rate) + ' / night') : staffRow('stay', x, x.name, peso(x.rate) + ' / night')).join('')}</div>` : ''}
@@ -263,17 +271,24 @@ function vListings() {
     document.querySelectorAll('[data-dlp]').forEach(x => x.oninput = () => { const v = x.dataset.dlp.split('|'); D.other[v[0] + '|' + v[1]][v[2]] = x.value === '' ? '' : +x.value; mark(); });
     document.querySelectorAll('[data-mdel]').forEach(x => x.onclick = () => { const i = +x.dataset.mdel; if (!D.items[i].id) D.items.splice(i, 1); else D.items[i].removed = true; vListings(); });
     document.querySelectorAll('[data-mundo]').forEach(x => x.onclick = () => { delete D.items[+x.dataset.mundo].removed; vListings(); });
+    const cb = document.querySelector('.catbox'); if (cb) cb.ontoggle = () => { MP.catOpen = cb.open; };
+    document.querySelectorAll('[data-c]').forEach(x => { x.oninput = () => { D.cats[+x.dataset.c].name = x.value; mark(); }; x.onchange = () => vListings(); });
+    document.querySelectorAll('[data-cmv]').forEach(x => x.onclick = () => { const [i, d] = x.dataset.cmv.split('|').map(Number), c = D.cats.splice(i, 1)[0]; D.cats.splice(i + d, 0, c); vListings(); });
+    document.querySelectorAll('[data-cdel]').forEach(x => x.onclick = () => { D.cats.splice(+x.dataset.cdel, 1); vListings(); });
+    const addCat = () => { const nm = $('#cNew').value.trim(); if (!nm) { $('#cNew').focus(); return; } if (D.cats.some(c => c.name.trim().toLowerCase() === nm.toLowerCase())) { toast('There is already a category named ' + nm); return; } D.cats.push({ id: 'new:' + Date.now().toString(36), name: nm }); MP.catOpen = true; vListings(); toast('Category added. Choose it on an item, then Save all changes.'); };
+    if ($('#cAdd')) { $('#cAdd').onclick = addCat; $('#cNew').onkeydown = e => { if (e.key === 'Enter') addCat(); }; }
     if ($('#mAdd')) $('#mAdd').onclick = () => { D.items.push({ id: '', name: '', desc: '', catId: (cats[0] || {}).id || '', price: '', promoPct: '', available: true }); vListings(); const r = document.querySelectorAll('.mrow'), last = r[r.length - 1]; if (last) { last.scrollIntoView({ block: 'center' }); last.querySelector('input').focus(); } };
     if ($('#ldDiscard')) $('#ldDiscard').onclick = () => { MP.ld = null; vListings(); toast('Changes discarded'); };
     if ($('#ldSave')) $('#ldSave').onclick = async () => {
       const base = listingDraft(), items = D.items.filter(x => !x.removed);
+      if (D.cats.some(c => !c.name.trim())) { $('#ldErr').textContent = 'Give each category a name.'; return; }
       const bad = items.findIndex(x => !String(x.name).trim() || !(+x.price > 0));
       if (bad >= 0) { $('#ldErr').textContent = (items[bad].name ? items[bad].name + ': enter a price.' : 'Enter a name and price for every item.'); const row = document.querySelector(`[data-mi="${D.items.indexOf(items[bad])}"]`); if (row) row.scrollIntoView({ block: 'center' }); return; }
       const removed = D.items.filter(x => x.removed && x.id).length;
       if (removed && !confirm('Remove ' + removed + ' menu item' + (removed > 1 ? 's' : '') + '? Customers will no longer see ' + (removed > 1 ? 'them' : 'it') + '.')) return;
       loading(true, 'Saving…');
       try {
-        if (F && JSON.stringify(D.items) !== JSON.stringify(base.items)) await api('mMenu', { token: MP.token, items: items.map(x => ({ id: x.id, name: x.name, desc: x.desc, catId: x.catId, price: x.price, promoPct: x.promoPct, available: x.available })) });
+        if (F && (JSON.stringify(D.items) !== JSON.stringify(base.items) || JSON.stringify(D.cats) !== JSON.stringify(base.cats))) await api('mMenu', { token: MP.token, categories: D.cats, items: items.map(x => ({ id: x.id, name: x.name, desc: x.desc, catId: x.catId, price: x.price, promoPct: x.promoPct, available: x.available })) });
         for (const k in D.other) {
           const [kind, x] = k.split('|'), now = D.other[k], was = base.other[k]; if (!was) continue;
           const fields = {}; LFIELDS[kind].forEach(f => { if (now[f[0]] !== was[f[0]]) fields[f[0]] = now[f[0]]; });
