@@ -233,7 +233,7 @@ function vListings() {
     if (d.removed) return `<div class="mrow removed"><span class="lthumb">${ic('cup', 20)}</span><div><b>${esc(d.name || 'New item')}</b><span class="hint" style="display:block">Will be removed when you save</span></div><button class="btn ghost sm" data-mundo="${i}">Undo</button></div>`;
     return `<div class="mrow ${d.available ? '' : 'off'}" data-mi="${i}">${thumb('item', live)}
       <div class="mmain"><input data-m="${i}|name" value="${esc(d.name)}" placeholder="Item name" aria-label="Item name"><input data-m="${i}|desc" value="${esc(d.desc)}" placeholder="Short description (optional)" aria-label="Description">
-        <select data-m="${i}|catId" aria-label="Category">${cats.map(c => `<option value="${esc(c.id)}" ${c.id === d.catId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
+        <select data-m="${i}|catId" aria-label="Category">${cats.map(c => `<option value="${esc(c.id)}" ${c.id === d.catId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}<option value="__new">+ New category…</option></select>
         ${live ? photoActs('item', live) : '<span class="hint">New · save first to add a photo and add-ons</span>'}</div>
       <div class="field fprice"><label>Price (P)</label><input type="number" min="0" step="any" data-m="${i}|price" value="${esc(d.price)}" placeholder="0"></div>
       <div class="field fdisc"><label>Discount (%)</label><input type="number" min="0" max="90" step="any" data-m="${i}|promoPct" value="${esc(d.promoPct)}" placeholder="0"></div>
@@ -249,9 +249,9 @@ function vListings() {
   const dirty = adm && ldDirty(), nItems = D ? D.items.filter(x => !x.removed).length : 0;
   $('#pbody').innerHTML = `<p class="meta" style="margin-bottom:12px">${adm ? 'Add, edit or remove menu items and update prices, discounts and availability, then tap <b>Save all changes</b> at the bottom. Changes show in the customer app after saving and apply to new orders only.' : 'Turn listings and menu items on or off. Changes show in the customer app right away. Prices are managed by your Merchant Admin.'}</p>
     ${F ? `<div class="acard"><h3>${esc(F.storeName)}</h3><div class="avrow"><div class="lphoto">${thumb('item', F)}<div><b>Accepting orders</b><span class="hint">Turn off to close the store (takes effect right away)</span></div></div>${tog('store', 'store', F.open)}</div>${adm ? `<div class="acts" style="margin-top:6px"><label class="btn ghost sm">${ic('upload', 14)} ${F.photo ? 'Change' : 'Add'} store logo / photo<input type="file" accept="image/*" hidden data-ph="store|store"></label></div>` : ''}</div>
-      <div class="acard" id="menuCard"><h3>Menu items <span class="hint">${adm ? nItems : F.items.length} items</span></h3>
+      <div class="acard" id="menuCard"><h3>Menu items <span class="hint">${adm ? nItems + ' items · ' + D.cats.length + ' categories' : F.items.length + ' items'}</span>${adm ? `<button class="btn ghost sm" data-newcat style="margin-left:auto">${ic('plus', 14)} Add category</button>` : ''}</h3>
       ${adm ? catEditor() : ''}
-      ${adm ? (D.items.map(itemRow).join('') || '<p class="meta">No menu items yet. Add your first item below.</p>') + `<button class="btn ghost mt" id="mAdd">${ic('plus')} Add menu item</button>`
+      ${adm ? (D.items.map(itemRow).join('') || '<p class="meta">No menu items yet. Add your first item below.</p>') + `<div class="rowbtns mt"><button class="btn ghost" id="mAdd">${ic('plus')} Add menu item</button><button class="btn ghost" data-newcat>${ic('plus')} Add category</button></div>`
         : F.items.map(i => staffRow('item', i, i.name, peso(Pricing.off(i.price, Pricing.promo(i))) + (Pricing.promo(i) ? ' (was ' + peso(i.price) + ')' : ''))).join('') || '<p class="meta">No menu items yet.</p>'}</div>` : ''}
     ${stays.length ? `<div class="acard"><h3>Stays</h3>${stays.map(x => adm ? otherRow('stay', x, x.name, peso(x.rate) + ' / night') : staffRow('stay', x, x.name, peso(x.rate) + ' / night')).join('')}</div>` : ''}
     ${units.length ? `<div class="acard"><h3>Rental units</h3>${units.map(x => adm ? otherRow('unit', x, x.name, peso(x.dailyRate) + ' / day · ' + peso(x.hourlyRate) + ' / extra hour') : staffRow('unit', x, x.name, peso(x.dailyRate) + ' / day')).join('')}</div>` : ''}
@@ -267,7 +267,7 @@ function vListings() {
   });
   if (adm) {
     document.querySelectorAll('[data-dav]').forEach(cb => cb.onchange = () => { const v = cb.dataset.dav, on = cb.checked; if (v.startsWith('item|')) { D.items[+v.split('|')[1]].available = on; cb.closest('.mrow').classList.toggle('off', !on); } else D.other[v].active = on; cb.nextElementSibling.textContent = on ? 'Available' : 'Off'; mark(); });
-    document.querySelectorAll('[data-m]').forEach(x => x.oninput = x.onchange = () => { const [i, k] = x.dataset.m.split('|'); D.items[+i][k] = (k === 'price' || k === 'promoPct') && x.value !== '' ? +x.value : x.value; mark(); });
+    document.querySelectorAll('[data-m]').forEach(x => x.oninput = x.onchange = () => { const [i, k] = x.dataset.m.split('|'); if (k === 'catId' && x.value === '__new') { x.value = D.items[+i].catId; newCategory(id => { D.items[+i].catId = id; }); return; } D.items[+i][k] = (k === 'price' || k === 'promoPct') && x.value !== '' ? +x.value : x.value; mark(); });
     document.querySelectorAll('[data-dlp]').forEach(x => x.oninput = () => { const v = x.dataset.dlp.split('|'); D.other[v[0] + '|' + v[1]][v[2]] = x.value === '' ? '' : +x.value; mark(); });
     document.querySelectorAll('[data-mdel]').forEach(x => x.onclick = () => { const i = +x.dataset.mdel; if (!D.items[i].id) D.items.splice(i, 1); else D.items[i].removed = true; vListings(); });
     document.querySelectorAll('[data-mundo]').forEach(x => x.onclick = () => { delete D.items[+x.dataset.mundo].removed; vListings(); });
@@ -276,6 +276,16 @@ function vListings() {
     document.querySelectorAll('[data-cmv]').forEach(x => x.onclick = () => { const [i, d] = x.dataset.cmv.split('|').map(Number), c = D.cats.splice(i, 1)[0]; D.cats.splice(i + d, 0, c); vListings(); });
     document.querySelectorAll('[data-cdel]').forEach(x => x.onclick = () => { D.cats.splice(+x.dataset.cdel, 1); vListings(); });
     const addCat = () => { const nm = $('#cNew').value.trim(); if (!nm) { $('#cNew').focus(); return; } if (D.cats.some(c => c.name.trim().toLowerCase() === nm.toLowerCase())) { toast('There is already a category named ' + nm); return; } D.cats.push({ id: 'new:' + Date.now().toString(36), name: nm }); MP.catOpen = true; vListings(); toast('Category added. Choose it on an item, then Save all changes.'); };
+    document.querySelectorAll('[data-newcat]').forEach(x => x.onclick = () => newCategory());
+    function newCategory(then) {
+      openSheet(`<div class="sbody"><h2>Add a menu category</h2><p class="meta" style="margin-top:4px">Categories show as tabs in the customer menu, e.g. Rice meals, Desserts, Drinks.</p>
+        <div class="field mt"><label>Category name</label><input id="ncName" maxlength="40" placeholder="e.g. Rice meals"></div><div class="err" id="ncErr"></div>
+        <div class="row2 mt"><button class="btn ghost" onclick="closeSheet()">Cancel</button><button class="btn" id="ncOk">Add category</button></div></div>`);
+      const go = () => { const nm = $('#ncName').value.trim(); if (!nm) { $('#ncErr').textContent = 'Enter a category name.'; return; }
+        if (D.cats.some(c => c.name.trim().toLowerCase() === nm.toLowerCase())) { $('#ncErr').textContent = 'There is already a category named ' + nm + '.'; return; }
+        const id = 'new:' + Date.now().toString(36); D.cats.push({ id, name: nm }); if (then) then(id); closeSheet(); vListings(); toast(then ? 'Category added and chosen. Tap Save all changes to keep it.' : 'Category added. Choose it on an item, then tap Save all changes.'); };
+      $('#ncOk').onclick = go; $('#ncName').onkeydown = e => { if (e.key === 'Enter') go(); }; setTimeout(() => $('#ncName').focus(), 50);
+    }
     if ($('#cAdd')) { $('#cAdd').onclick = addCat; $('#cNew').onkeydown = e => { if (e.key === 'Enter') addCat(); }; }
     if ($('#mAdd')) $('#mAdd').onclick = () => { D.items.push({ id: '', name: '', desc: '', catId: (cats[0] || {}).id || '', price: '', promoPct: '', available: true }); vListings(); const r = document.querySelectorAll('.mrow'), last = r[r.length - 1]; if (last) { last.scrollIntoView({ block: 'center' }); last.querySelector('input').focus(); } };
     if ($('#ldDiscard')) $('#ldDiscard').onclick = () => { MP.ld = null; vListings(); toast('Changes discarded'); };
