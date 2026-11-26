@@ -6,7 +6,7 @@
 <title>Tara Romblon — Super Admin</title>
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#13305a">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%2313305a'/%3E%3Ccircle cx='21' cy='12' r='5' fill='%23f6a457'/%3E%3C/svg%3E">
+<link rel="icon" href="/api/icon"><link rel="apple-touch-icon" href="/api/icon">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
 <style>
@@ -540,6 +540,17 @@ input,select,textarea,button{font-family:inherit}
 .catrow .hint{min-width:56px}.catrow .xbtn:disabled{opacity:.35;cursor:not-allowed}
 #menuCard h3 .btn{white-space:nowrap;flex:none}#menuCard h3 .hint{flex:1}
 .delsum{padding:10px 12px;border-radius:10px;background:#fbfaf7;border:1px solid var(--marble-2);margin-bottom:8px;font-size:14px}
+.iconset{display:flex;gap:14px;align-items:flex-start}.iconpv{flex:none;width:88px;height:88px;border-radius:20px;overflow:hidden;background:var(--marble-2);display:grid;place-items:center;font-size:12px;color:var(--mute);box-shadow:0 2px 8px rgba(0,0,0,.12)}.iconpv img{width:100%;height:100%;object-fit:cover}
+.iconset input[type=color]{width:34px;height:28px;padding:0;border:1px solid var(--line);border-radius:6px;vertical-align:middle;margin-left:4px}
+/* install pop-up */
+.instov{position:fixed;inset:0;z-index:90;background:rgba(10,20,40,.45);display:flex;align-items:flex-end;justify-content:center;padding:16px}
+.instbox{background:#fff;border-radius:20px;max-width:420px;width:100%;padding:22px 20px 18px;box-shadow:0 12px 40px rgba(0,0,0,.25);animation:instup .25s ease-out}
+@keyframes instup{from{transform:translateY(30px);opacity:0}to{transform:none;opacity:1}}
+@media(min-width:720px){.instov{align-items:center}}
+.instbox .ihead{display:flex;gap:14px;align-items:center}.instbox .ihead img{width:60px;height:60px;border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.instbox h3{margin:0;font-size:20px}.instbox ul{margin:12px 0;padding-left:18px;color:var(--ink,#223);font-size:14px;line-height:1.5}
+.instbox .ihow{background:#fbfaf7;border:1px solid var(--marble-2);border-radius:12px;padding:10px 12px;font-size:14px;margin:10px 0}
+.instbox .row2{display:flex;gap:10px}.instbox .row2 .btn{flex:1}
 
 </style>
 </head>
@@ -2013,9 +2024,9 @@ const DEMO = !CONFIG.apiUrl;
 let _demoQ = Promise.resolve();
 async function api(action, data) {
   if (window.API_BIZ && data && data.token && data.biz == null) data = Object.assign({}, data, { biz: window.API_BIZ }); /* Merchant app: the business being worked on */
-  if (DEMO) { const run = async () => { DemoStore.load(); try { const r = await demoCore().handle(action, JSON.parse(JSON.stringify(data || {}))); return { ok: true, ...JSON.parse(JSON.stringify(r)) }; } finally { DemoStore.save(); } }; const p = _demoQ.then(run, run); _demoQ = p.catch(() => {}); return p; }
+  if (DEMO) { const run = async () => { DemoStore.load(); try { const r = await demoCore().handle(action, JSON.parse(JSON.stringify(data || {}))); return { ok: true, ...JSON.parse(JSON.stringify(r)) }; } finally { DemoStore.save(); } }; const p = _demoQ.then(run, run); _demoQ = p.catch(() => {}); if (action === 'getCatalog') p.then(j => j && j.catalog && setSiteIcon(j.catalog.settings && j.catalog.settings.siteIcon)).catch(() => {}); return p; }
   const r = await fetch(CONFIG.apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...(data || {}) }) });
-  let j; try { j = await r.json(); if (action === 'getCatalog' && j && j.maps) window.MAPCFG = j.maps; if (action === 'getCatalog' && j && j.google) window.GOOGLE_CLIENT = j.google; } catch (e) { throw new Error(r.status === 413 ? 'That photo is too large. Try a smaller one.' : 'Could not reach the server. Check your connection and try again.'); }
+  let j; try { j = await r.json(); if (action === 'getCatalog' && j && j.maps) window.MAPCFG = j.maps; if (action === 'getCatalog' && j && j.google) window.GOOGLE_CLIENT = j.google; if (action === 'getCatalog' && j && j.catalog) setSiteIcon(j.catalog.settings && j.catalog.settings.siteIcon); } catch (e) { throw new Error(r.status === 413 ? 'That photo is too large. Try a smaller one.' : 'Could not reach the server. Check your connection and try again.'); }
   if (!j.ok) throw new Error(j.error || 'Something went wrong.');
   return j;
 }
@@ -2105,6 +2116,14 @@ function demoSeed(d) {
 }
 
 /* ================= SHEETS, CSV & SHARED UI ================= */
+/* Website icon from Super Admin → Settings (browser tab + home-screen icon) */
+function setSiteIcon(url) { if (!url) return; ['icon', 'apple-touch-icon'].forEach(r => { let l = document.querySelector(`link[rel="${r}"]`); if (!l) { l = document.createElement('link'); l.rel = r; document.head.appendChild(l); } l.href = url; }); }
+/* Square PNG for app icons: the picture is fitted inside a square (nothing cut off) on the chosen background */
+function squareIcon(file, size, bg) {
+  return new Promise((ok, no) => { const r = new FileReader(); r.onerror = () => no(new Error('Could not read that file.')); r.onload = () => { const im = new Image(); im.onerror = () => no(new Error('Please choose a PNG or JPG image.')); im.onload = () => {
+    const c = document.createElement('canvas'); c.width = c.height = size; const x = c.getContext('2d'); if (bg) { x.fillStyle = bg; x.fillRect(0, 0, size, size); }
+    const k = Math.min(size / im.width, size / im.height), w = im.width * k, h = im.height * k; x.drawImage(im, (size - w) / 2, (size - h) / 2, w, h); ok(c.toDataURL('image/png')); }; im.src = r.result; }; r.readAsDataURL(file); });
+}
 function openSheet(html) { $('#sheet').innerHTML = `<button class="sx" onclick="closeSheet()" aria-label="Close">${ic('x')}</button>` + html; $('#ov').classList.add('show'); $('#sheet').scrollTop = 0; }
 function closeSheet() { $('#ov').classList.remove('show'); if (window._map) { try { window._map.remove(); } catch (e) { } window._map = null; } }
 document.addEventListener('click', e => { if (e.target.id === 'ov') closeSheet(); });
@@ -2938,7 +2957,12 @@ function delExample() {
     <div class="tscroll"><table class="btable"><tr><th>Distance</th><th>Customer pays</th><th>Store pays</th><th>Rider earns</th></tr>${kms.map(k => { const d = Pricing.deliverySplit(c, F, k); return d ? `<tr><td>${k} km</td><td>${d.fee ? peso(d.fee) : 'Free'}</td><td>${peso(d.storeShare)}</td><td><b>${peso(d.riderFee)}</b></td></tr>` : ''; }).join('')}</table></div>`;
 }
 function vSettings() {
-  setTimeout(() => { delExample(); document.querySelectorAll('[data-b^="settings.delivery."]').forEach(i => i.addEventListener('input', () => setTimeout(delExample, 0))); }, 0);
+  setTimeout(() => {
+    const f = $('#iconFile'); if (f) f.onchange = async () => { const file = f.files[0]; if (!file) return; loading(true, 'Uploading icon…');
+      try { const bg = $('#iconBg').value; const dataUrl = await squareIcon(file, 512, bg); const r = await api('uploadPhoto', { token: ADM.token, dataUrl, name: 'site-icon' }); ADM.draft.settings.siteIcon = r.url; ADM.draft.settings.siteIconBg = bg; admDirty(); loading(false); toast('Icon uploaded. Tap Save to apply.'); vSettings(); }
+      catch (e) { loading(false); toast(e.message); } };
+    if ($('#iconDel')) $('#iconDel').onclick = () => { ADM.draft.settings.siteIcon = ''; admDirty(); vSettings(); };
+    delExample(); document.querySelectorAll('[data-b^="settings.delivery."]').forEach(i => i.addEventListener('input', () => setTimeout(delExample, 0))); }, 0);
   const st = ADM.draft.settings = Object.assign({}, DEFAULT_SETTINGS, ADM.draft.settings || {}); st.email = Object.assign({}, DEFAULT_SETTINGS.email, st.email || {}); st.delivery = Pricing.deliveryRule({ settings: st });
   const three = (path, v) => `<div class="seg">${[['required', 'Required'], ['optional', 'Optional'], ['off', 'Off']].map(o => `<button type="button" class="${v === o[0] ? 'on' : ''}" data-set="${path}" data-val="${o[0]}">${o[1]}</button>`).join('')}</div>`;
   P(`<div class="acard" id="delCard"><h3><span class="hl">${ic('bike')} Delivery fee</span></h3>
@@ -2946,6 +2970,12 @@ function vSettings() {
       <div class="agrid">${aIn('settings.delivery.baseFee', 'Base delivery fee (₱) — paid by the store, free for the customer', 'num')}${aIn('settings.delivery.freeKm', 'Base fee covers the first (km)', 'num')}${aIn('settings.delivery.perKm', 'Fee per succeeding km (₱, each started km)', 'num')}${aIn('settings.delivery.customerPct', 'Customer pays (% of the succeeding-km fee; the store pays the rest)', 'num')}${aIn('settings.delivery.minRider', 'Minimum rider earning per delivery (₱; the store tops up)', 'num')}${aIn('settings.delivery.maxKm', 'Longest delivery (km), unless a store sets its own', 'num')}</div>
       <div id="delEx" class="mt"></div>
       <p class="hint">Empty fields use the defaults: ₱20 base for the first 1.5 km · ₱10 per succeeding km · customer 70% · ₱20 minimum · 10 km. Tap Save to apply; new orders use the new fees.</p></div>
+    <div class="acard" id="iconCard"><h3><span class="hl">${ic('upload')} Website icon & app</span></h3>
+      <div class="iconset"><div class="iconpv">${st.siteIcon ? `<img src="${esc(st.siteIcon)}" alt="Website icon">` : `<img src="${DEMO ? '' : '/img/icon-192.png'}" alt="Default icon" onerror="this.replaceWith(document.createTextNode('Default'))">`}</div>
+        <div><p class="hint" style="margin:0 0 8px">Shown on the browser tab, bookmarks and the phone home screen when customers install the Tara Romblon app. Use a square logo (PNG or JPG, at least 512×512). Non-square pictures are fitted inside a square on the background colour below.</p>
+          <div class="rowbtns"><label class="btn ghost sm">${ic('upload', 14)} ${st.siteIcon ? 'Change icon' : 'Upload icon'}<input type="file" accept="image/png,image/jpeg,image/webp" hidden id="iconFile"></label>${st.siteIcon ? '<button class="btn ghost sm" id="iconDel">Use default icon</button>' : ''}
+          <label class="hint">Background <input type="color" id="iconBg" value="${esc(st.siteIconBg || '#13305a')}"></label></div></div></div>
+      <p class="hint">Tap Save to apply. Phones that already installed the app may keep the old icon until it is reinstalled.</p></div>
     <div class="acard"><h3><span class="hl">${ic('home')} Open to customers</span></h3>${aIn('settings.staysLive', 'Stays are open for booking (off = shown as Coming soon)', 'bool')}${aIn('settings.toursLive', 'Things to do (tours & services) are open for booking (off = shown as Coming soon)', 'bool')}<p class="hint">Food and Rentals are always open. Turn these on when the listings are ready, then Save.</p></div>
     <div class="acard"><h3><span class="hl">${ic('id')} Customer verification</span></h3>${aIn('settings.requireIdVerification', 'Require an approved ID before a customer\'s first stay or rental booking', 'bool')}<p class="hint">Customers upload an ID once; Super Admins approve it in Customers.</p></div>
     <div class="acard"><h3><span class="hl">${ic('upload')} Photo uploads at checkout</span></h3><div class="field mt"><label>Valid ID photo (stays & rentals)</label></div>${three('settings.idUploadAtCheckout', st.idUploadAtCheckout)}

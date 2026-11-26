@@ -6,9 +6,9 @@ const DEMO = !CONFIG.apiUrl;
 let _demoQ = Promise.resolve();
 async function api(action, data) {
   if (window.API_BIZ && data && data.token && data.biz == null) data = Object.assign({}, data, { biz: window.API_BIZ }); /* Merchant app: the business being worked on */
-  if (DEMO) { const run = async () => { DemoStore.load(); try { const r = await demoCore().handle(action, JSON.parse(JSON.stringify(data || {}))); return { ok: true, ...JSON.parse(JSON.stringify(r)) }; } finally { DemoStore.save(); } }; const p = _demoQ.then(run, run); _demoQ = p.catch(() => {}); return p; }
+  if (DEMO) { const run = async () => { DemoStore.load(); try { const r = await demoCore().handle(action, JSON.parse(JSON.stringify(data || {}))); return { ok: true, ...JSON.parse(JSON.stringify(r)) }; } finally { DemoStore.save(); } }; const p = _demoQ.then(run, run); _demoQ = p.catch(() => {}); if (action === 'getCatalog') p.then(j => j && j.catalog && setSiteIcon(j.catalog.settings && j.catalog.settings.siteIcon)).catch(() => {}); return p; }
   const r = await fetch(CONFIG.apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...(data || {}) }) });
-  let j; try { j = await r.json(); if (action === 'getCatalog' && j && j.maps) window.MAPCFG = j.maps; if (action === 'getCatalog' && j && j.google) window.GOOGLE_CLIENT = j.google; } catch (e) { throw new Error(r.status === 413 ? 'That photo is too large. Try a smaller one.' : 'Could not reach the server. Check your connection and try again.'); }
+  let j; try { j = await r.json(); if (action === 'getCatalog' && j && j.maps) window.MAPCFG = j.maps; if (action === 'getCatalog' && j && j.google) window.GOOGLE_CLIENT = j.google; if (action === 'getCatalog' && j && j.catalog) setSiteIcon(j.catalog.settings && j.catalog.settings.siteIcon); } catch (e) { throw new Error(r.status === 413 ? 'That photo is too large. Try a smaller one.' : 'Could not reach the server. Check your connection and try again.'); }
   if (!j.ok) throw new Error(j.error || 'Something went wrong.');
   return j;
 }
@@ -98,6 +98,14 @@ function demoSeed(d) {
 }
 
 /* ================= SHEETS, CSV & SHARED UI ================= */
+/* Website icon from Super Admin → Settings (browser tab + home-screen icon) */
+function setSiteIcon(url) { if (!url) return; ['icon', 'apple-touch-icon'].forEach(r => { let l = document.querySelector(`link[rel="${r}"]`); if (!l) { l = document.createElement('link'); l.rel = r; document.head.appendChild(l); } l.href = url; }); }
+/* Square PNG for app icons: the picture is fitted inside a square (nothing cut off) on the chosen background */
+function squareIcon(file, size, bg) {
+  return new Promise((ok, no) => { const r = new FileReader(); r.onerror = () => no(new Error('Could not read that file.')); r.onload = () => { const im = new Image(); im.onerror = () => no(new Error('Please choose a PNG or JPG image.')); im.onload = () => {
+    const c = document.createElement('canvas'); c.width = c.height = size; const x = c.getContext('2d'); if (bg) { x.fillStyle = bg; x.fillRect(0, 0, size, size); }
+    const k = Math.min(size / im.width, size / im.height), w = im.width * k, h = im.height * k; x.drawImage(im, (size - w) / 2, (size - h) / 2, w, h); ok(c.toDataURL('image/png')); }; im.src = r.result; }; r.readAsDataURL(file); });
+}
 function openSheet(html) { $('#sheet').innerHTML = `<button class="sx" onclick="closeSheet()" aria-label="Close">${ic('x')}</button>` + html; $('#ov').classList.add('show'); $('#sheet').scrollTop = 0; }
 function closeSheet() { $('#ov').classList.remove('show'); if (window._map) { try { window._map.remove(); } catch (e) { } window._map = null; } }
 document.addEventListener('click', e => { if (e.target.id === 'ov') closeSheet(); });

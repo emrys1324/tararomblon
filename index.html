@@ -6,7 +6,7 @@
 <title>Tara Romblon — Stays, Scooter Rentals & Food Delivery</title>
 <meta name="description" content="Book Hiraya Beach House and Casa Dos, rent a Baybayin scooter, and order from Pahuway Café in San Agustin, Romblon.">
 <meta name="theme-color" content="#13305a">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%231d3461'/%3E%3Ccircle cx='21' cy='12' r='5' fill='%23f29e4c'/%3E%3C/svg%3E">
+<link rel="icon" href="/api/icon"><link rel="apple-touch-icon" href="/api/icon"><link rel="manifest" href="/manifest.webmanifest"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Tara Romblon">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
 <style>
@@ -540,6 +540,17 @@ input,select,textarea,button{font-family:inherit}
 .catrow .hint{min-width:56px}.catrow .xbtn:disabled{opacity:.35;cursor:not-allowed}
 #menuCard h3 .btn{white-space:nowrap;flex:none}#menuCard h3 .hint{flex:1}
 .delsum{padding:10px 12px;border-radius:10px;background:#fbfaf7;border:1px solid var(--marble-2);margin-bottom:8px;font-size:14px}
+.iconset{display:flex;gap:14px;align-items:flex-start}.iconpv{flex:none;width:88px;height:88px;border-radius:20px;overflow:hidden;background:var(--marble-2);display:grid;place-items:center;font-size:12px;color:var(--mute);box-shadow:0 2px 8px rgba(0,0,0,.12)}.iconpv img{width:100%;height:100%;object-fit:cover}
+.iconset input[type=color]{width:34px;height:28px;padding:0;border:1px solid var(--line);border-radius:6px;vertical-align:middle;margin-left:4px}
+/* install pop-up */
+.instov{position:fixed;inset:0;z-index:90;background:rgba(10,20,40,.45);display:flex;align-items:flex-end;justify-content:center;padding:16px}
+.instbox{background:#fff;border-radius:20px;max-width:420px;width:100%;padding:22px 20px 18px;box-shadow:0 12px 40px rgba(0,0,0,.25);animation:instup .25s ease-out}
+@keyframes instup{from{transform:translateY(30px);opacity:0}to{transform:none;opacity:1}}
+@media(min-width:720px){.instov{align-items:center}}
+.instbox .ihead{display:flex;gap:14px;align-items:center}.instbox .ihead img{width:60px;height:60px;border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.instbox h3{margin:0;font-size:20px}.instbox ul{margin:12px 0;padding-left:18px;color:var(--ink,#223);font-size:14px;line-height:1.5}
+.instbox .ihow{background:#fbfaf7;border:1px solid var(--marble-2);border-radius:12px;padding:10px 12px;font-size:14px;margin:10px 0}
+.instbox .row2{display:flex;gap:10px}.instbox .row2 .btn{flex:1}
 
 </style>
 </head>
@@ -2130,9 +2141,9 @@ const DEMO = !CONFIG.apiUrl;
 let _demoQ = Promise.resolve();
 async function api(action, data) {
   if (window.API_BIZ && data && data.token && data.biz == null) data = Object.assign({}, data, { biz: window.API_BIZ }); /* Merchant app: the business being worked on */
-  if (DEMO) { const run = async () => { DemoStore.load(); try { const r = await demoCore().handle(action, JSON.parse(JSON.stringify(data || {}))); return { ok: true, ...JSON.parse(JSON.stringify(r)) }; } finally { DemoStore.save(); } }; const p = _demoQ.then(run, run); _demoQ = p.catch(() => {}); return p; }
+  if (DEMO) { const run = async () => { DemoStore.load(); try { const r = await demoCore().handle(action, JSON.parse(JSON.stringify(data || {}))); return { ok: true, ...JSON.parse(JSON.stringify(r)) }; } finally { DemoStore.save(); } }; const p = _demoQ.then(run, run); _demoQ = p.catch(() => {}); if (action === 'getCatalog') p.then(j => j && j.catalog && setSiteIcon(j.catalog.settings && j.catalog.settings.siteIcon)).catch(() => {}); return p; }
   const r = await fetch(CONFIG.apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...(data || {}) }) });
-  let j; try { j = await r.json(); if (action === 'getCatalog' && j && j.maps) window.MAPCFG = j.maps; if (action === 'getCatalog' && j && j.google) window.GOOGLE_CLIENT = j.google; } catch (e) { throw new Error(r.status === 413 ? 'That photo is too large. Try a smaller one.' : 'Could not reach the server. Check your connection and try again.'); }
+  let j; try { j = await r.json(); if (action === 'getCatalog' && j && j.maps) window.MAPCFG = j.maps; if (action === 'getCatalog' && j && j.google) window.GOOGLE_CLIENT = j.google; if (action === 'getCatalog' && j && j.catalog) setSiteIcon(j.catalog.settings && j.catalog.settings.siteIcon); } catch (e) { throw new Error(r.status === 413 ? 'That photo is too large. Try a smaller one.' : 'Could not reach the server. Check your connection and try again.'); }
   if (!j.ok) throw new Error(j.error || 'Something went wrong.');
   return j;
 }
@@ -2222,6 +2233,14 @@ function demoSeed(d) {
 }
 
 /* ================= SHEETS, CSV & SHARED UI ================= */
+/* Website icon from Super Admin → Settings (browser tab + home-screen icon) */
+function setSiteIcon(url) { if (!url) return; ['icon', 'apple-touch-icon'].forEach(r => { let l = document.querySelector(`link[rel="${r}"]`); if (!l) { l = document.createElement('link'); l.rel = r; document.head.appendChild(l); } l.href = url; }); }
+/* Square PNG for app icons: the picture is fitted inside a square (nothing cut off) on the chosen background */
+function squareIcon(file, size, bg) {
+  return new Promise((ok, no) => { const r = new FileReader(); r.onerror = () => no(new Error('Could not read that file.')); r.onload = () => { const im = new Image(); im.onerror = () => no(new Error('Please choose a PNG or JPG image.')); im.onload = () => {
+    const c = document.createElement('canvas'); c.width = c.height = size; const x = c.getContext('2d'); if (bg) { x.fillStyle = bg; x.fillRect(0, 0, size, size); }
+    const k = Math.min(size / im.width, size / im.height), w = im.width * k, h = im.height * k; x.drawImage(im, (size - w) / 2, (size - h) / 2, w, h); ok(c.toDataURL('image/png')); }; im.src = r.result; }; r.readAsDataURL(file); });
+}
 function openSheet(html) { $('#sheet').innerHTML = `<button class="sx" onclick="closeSheet()" aria-label="Close">${ic('x')}</button>` + html; $('#ov').classList.add('show'); $('#sheet').scrollTop = 0; }
 function closeSheet() { $('#ov').classList.remove('show'); if (window._map) { try { window._map.remove(); } catch (e) { } window._map = null; } }
 document.addEventListener('click', e => { if (e.target.id === 'ov') closeSheet(); });
@@ -3443,14 +3462,45 @@ function goHome() { closeSheet(); S.store = null; S.cat = 'all'; go('home'); ren
 document.addEventListener('click', e => { const b = e.target.closest('[data-go]'); if (b) { e.preventDefault(); closeSheet(); if (b.dataset.go === 'food' || b.dataset.go === 'home') { S.store = null; S.cat = 'all'; } go(b.dataset.go); } });
 window.addEventListener('hashchange', () => { const v = location.hash.slice(1); if (v === 'food' || v === 'home') S.store = null; go(v, false); });
 
+/* ===== Install the app: pop-up on every visit to the home page (not when already opened as the installed app) ===== */
+let INSTALL_EVT = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); INSTALL_EVT = e; const b = $('#instGo'); if (b) installButtons(); });
+window.addEventListener('appinstalled', () => { INSTALL_EVT = null; closeInstall(); toast('Tara Romblon app installed. Find it on your home screen.'); });
+const isStandalone = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true || /[?&]source=app\b/.test(location.search);
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const inAppBrowser = () => /FBAN|FBAV|FB_IAB|Instagram|Messenger|Line\/|TikTok/i.test(navigator.userAgent);
+function installIcon() { const s = (CAT.settings || {}).siteIcon; return s || (DEMO ? '' : '/img/icon-192.png'); }
+function installButtons() {
+  const how = $('#instHow'), go = $('#instGo'); if (!how || !go) return;
+  if (INSTALL_EVT) { how.style.display = 'none'; go.textContent = 'Install app'; go.onclick = async () => { const e = INSTALL_EVT; INSTALL_EVT = null; e.prompt(); try { const r = await e.userChoice; if (r && r.outcome === 'accepted') closeInstall(); } catch (x) { } }; return; }
+  how.style.display = '';
+  how.innerHTML = inAppBrowser() ? `Open this page in <b>Chrome</b> or <b>Safari</b> first (tap ⋯ then <b>Open in browser</b>), then add it to your home screen.`
+    : isIOS() ? `Tap the <b>Share</b> button ${ic('upload', 14)} at the bottom of Safari, then choose <b>Add to Home Screen</b>.`
+    : `Open your browser menu <b>⋮</b> and tap <b>Install app</b> or <b>Add to Home screen</b>.`;
+  go.textContent = 'Got it'; go.onclick = closeInstall;
+}
+function closeInstall() { const o = $('#instOv'); if (o) o.remove(); }
+function showInstall() {
+  if (isStandalone() || $('#instOv') || currentView !== 'home') return;
+  if ($('#ov') && $('#ov').classList.contains('show')) { setTimeout(showInstall, 2000); return; } /* wait until other pop-ups are closed */
+  const icon = installIcon(), d = document.createElement('div'); d.id = 'instOv'; d.className = 'instov'; d.setAttribute('role', 'dialog'); d.setAttribute('aria-modal', 'true'); d.setAttribute('aria-labelledby', 'instT');
+  d.innerHTML = `<div class="instbox"><div class="ihead">${icon ? `<img src="${esc(icon)}" alt="">` : ''}<div><h3 id="instT">Install the Tara Romblon app</h3><span class="hint">Free · no app store needed</span></div></div>
+    <ul><li>Order food, rent scooters and book in one tap from your home screen</li><li>Faster to open, works like a regular app</li><li>Get updates on your orders and bookings</li></ul>
+    <div class="ihow" id="instHow"></div><div class="row2"><button class="btn ghost" id="instNo">Not now</button><button class="btn" id="instGo">Install app</button></div></div>`;
+  document.body.appendChild(d); installButtons();
+  $('#instNo').onclick = closeInstall; d.addEventListener('click', e => { if (e.target === d) closeInstall(); });
+}
+
 (async function init() {
   if (DEMO) document.body.classList.add('demo');
+  if (!DEMO && 'serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
   setupSearch(); renderAll();
   window.catalogReady = loadCatalog(); /* settings from the server (incl. Google sign-in) */
   go(location.hash.slice(1) || 'home', false);
   await window.catalogReady; renderAll(); if (currentView === 'cart') renderCart();
   startCustomerNotif();
   checkReturnFromPayment();
+  setTimeout(showInstall, 1500);
 })();
 
 </script>

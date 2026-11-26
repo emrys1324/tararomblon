@@ -35,6 +35,12 @@ source/                  editable source + build.py + tests
 
 There are no npm packages to install. The functions use Node's built-in `fetch` and `crypto`.
 
+## New: website icon + "Install the app" pop-up
+
+- **Super Admin → Settings → Website icon & app**: upload a square logo (PNG/JPG, 512×512 or bigger). It's used on the browser tab, bookmarks and the phone home screen. Non-square pictures are fitted on the background colour you pick. "Use default icon" goes back to the built-in icon. Tap Save to apply.
+- The site can now be installed as an app (`/manifest.webmanifest`, `/sw.js`, icon at `/api/icon`).
+- Every time a customer opens the home page, a pop-up invites them to install the app: an **Install app** button on Android/desktop Chrome and Edge, and step-by-step instructions on iPhone (Share → Add to Home Screen) and in Facebook/Messenger browsers. It isn't shown inside the installed app or while another pop-up is open.
+
 ## New: edit the whole menu, then Save once (Merchant app → Listings & prices)
 
 - **Add menu item** adds a row: name, short description, category, price, discount and Available.

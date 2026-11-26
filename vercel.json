@@ -1,18 +1,69 @@
 {
   "cleanUrls": true,
   "functions": {
-    "api/index.js": { "maxDuration": 30 },
-    "api/hitpay-webhook.js": { "maxDuration": 30 },
-    "api/cron.js": { "maxDuration": 60 }
+    "api/index.js": {
+      "maxDuration": 30
+    },
+    "api/hitpay-webhook.js": {
+      "maxDuration": 30
+    },
+    "api/cron.js": {
+      "maxDuration": 60
+    },
+    "api/manifest.js": {
+      "maxDuration": 10
+    },
+    "api/icon.js": {
+      "maxDuration": 10
+    }
   },
   "crons": [
-    { "path": "/api/cron", "schedule": "0 18 * * *" }
+    {
+      "path": "/api/cron",
+      "schedule": "0 18 * * *"
+    }
   ],
   "headers": [
-    { "source": "/api/(.*)", "headers": [{ "key": "Cache-Control", "value": "no-store" }] },
-    { "source": "/(.*)", "headers": [
-      { "key": "X-Content-Type-Options", "value": "nosniff" },
-      { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
-    ] }
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/sw.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/manifest.webmanifest",
+      "destination": "/api/manifest"
+    },
+    {
+      "source": "/favicon.ico",
+      "destination": "/api/icon"
+    }
   ]
 }

@@ -420,7 +420,12 @@ function delExample() {
     <div class="tscroll"><table class="btable"><tr><th>Distance</th><th>Customer pays</th><th>Store pays</th><th>Rider earns</th></tr>${kms.map(k => { const d = Pricing.deliverySplit(c, F, k); return d ? `<tr><td>${k} km</td><td>${d.fee ? peso(d.fee) : 'Free'}</td><td>${peso(d.storeShare)}</td><td><b>${peso(d.riderFee)}</b></td></tr>` : ''; }).join('')}</table></div>`;
 }
 function vSettings() {
-  setTimeout(() => { delExample(); document.querySelectorAll('[data-b^="settings.delivery."]').forEach(i => i.addEventListener('input', () => setTimeout(delExample, 0))); }, 0);
+  setTimeout(() => {
+    const f = $('#iconFile'); if (f) f.onchange = async () => { const file = f.files[0]; if (!file) return; loading(true, 'Uploading icon…');
+      try { const bg = $('#iconBg').value; const dataUrl = await squareIcon(file, 512, bg); const r = await api('uploadPhoto', { token: ADM.token, dataUrl, name: 'site-icon' }); ADM.draft.settings.siteIcon = r.url; ADM.draft.settings.siteIconBg = bg; admDirty(); loading(false); toast('Icon uploaded. Tap Save to apply.'); vSettings(); }
+      catch (e) { loading(false); toast(e.message); } };
+    if ($('#iconDel')) $('#iconDel').onclick = () => { ADM.draft.settings.siteIcon = ''; admDirty(); vSettings(); };
+    delExample(); document.querySelectorAll('[data-b^="settings.delivery."]').forEach(i => i.addEventListener('input', () => setTimeout(delExample, 0))); }, 0);
   const st = ADM.draft.settings = Object.assign({}, DEFAULT_SETTINGS, ADM.draft.settings || {}); st.email = Object.assign({}, DEFAULT_SETTINGS.email, st.email || {}); st.delivery = Pricing.deliveryRule({ settings: st });
   const three = (path, v) => `<div class="seg">${[['required', 'Required'], ['optional', 'Optional'], ['off', 'Off']].map(o => `<button type="button" class="${v === o[0] ? 'on' : ''}" data-set="${path}" data-val="${o[0]}">${o[1]}</button>`).join('')}</div>`;
   P(`<div class="acard" id="delCard"><h3><span class="hl">${ic('bike')} Delivery fee</span></h3>
@@ -428,6 +433,12 @@ function vSettings() {
       <div class="agrid">${aIn('settings.delivery.baseFee', 'Base delivery fee (₱) — paid by the store, free for the customer', 'num')}${aIn('settings.delivery.freeKm', 'Base fee covers the first (km)', 'num')}${aIn('settings.delivery.perKm', 'Fee per succeeding km (₱, each started km)', 'num')}${aIn('settings.delivery.customerPct', 'Customer pays (% of the succeeding-km fee; the store pays the rest)', 'num')}${aIn('settings.delivery.minRider', 'Minimum rider earning per delivery (₱; the store tops up)', 'num')}${aIn('settings.delivery.maxKm', 'Longest delivery (km), unless a store sets its own', 'num')}</div>
       <div id="delEx" class="mt"></div>
       <p class="hint">Empty fields use the defaults: ₱20 base for the first 1.5 km · ₱10 per succeeding km · customer 70% · ₱20 minimum · 10 km. Tap Save to apply; new orders use the new fees.</p></div>
+    <div class="acard" id="iconCard"><h3><span class="hl">${ic('upload')} Website icon & app</span></h3>
+      <div class="iconset"><div class="iconpv">${st.siteIcon ? `<img src="${esc(st.siteIcon)}" alt="Website icon">` : `<img src="${DEMO ? '' : '/img/icon-192.png'}" alt="Default icon" onerror="this.replaceWith(document.createTextNode('Default'))">`}</div>
+        <div><p class="hint" style="margin:0 0 8px">Shown on the browser tab, bookmarks and the phone home screen when customers install the Tara Romblon app. Use a square logo (PNG or JPG, at least 512×512). Non-square pictures are fitted inside a square on the background colour below.</p>
+          <div class="rowbtns"><label class="btn ghost sm">${ic('upload', 14)} ${st.siteIcon ? 'Change icon' : 'Upload icon'}<input type="file" accept="image/png,image/jpeg,image/webp" hidden id="iconFile"></label>${st.siteIcon ? '<button class="btn ghost sm" id="iconDel">Use default icon</button>' : ''}
+          <label class="hint">Background <input type="color" id="iconBg" value="${esc(st.siteIconBg || '#13305a')}"></label></div></div></div>
+      <p class="hint">Tap Save to apply. Phones that already installed the app may keep the old icon until it is reinstalled.</p></div>
     <div class="acard"><h3><span class="hl">${ic('home')} Open to customers</span></h3>${aIn('settings.staysLive', 'Stays are open for booking (off = shown as Coming soon)', 'bool')}${aIn('settings.toursLive', 'Things to do (tours & services) are open for booking (off = shown as Coming soon)', 'bool')}<p class="hint">Food and Rentals are always open. Turn these on when the listings are ready, then Save.</p></div>
     <div class="acard"><h3><span class="hl">${ic('id')} Customer verification</span></h3>${aIn('settings.requireIdVerification', 'Require an approved ID before a customer\'s first stay or rental booking', 'bool')}<p class="hint">Customers upload an ID once; Super Admins approve it in Customers.</p></div>
     <div class="acard"><h3><span class="hl">${ic('upload')} Photo uploads at checkout</span></h3><div class="field mt"><label>Valid ID photo (stays & rentals)</label></div>${three('settings.idUploadAtCheckout', st.idUploadAtCheckout)}

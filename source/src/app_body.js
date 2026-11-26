@@ -927,12 +927,43 @@ function goHome() { closeSheet(); S.store = null; S.cat = 'all'; go('home'); ren
 document.addEventListener('click', e => { const b = e.target.closest('[data-go]'); if (b) { e.preventDefault(); closeSheet(); if (b.dataset.go === 'food' || b.dataset.go === 'home') { S.store = null; S.cat = 'all'; } go(b.dataset.go); } });
 window.addEventListener('hashchange', () => { const v = location.hash.slice(1); if (v === 'food' || v === 'home') S.store = null; go(v, false); });
 
+/* ===== Install the app: pop-up on every visit to the home page (not when already opened as the installed app) ===== */
+let INSTALL_EVT = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); INSTALL_EVT = e; const b = $('#instGo'); if (b) installButtons(); });
+window.addEventListener('appinstalled', () => { INSTALL_EVT = null; closeInstall(); toast('Tara Romblon app installed. Find it on your home screen.'); });
+const isStandalone = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true || /[?&]source=app\b/.test(location.search);
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const inAppBrowser = () => /FBAN|FBAV|FB_IAB|Instagram|Messenger|Line\/|TikTok/i.test(navigator.userAgent);
+function installIcon() { const s = (CAT.settings || {}).siteIcon; return s || (DEMO ? '' : '/img/icon-192.png'); }
+function installButtons() {
+  const how = $('#instHow'), go = $('#instGo'); if (!how || !go) return;
+  if (INSTALL_EVT) { how.style.display = 'none'; go.textContent = 'Install app'; go.onclick = async () => { const e = INSTALL_EVT; INSTALL_EVT = null; e.prompt(); try { const r = await e.userChoice; if (r && r.outcome === 'accepted') closeInstall(); } catch (x) { } }; return; }
+  how.style.display = '';
+  how.innerHTML = inAppBrowser() ? `Open this page in <b>Chrome</b> or <b>Safari</b> first (tap ⋯ then <b>Open in browser</b>), then add it to your home screen.`
+    : isIOS() ? `Tap the <b>Share</b> button ${ic('upload', 14)} at the bottom of Safari, then choose <b>Add to Home Screen</b>.`
+    : `Open your browser menu <b>⋮</b> and tap <b>Install app</b> or <b>Add to Home screen</b>.`;
+  go.textContent = 'Got it'; go.onclick = closeInstall;
+}
+function closeInstall() { const o = $('#instOv'); if (o) o.remove(); }
+function showInstall() {
+  if (isStandalone() || $('#instOv') || currentView !== 'home') return;
+  if ($('#ov') && $('#ov').classList.contains('show')) { setTimeout(showInstall, 2000); return; } /* wait until other pop-ups are closed */
+  const icon = installIcon(), d = document.createElement('div'); d.id = 'instOv'; d.className = 'instov'; d.setAttribute('role', 'dialog'); d.setAttribute('aria-modal', 'true'); d.setAttribute('aria-labelledby', 'instT');
+  d.innerHTML = `<div class="instbox"><div class="ihead">${icon ? `<img src="${esc(icon)}" alt="">` : ''}<div><h3 id="instT">Install the Tara Romblon app</h3><span class="hint">Free · no app store needed</span></div></div>
+    <ul><li>Order food, rent scooters and book in one tap from your home screen</li><li>Faster to open, works like a regular app</li><li>Get updates on your orders and bookings</li></ul>
+    <div class="ihow" id="instHow"></div><div class="row2"><button class="btn ghost" id="instNo">Not now</button><button class="btn" id="instGo">Install app</button></div></div>`;
+  document.body.appendChild(d); installButtons();
+  $('#instNo').onclick = closeInstall; d.addEventListener('click', e => { if (e.target === d) closeInstall(); });
+}
+
 (async function init() {
   if (DEMO) document.body.classList.add('demo');
+  if (!DEMO && 'serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
   setupSearch(); renderAll();
   window.catalogReady = loadCatalog(); /* settings from the server (incl. Google sign-in) */
   go(location.hash.slice(1) || 'home', false);
   await window.catalogReady; renderAll(); if (currentView === 'cart') renderCart();
   startCustomerNotif();
   checkReturnFromPayment();
+  setTimeout(showInstall, 1500);
 })();

@@ -528,3 +528,14 @@ input,select,textarea,button{font-family:inherit}
 .catrow .hint{min-width:56px}.catrow .xbtn:disabled{opacity:.35;cursor:not-allowed}
 #menuCard h3 .btn{white-space:nowrap;flex:none}#menuCard h3 .hint{flex:1}
 .delsum{padding:10px 12px;border-radius:10px;background:#fbfaf7;border:1px solid var(--marble-2);margin-bottom:8px;font-size:14px}
+.iconset{display:flex;gap:14px;align-items:flex-start}.iconpv{flex:none;width:88px;height:88px;border-radius:20px;overflow:hidden;background:var(--marble-2);display:grid;place-items:center;font-size:12px;color:var(--mute);box-shadow:0 2px 8px rgba(0,0,0,.12)}.iconpv img{width:100%;height:100%;object-fit:cover}
+.iconset input[type=color]{width:34px;height:28px;padding:0;border:1px solid var(--line);border-radius:6px;vertical-align:middle;margin-left:4px}
+/* install pop-up */
+.instov{position:fixed;inset:0;z-index:90;background:rgba(10,20,40,.45);display:flex;align-items:flex-end;justify-content:center;padding:16px}
+.instbox{background:#fff;border-radius:20px;max-width:420px;width:100%;padding:22px 20px 18px;box-shadow:0 12px 40px rgba(0,0,0,.25);animation:instup .25s ease-out}
+@keyframes instup{from{transform:translateY(30px);opacity:0}to{transform:none;opacity:1}}
+@media(min-width:720px){.instov{align-items:center}}
+.instbox .ihead{display:flex;gap:14px;align-items:center}.instbox .ihead img{width:60px;height:60px;border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.instbox h3{margin:0;font-size:20px}.instbox ul{margin:12px 0;padding-left:18px;color:var(--ink,#223);font-size:14px;line-height:1.5}
+.instbox .ihow{background:#fbfaf7;border:1px solid var(--marble-2);border-radius:12px;padding:10px 12px;font-size:14px;margin:10px 0}
+.instbox .row2{display:flex;gap:10px}.instbox .row2 .btn{flex:1}
