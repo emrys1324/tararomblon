@@ -19,13 +19,13 @@ async function start(token, me) {
   $('#who').innerHTML = `<span>${esc(me.name || me.email)}</span><button class="link" onclick="signOutStaff()">Sign out</button>`; $('#bellSlot').innerHTML = bellBtn(); $('#ptitle').textContent = 'Deliveries';
   await reload(); render();
   Notif.start(token, 'r_' + me.email, async () => { await reload(true); render(); });
-  clearInterval(RP.timer); RP.timer = setInterval(async () => { if (!$('#ov').classList.contains('show')) { await reload(true); render(); } }, DEMO ? 10000 : 30000);
+  clearInterval(RP.timer); RP.timer = setInterval(async () => { if (!$('#ov').classList.contains('show')) { await reload(true); render(); } }, DEMO ? 8000 : (RP.me && RP.me.available ? 12000 : 30000));
 }
 function signOutStaff() { Share.stop(); store('tr5_staff_rider', null); Notif.stop(); location.reload(); }
 /* Live location: shared with the customer and store only while the rider has an accepted delivery in progress */
 const Share = {
   watch: null, last: null, sent: 0, state: 'off', refs: [],
-  sync() { const need = RP.orders.filter(Rules.trackable); this.refs = need.map(b => b.ref); if (need.length && this.watch == null) this.start(); if (!need.length && this.watch != null) this.stop(); },
+  sync() { const need = RP.orders.filter(Rules.trackable); this.refs = need.map(b => b.ref); const want = need.length || (RP.me && RP.me.available); if (want && this.watch == null) this.start(); if (!want && this.watch != null) this.stop(); },
   start() {
     if (!navigator.geolocation) { this.state = 'unsupported'; return; }
     this.state = 'starting';
@@ -41,14 +41,14 @@ const Share = {
 };
 function banner() {
   const el = $('#rshare'); if (!el) return; const n = Share.refs.length;
-  if (!n) { el.innerHTML = ''; return; }
+  if (!n) { el.innerHTML = RP.me && RP.me.available ? (Share.state === 'denied' || Share.state === 'error' || Share.state === 'unsupported' ? `<div class="rshare bad">${ic('locate', 18)}<span><b>Turn on location</b> so you get delivery requests near you. Allow location for this app in your phone settings.</span></div>` : `<div class="rshare"><span class="rdot"></span><span>You're online. Your location is used to send you nearby delivery requests.</span></div>`) : ''; return; }
   el.innerHTML = Share.state === 'denied' || Share.state === 'error' || Share.state === 'unsupported'
     ? `<div class="rshare bad">${ic('locate', 18)}<span><b>Turn on location.</b> The customer and store can't see where you are. Allow location for this app in your phone settings, then reopen it.</span></div>`
     : `<div class="rshare"><span class="rdot"></span><span>Sharing your live location with the customer and store for ${Share.refs.map(esc).join(', ')}. It stops when ${n === 1 ? 'the delivery is' : 'deliveries are'} done.</span></div>`;
 }
 async function reload(quiet) {
   if (!quiet) loading(true, 'Loading…');
-  try { const [o, t] = await Promise.all([api('rOrders', { token: RP.token }), api('threads', { token: RP.token })]); RP.me = o.me; RP.orders = o.orders.sort((a, b) => b.created.localeCompare(a.created)); RP.threads = t.threads; }
+  try { const [o, t] = await Promise.all([api('rOrders', { token: RP.token }), api('threads', { token: RP.token })]); RP.me = o.me; RP.orders = o.orders.sort((a, b) => b.created.localeCompare(a.created)); const had = (RP.offers || []).map(x => x.ref); RP.offers = o.offers || []; if (RP.offers.some(x => !had.includes(x.ref))) ding(); RP.threads = t.threads; }
   catch (x) { toast(x.message); if (/sign in/i.test(x.message)) signOutStaff(); }
   loading(false);
 }
@@ -59,16 +59,32 @@ function render() {
   $('#ptitle').innerHTML = `Deliveries <span class="rstat ${on ? 'on' : ''}">${on ? 'Online' : 'Offline'}</span>`;
   $('#root').innerHTML = `<label class="ravail big ${on ? 'on' : ''}" for="avT">
       <span class="rdot" aria-hidden="true"></span>
-      <span class="rtxt"><small>${on ? 'ONLINE' : 'OFFLINE'}</small><b>${on ? 'You are available' : 'You are offline'}</b><span>${on ? (n ? n + ' active deliver' + (n === 1 ? 'y' : 'ies') + ' · tap to go offline' : 'Merchants can assign deliveries to you · tap to go offline') : 'Tap to go online and receive deliveries'}</span></span>
+      <span class="rtxt"><small>${on ? 'ONLINE' : 'OFFLINE'}</small><b>${on ? 'You are available' : 'You are offline'}</b><span>${on ? (n ? n + ' active deliver' + (n === 1 ? 'y' : 'ies') + ' · tap to go offline' : 'Nearby delivery requests will pop up here · tap to go offline') : 'Tap to go online and receive deliveries'}</span></span>
       <span class="bigswitch"><input type="checkbox" id="avT" ${on ? 'checked' : ''} aria-label="Available for deliveries"><i></i><em>${on ? 'ON' : 'OFF'}</em></span></label>
-    <div id="rshare"></div><div class="ptabs"><button class="${RP.tab === 'active' ? 'on' : ''}" onclick="RP.tab='active';render()">${ic('bike')} Active${act.length ? ` <i>${act.length}</i>` : ''}</button>
+    <div id="rshare"></div>${offersHtml(on)}<div class="ptabs"><button class="${RP.tab === 'active' ? 'on' : ''}" onclick="RP.tab='active';render()">${ic('bike')} Active${act.length ? ` <i>${act.length}</i>` : ''}</button>
       <button class="${RP.tab === 'earn' ? 'on' : ''}" onclick="RP.tab='earn';render()">${ic('wallet')} Earnings</button>
       <button class="${RP.tab === 'messages' ? 'on' : ''}" onclick="RP.tab='messages';render()">${ic('chat')} Messages${unread ? ` <i>${unread}</i>` : ''}</button>
       <button class="${RP.tab === 'history' ? 'on' : ''}" onclick="RP.tab='history';render()">${ic('clock')} History</button></div><div id="pbody"></div>`;
   $('#avT').onchange = async e => { if (!e.target.checked && act.length && !confirm('You still have ' + act.length + ' active deliver' + (act.length === 1 ? 'y' : 'ies') + '. Go offline anyway? You will keep them, but won\'t get new ones.')) { e.target.checked = true; return; } try { const r = await api('rAvailable', { token: RP.token, value: e.target.checked }); RP.me = r.me; toast(r.me.available ? 'You are now available' : 'You are now offline'); render(); } catch (x) { toast(x.message); e.target.checked = !e.target.checked; } };
-  Share.sync(); banner();
+  Share.sync(); banner(); wireOffers();
   ({ active: () => vList(act, 'No active deliveries. Stay available to receive new ones.'), history: () => vList(RP.orders.filter(b => !act.includes(b)), 'No past deliveries yet.'), earn: vEarn, messages: vMsgs })[RP.tab]();
 }
+/* Incoming delivery requests from nearby orders: the first rider to accept gets it, then the store is told */
+function offersHtml(on) {
+  const L = RP.offers || []; if (!on || !L.length) return '';
+  return `<div class="offers"><h3>${ic('bell', 18)} New delivery request${L.length > 1 ? 's' : ''} <span class="hint">first to accept gets it</span></h3>${L.map(o => `<div class="offer">
+    <div class="oftop"><b class="ofearn">${peso(o.riderFee)}</b><span>you earn${o.km != null ? ' · ' + o.km + ' km delivery' : ''}${o.kmToStore != null ? ' · ' + o.kmToStore + ' km to the store' : ''}</span></div>
+    <div class="rstops"><div><span class="lbl">Pick up</span><b>${esc(o.store.name)}</b><span class="hint">${esc(o.store.address || '')}</span></div><div><span class="lbl">Deliver to</span><b>${esc(o.dropoff.label || o.dropoff.area || 'Customer')}</b>${o.dropoff.label && o.dropoff.area ? `<span class="hint">${esc(o.dropoff.area)}</span>` : ''}</div></div>
+    <div class="hint">${o.items} item${o.items === 1 ? '' : 's'} · ${o.collect ? 'Cash on delivery: collect ' + peso(o.collect) : 'Already paid'}${o.storeFee ? ' · store pays ' + peso(o.storeFee) + ' of your fee' : ''} · ${esc(o.ref)} · ${tm(o.offerAt)}</div>
+    <div class="sact"><button class="btn" data-ofok="${esc(o.ref)}">${ic('check')} Accept</button><button class="btn ghost" data-ofno="${esc(o.ref)}">Decline</button></div></div>`).join('')}</div>`;
+}
+function wireOffers() {
+  document.querySelectorAll('[data-ofok]').forEach(b => b.onclick = async () => { loading(true, 'Accepting…');
+    try { await api('rOffer', { token: RP.token, ref: b.dataset.ofok, accept: true }); await reload(true); loading(false); toast('Delivery accepted. The store has been notified.'); RP.tab = 'active'; render(); }
+    catch (x) { loading(false); toast(x.message); await reload(true); render(); } });
+  document.querySelectorAll('[data-ofno]').forEach(b => b.onclick = async () => { try { await api('rOffer', { token: RP.token, ref: b.dataset.ofno, accept: false }); RP.offers = RP.offers.filter(o => o.ref !== b.dataset.ofno); render(); } catch (x) { toast(x.message); } });
+}
+function ding() { try { navigator.vibrate && navigator.vibrate([200, 100, 200]); const A = new (window.AudioContext || window.webkitAudioContext)(), o = A.createOscillator(), g = A.createGain(); o.frequency.value = 880; o.connect(g); g.connect(A.destination); g.gain.setValueAtTime(.2, A.currentTime); g.gain.exponentialRampToValueAtTime(.001, A.currentTime + .6); o.start(); o.stop(A.currentTime + .6); } catch (e) { } }
 function mapsLink(b) { return b.lat != null ? `https://www.google.com/maps/dir/?api=1&destination=${b.lat},${b.lng}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((b.landmark || b.customer.address) + ', Romblon')}`; }
 function vList(list, empty) {
   $('#pbody').innerHTML = list.map(b => {

@@ -562,3 +562,11 @@ input,select,textarea,button{font-family:inherit}
 .mxnote{grid-column:1/-1;font-size:13px;color:var(--mute)}.warnc{color:var(--coral-d,#c4561c)}.mxrow.bad input{border-color:var(--coral-d,#c4561c)}
 .mxprev{margin-top:10px;padding:10px 12px;border-radius:10px;background:#fbfaf7;border:1px solid var(--marble-2);font-size:14px}
 @media(max-width:640px){.mxrow{grid-template-columns:1fr 1fr}.mxrow .xbtn{justify-self:end}}
+/* rider: incoming delivery requests */
+.offers{margin:12px 0;padding:12px;border-radius:16px;background:#fff7ef;border:2px solid var(--coral,#ee7a35);animation:ofpulse 1.6s ease-in-out 3}
+@keyframes ofpulse{50%{box-shadow:0 0 0 6px rgba(238,122,53,.18)}}
+.offers h3{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 8px;font-size:17px}
+.offer{background:#fff;border-radius:12px;padding:12px;border:1px solid var(--marble-2);margin-top:8px}
+.oftop{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}.ofearn{font-size:26px;color:var(--navy)}.oftop span{color:var(--mute);font-size:14px}
+.rcard.finding .spin{flex:none;width:18px;height:18px;border-radius:50%;border:3px solid #dbe5f3;border-top-color:var(--navy);animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}

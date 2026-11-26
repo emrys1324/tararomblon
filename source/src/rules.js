@@ -1,7 +1,7 @@
 /* ===== RULES (shared by every app and the backend — keep identical) ===== */
 var Rules = {
   /* Every status used anywhere. Flows below pick the ones that apply to each kind of transaction. */
-  STATUSES: ['New', 'Accepted', 'Awaiting Payment', 'Payment Confirmed', 'Preparing', 'Ready for Pick-up', 'Out for Delivery', 'Order Picked Up', 'Delivered',
+  STATUSES: ['Finding Rider', 'New', 'Accepted', 'Awaiting Payment', 'Payment Confirmed', 'Preparing', 'Ready for Pick-up', 'Out for Delivery', 'Order Picked Up', 'Delivered',
     'Checked In', 'Checked Out', 'Returned', 'Payment Collected', 'Completed', 'Cancelled', 'Rejected', 'Refunded', 'Expired'],
   EXCEPTIONS: ['Cancelled', 'Rejected', 'Refunded', 'Expired'],
   FREE: ['Cancelled', 'Rejected', 'Refunded', 'Expired'],          // these release dates/units and earn no platform fee
@@ -22,6 +22,7 @@ var Rules = {
     if (b.kind === 'stay') return pre.concat(['Checked In', 'Checked Out', 'Payment Collected', 'Completed']);
     if (b.kind === 'rental') return pre.concat(['Order Picked Up', 'Returned', 'Payment Collected', 'Completed']);
     if (b.kind === 'tour') return pre.concat(['Checked In', 'Payment Collected', 'Completed']);
+    if (b.fulfillment === 'delivery' && b.dispatch) pre = b.payMethod === 'online' || b.payMethod === 'transfer' ? ['Awaiting Payment', 'Finding Rider', 'Payment Confirmed', 'Accepted'] : ['Finding Rider', 'New', 'Accepted'];
     if (b.fulfillment === 'delivery') return pre.concat(['Preparing', 'Ready for Pick-up', 'Out for Delivery', 'Delivered'], b.payMethod === 'cod' ? ['Payment Collected', 'Completed'] : ['Completed']);
     return pre.concat(['Preparing', 'Ready for Pick-up', 'Order Picked Up'], b.payMethod === 'pickup' ? ['Payment Collected', 'Completed'] : ['Completed']);
   },
@@ -51,6 +52,7 @@ var Rules = {
       if (['New', 'Payment Confirmed'].indexOf(b.status) >= 0) out.push('Rejected');
       return out;
     }
+    if (actor.role === 'customer' && b.email === actor.email && b.status === 'Finding Rider') return ['Cancelled'];   // before a rider accepts
     if (actor.role === 'rider' && b.rider === actor.email && b.riderAccepted) {
       if (['Ready for Pick-up', 'Preparing'].indexOf(b.status) >= 0) out.push('Out for Delivery');
       if (b.status === 'Out for Delivery') out.push('Delivered');
@@ -136,7 +138,7 @@ var Rules = {
   /* points a customer earns on an amount paid for items (after discounts and points used, delivery fee excluded) */
   pointsEstimate: function (biz, amount) { var p = Rules.rewardsOf(biz); return p.enabled ? Rules.pointsFor(p, amount) : 0; },
   /* live rider tracking: shared only while an accepted delivery is on its way */
-  TRACK: ['Payment Confirmed', 'Accepted', 'Preparing', 'Ready for Pick-up', 'Out for Delivery'],
+  TRACK: ['New', 'Payment Confirmed', 'Accepted', 'Preparing', 'Ready for Pick-up', 'Out for Delivery'],
   trackable: function (b) { return b.kind === 'food' && b.fulfillment === 'delivery' && !!b.rider && !!b.riderAccepted && Rules.TRACK.indexOf(b.status) >= 0; },
   r2: function (n) { return Math.round(n * 100) / 100; },
   /* Transactions ready for payout: businesses once Completed, riders once delivered */

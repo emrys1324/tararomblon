@@ -35,6 +35,15 @@ source/                  editable source + build.py + tests
 
 There are no npm packages to install. The functions use Node's built-in `fetch` and `crypto`.
 
+## New: riders accept delivery orders first (rider dispatch)
+
+1. A customer places a delivery order (online payments: once paid). Status **Finding Rider**. The merchant does not see or hear about it yet.
+2. Online riders near the store (within 5 km by their live location; riders without a recent location get requests from stores in their town) get a **New delivery request** (phone notification + pop-up in the Rider app with what they earn, distance, pick-up, drop-off and cash to collect). They tap **Accept** or **Decline**. The first to accept gets it; the others are told it was taken.
+3. When a rider accepts, the order is confirmed (New / Payment Confirmed) and **pushed to the merchant**, with the rider already assigned. The customer is told which rider accepted and can track them.
+4. If nobody accepts within 3 minutes, the request goes to all online riders. After 15 minutes the Super Admin and the customer are alerted. Customers can cancel while it says Finding Rider. Super Admin can send a waiting order to a specific rider (Transactions → rider), who still accepts it.
+- Merchants no longer assign riders. Riders share their location while online (for nearby requests); it stops when they go offline.
+- Settings → Rider dispatch: on/off, distance (km), minutes before widening, minutes before the alert. Off = merchants assign riders like before.
+
 ## New: delivery fee matrix with customer / store / rider amounts (Super Admin → Listings & rates → restaurant → Delivery)
 
 - Turn on **Charge delivery by this matrix** for a restaurant. Each distance band then has **Customer pays**, **Store pays** and **Rider gets** (₱). Example: 0–3 km: customer ₱0, store pays ₱20, rider gets ₱20.

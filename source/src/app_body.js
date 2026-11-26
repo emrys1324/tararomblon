@@ -786,11 +786,12 @@ const canTrack = b => b.kind === 'food' && b.fulfillment === 'delivery' && !!b.r
 function riderBlock(b) {
   if (b.kind !== 'food' || b.fulfillment !== 'delivery' || Rules.CLOSED.includes(b.status) && b.status !== 'Completed') return '';
   const r = b.riderInfo;
-  if (!b.rider) return Rules.DELIVERED.includes(b.status) ? '' : `<div class="rcard wait">${ic('bike', 18)}<div><b>Rider</b><span class="hint">The store will assign a rider soon.</span></div></div>`;
+  if (!b.rider) return Rules.DELIVERED.includes(b.status) ? '' : b.status === 'Finding Rider' ? `<div class="rcard wait finding"><span class="spin"></span><div><b>Finding a nearby rider…</b><span class="hint">Your order goes to ${esc(bizName(b.bizId))} as soon as a rider accepts.</span></div><button class="btn ghost sm" onclick="custCancel('${esc(b.ref)}')">Cancel order</button></div>` : b.status === 'Awaiting Payment' ? '' : `<div class="rcard wait">${ic('bike', 18)}<div><b>Rider</b><span class="hint">Finding a rider…</span></div></div>`;
   const veh = [r && r.vehicle, r && r.plate].filter(Boolean).join(' · ');
   const st = Rules.DELIVERED.includes(b.status) ? 'Delivered your order' : !b.riderAccepted ? 'Waiting for the rider to accept' : b.status === 'Out for Delivery' ? 'On the way to you' : b.status === 'Ready for Pick-up' ? 'Picking up your order' : 'Heading to the store';
   return `<div class="rcard">${ic('bike', 18)}<div><b>${esc(r ? r.name : 'Your rider')}</b><span class="hint">${esc(st)}${veh ? ' · ' + esc(veh) : ''}</span></div>${r && r.phone && canTrack(b) ? `<a class="btn ghost sm" href="tel:${esc(String(r.phone).replace(/\s/g, ''))}">${ic('phone', 14)} Call</a>` : ''}</div>`;
 }
+async function custCancel(ref) { if (!confirm('Cancel order ' + ref + '?')) return; loading(true, 'Cancelling…'); try { await api('custCancel', { token: session.token, ref }); loading(false); toast('Order cancelled'); currentView === 'orders' ? renderOrders(true) : refreshActive(); } catch (x) { loading(false); toast(x.message); } }
 function activityLog(b) {
   const h = (b.history || []).slice().reverse(); if (!h.length) return '';
   const who = x => x.role === 'customer' || !x.role ? '' : x.role === 'rider' ? 'Rider' : x.role === 'system' ? '' : x.role === 'super' ? 'Tara Romblon' : bizName(b.bizId);

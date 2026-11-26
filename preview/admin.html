@@ -574,6 +574,14 @@ input,select,textarea,button{font-family:inherit}
 .mxnote{grid-column:1/-1;font-size:13px;color:var(--mute)}.warnc{color:var(--coral-d,#c4561c)}.mxrow.bad input{border-color:var(--coral-d,#c4561c)}
 .mxprev{margin-top:10px;padding:10px 12px;border-radius:10px;background:#fbfaf7;border:1px solid var(--marble-2);font-size:14px}
 @media(max-width:640px){.mxrow{grid-template-columns:1fr 1fr}.mxrow .xbtn{justify-self:end}}
+/* rider: incoming delivery requests */
+.offers{margin:12px 0;padding:12px;border-radius:16px;background:#fff7ef;border:2px solid var(--coral,#ee7a35);animation:ofpulse 1.6s ease-in-out 3}
+@keyframes ofpulse{50%{box-shadow:0 0 0 6px rgba(238,122,53,.18)}}
+.offers h3{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 8px;font-size:17px}
+.offer{background:#fff;border-radius:12px;padding:12px;border:1px solid var(--marble-2);margin-top:8px}
+.oftop{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}.ofearn{font-size:26px;color:var(--navy)}.oftop span{color:var(--mute);font-size:14px}
+.rcard.finding .spin{flex:none;width:18px;height:18px;border-radius:50%;border:3px solid #dbe5f3;border-top-color:var(--navy);animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 
 </style>
 </head>
@@ -789,7 +797,7 @@ var Pricing = {
 /* ===== RULES (shared by every app and the backend — keep identical) ===== */
 var Rules = {
   /* Every status used anywhere. Flows below pick the ones that apply to each kind of transaction. */
-  STATUSES: ['New', 'Accepted', 'Awaiting Payment', 'Payment Confirmed', 'Preparing', 'Ready for Pick-up', 'Out for Delivery', 'Order Picked Up', 'Delivered',
+  STATUSES: ['Finding Rider', 'New', 'Accepted', 'Awaiting Payment', 'Payment Confirmed', 'Preparing', 'Ready for Pick-up', 'Out for Delivery', 'Order Picked Up', 'Delivered',
     'Checked In', 'Checked Out', 'Returned', 'Payment Collected', 'Completed', 'Cancelled', 'Rejected', 'Refunded', 'Expired'],
   EXCEPTIONS: ['Cancelled', 'Rejected', 'Refunded', 'Expired'],
   FREE: ['Cancelled', 'Rejected', 'Refunded', 'Expired'],          // these release dates/units and earn no platform fee
@@ -810,6 +818,7 @@ var Rules = {
     if (b.kind === 'stay') return pre.concat(['Checked In', 'Checked Out', 'Payment Collected', 'Completed']);
     if (b.kind === 'rental') return pre.concat(['Order Picked Up', 'Returned', 'Payment Collected', 'Completed']);
     if (b.kind === 'tour') return pre.concat(['Checked In', 'Payment Collected', 'Completed']);
+    if (b.fulfillment === 'delivery' && b.dispatch) pre = b.payMethod === 'online' || b.payMethod === 'transfer' ? ['Awaiting Payment', 'Finding Rider', 'Payment Confirmed', 'Accepted'] : ['Finding Rider', 'New', 'Accepted'];
     if (b.fulfillment === 'delivery') return pre.concat(['Preparing', 'Ready for Pick-up', 'Out for Delivery', 'Delivered'], b.payMethod === 'cod' ? ['Payment Collected', 'Completed'] : ['Completed']);
     return pre.concat(['Preparing', 'Ready for Pick-up', 'Order Picked Up'], b.payMethod === 'pickup' ? ['Payment Collected', 'Completed'] : ['Completed']);
   },
@@ -839,6 +848,7 @@ var Rules = {
       if (['New', 'Payment Confirmed'].indexOf(b.status) >= 0) out.push('Rejected');
       return out;
     }
+    if (actor.role === 'customer' && b.email === actor.email && b.status === 'Finding Rider') return ['Cancelled'];   // before a rider accepts
     if (actor.role === 'rider' && b.rider === actor.email && b.riderAccepted) {
       if (['Ready for Pick-up', 'Preparing'].indexOf(b.status) >= 0) out.push('Out for Delivery');
       if (b.status === 'Out for Delivery') out.push('Delivered');
@@ -924,7 +934,7 @@ var Rules = {
   /* points a customer earns on an amount paid for items (after discounts and points used, delivery fee excluded) */
   pointsEstimate: function (biz, amount) { var p = Rules.rewardsOf(biz); return p.enabled ? Rules.pointsFor(p, amount) : 0; },
   /* live rider tracking: shared only while an accepted delivery is on its way */
-  TRACK: ['Payment Confirmed', 'Accepted', 'Preparing', 'Ready for Pick-up', 'Out for Delivery'],
+  TRACK: ['New', 'Payment Confirmed', 'Accepted', 'Preparing', 'Ready for Pick-up', 'Out for Delivery'],
   trackable: function (b) { return b.kind === 'food' && b.fulfillment === 'delivery' && !!b.rider && !!b.riderAccepted && Rules.TRACK.indexOf(b.status) >= 0; },
   r2: function (n) { return Math.round(n * 100) / 100; },
   /* Transactions ready for payout: businesses once Completed, riders once delivered */
@@ -977,7 +987,7 @@ var Rules = {
 var DEFAULT_SETTINGS = {
   requireIdVerification: true, idUploadAtCheckout: 'optional', proofUpload: 'required', transferEnabled: true,
   transferInstructions: 'Send your payment to GCash 0917 000 0000 (MJV Services OPC) or BPI 0000-0000-00 (MJV Services OPC), then upload a screenshot of your receipt.',
-  riderSharePct: 100, codCashTo: 'merchant', codMinCompleted: 3, codMax: 500, codExemptBefore: '2026-11-21', email: { customers: true, merchants: true, admins: true, riders: true },
+  riderSharePct: 100, codCashTo: 'merchant', codMinCompleted: 3, codMax: 500, riderDispatch: true, dispatchKm: 5, dispatchWidenMin: 3, dispatchAlertMin: 15, codExemptBefore: '2026-11-21', email: { customers: true, merchants: true, admins: true, riders: true },
   /* Stays and Things to do show "Coming soon" until a Super Admin opens them in Settings */
   staysLive: false, toursLive: false
 };
@@ -1087,7 +1097,7 @@ function createCore(env) {
   async function pwGate(key) { var n = +((await env.cache.get('lgn_' + key)) || 0); if (n >= 10) err('Too many attempts. Try again in 15 minutes or tap "Forgot password?".'); return n; }
   async function pwFail(key, n) { await env.cache.put('lgn_' + key, String(n + 1), 900); err('Incorrect email or password.'); }
   /* ---------- phone notifications (Web Push) ---------- */
-  var PUSH_TYPES = ['status', 'new', 'assigned', 'message', 'application', 'verification', 'proof', 'payout', 'points'];
+  var PUSH_TYPES = ['offer', 'status', 'new', 'assigned', 'message', 'application', 'verification', 'proof', 'payout', 'points'];
   async function pushRecipients(aud, actor) {
     var out = [], seen = {}, staff = null;
     for (var i = 0; i < aud.length; i++) {
@@ -1114,6 +1124,54 @@ function createCore(env) {
   }
   function myAud(who) { return who.kind === 'customer' ? ['cust:' + who.email] : who.role === 'super' ? ['super'] : who.role === 'rider' ? ['rider:' + who.email] : ['biz:' + who.bizId]; }
 
+  /* ---------- rider dispatch: nearby online riders get the delivery request; the first to accept takes it ---------- */
+  function storeOf(cat, b) { var F = Pricing.store(cat, b.bizId) || {}; return { lat: +F.lat, lng: +F.lng, town: F.town || '', name: F.storeName || bizName(cat, b.bizId), address: F.address || '' }; }
+  function riderKm(r, S) { return r.loc && r.loc.at && (Date.parse(now()) - Date.parse(r.loc.at)) < 20 * 6e4 && isFinite(S.lat) ? Pricing.round(Pricing.km(S.lat, S.lng, r.loc.lat, r.loc.lng)) : null; }
+  async function candidates(b, cat, wide) {
+    var st = settings(cat), S = storeOf(cat, b), max = +st.dispatchKm || 5, dec = (b.offer && b.offer.declined) || [];
+    return (await staffAll()).filter(function (r) {
+      if (r.role !== 'rider' || r.active === false || !r.available || dec.indexOf(r.email) >= 0) return false;
+      if (r.lastSeen && (Date.parse(now()) - Date.parse(r.lastSeen)) > 30 * 6e4) return false;   /* app not open for 30 min */
+      if (wide) return true;
+      var k = riderKm(r, S); return k != null ? k <= max : (!S.town || !r.town || r.town === S.town);
+    });
+  }
+  async function notifyOffer(b, cat, list) {
+    if (!list.length) return;
+    var S = storeOf(cat, b), q = b.quote || {};
+    await event('offer', 'New delivery request: ' + S.name + ' → ' + (b.landmark || (b.customer && b.customer.address) || 'customer') + (q.km != null ? ' (' + q.km + ' km)' : '') + ' · you earn P' + (q.riderFee || 0) + '. Open the Rider app to accept.',
+      list.map(function (r) { return 'rider:' + r.email; }), b.ref, b.bizId, [], '', '', '');
+  }
+  async function startOffer(b, cat) {
+    var list = await candidates(b, cat, false), wide = false;
+    if (!list.length) { list = await candidates(b, cat, true); wide = true; }
+    b.offer = { at: now(), round: wide ? 2 : 1, riders: list.map(function (r) { return r.email; }), declined: (b.offer && b.offer.declined) || [] };
+    await env.db.put(T.book, b); await notifyOffer(b, cat, list);
+    if (!list.length) await event('status', 'No rider is online for ' + b.ref + ' (' + bizName(cat, b.bizId) + '). Assign one in Super Admin, or ask riders to go online.', ['super'], b.ref, b.bizId, ['super'], 'No rider online for ' + b.ref, 'No delivery rider is online for order ' + b.ref + '.', '');
+  }
+  /* run on every rider / customer refresh: widen a request nobody took, and warn the Super Admin if it waits too long */
+  async function sweepOffers() {
+    var cat = await catalog(), st = settings(cat), t = Date.parse(now()), open = (await allBookings()).filter(function (b) { return b.dispatch && !b.rider && b.offer && !b.offer.closed && Rules.CLOSED.indexOf(b.status) < 0 && b.status !== 'Awaiting Payment'; });
+    for (var i = 0; i < open.length; i++) {
+      var b = open[i], age = (t - Date.parse(b.offer.at)) / 6e4, changed = false;
+      if (b.offer.round < 2 && age >= (+st.dispatchWidenMin || 3)) {
+        var more = (await candidates(b, cat, true)).filter(function (r) { return b.offer.riders.indexOf(r.email) < 0; });
+        b.offer.round = 2; b.offer.riders = b.offer.riders.concat(more.map(function (r) { return r.email; })); changed = true; await env.db.put(T.book, b); await notifyOffer(b, cat, more);
+      }
+      if (!b.offer.alerted && age >= (+st.dispatchAlertMin || 15)) {
+        b.offer.alerted = now(); changed = true; await env.db.put(T.book, b);
+        await event('status', 'No rider has accepted ' + b.ref + ' (' + bizName(cat, b.bizId) + ') after ' + Math.round(age) + ' min. Please assign a rider in Super Admin.', ['super'], b.ref, b.bizId, ['super'], 'Order ' + b.ref + ' still needs a rider', 'No rider has accepted order ' + b.ref + ' yet.', '');
+        await event('status', b.ref + ': we are still finding a rider for your order. You can wait or cancel it in My orders.', ['cust:' + b.email], b.ref, b.bizId, [], '', '', '');
+      }
+      if (!changed) continue;
+    }
+  }
+  function offerView(b, cat, me) {
+    var S = storeOf(cat, b), q = b.quote || {}, k = riderKm(me, S);
+    return { ref: b.ref, status: b.status, created: b.created, offerAt: b.offer.at, store: { name: S.name, address: S.address, lat: S.lat, lng: S.lng }, dropoff: { label: b.landmark || '', area: (b.customer && b.customer.address) || '', lat: b.lat, lng: b.lng },
+      km: q.km, kmToStore: k, riderFee: q.riderFee || 0, customerFee: q.deliveryFee || 0, storeFee: q.storeDeliveryShare || 0, payMethod: b.payMethod, collect: b.payMethod === 'cod' ? Rules.payable(b) : 0, items: (b.lines || []).reduce(function (t, l) { return t + (+l.qty || 1); }, 0) };
+  }
+
   /* ---------- bookings ---------- */
   async function allBookings() { return await env.db.all(T.book); }
   async function getB(ref) { var b = await env.db.get(T.book, ref); if (!b) err('Booking not found.'); return b; }
@@ -1136,6 +1194,14 @@ function createCore(env) {
   async function setStatus(who, ref, status, note, amount) {
     var b = await getB(ref), actor = { role: who.role === 'system' ? 'super' : who.role, bizId: who.bizId, email: who.email };
     if (Rules.STATUSES.indexOf(status) < 0) err('Unknown status.');
+    /* a paid delivery order goes to nearby riders first; the merchant gets it once a rider accepts */
+    if (status === 'Payment Confirmed' && b.dispatch && !b.rider && b.status === 'Awaiting Payment') {
+      if (!(who.role === 'system' || who.role === 'super' || ((who.role === 'manager' || who.role === 'staff') && who.bizId === b.bizId && b.payMethod !== 'online'))) err('You can\'t set that status.');
+      b.payStatus = 'Paid'; b.status = 'Finding Rider'; b.history = (b.history || []).concat([{ at: now(), status: 'Payment Confirmed', by: who.name || who.email || 'System', role: who.role, note: 'Paid. Finding a rider.' }]);
+      b.updated = now(); await env.db.put(T.book, b);
+      await event('status', b.ref + ': payment confirmed. Finding a nearby rider.', ['cust:' + b.email, 'super'], b.ref, b.bizId, ['cust:' + b.email], 'Payment received for ' + b.ref, 'We received your payment for ' + b.ref + '. We are finding a nearby rider; the store starts preparing as soon as one accepts.', who.email);
+      await startOffer(b, await catalog()); return b;
+    }
     if (Rules.allowed(b, actor).indexOf(status) < 0) err(who.role === 'staff' ? 'Merchant Staff can only move an order to its next step. Ask your Merchant Admin to override.' : 'You can\'t set that status.');
     var prev = b.status, cat0 = await catalog();
     if (status === 'Payment Collected' && who.role !== 'system') {
@@ -1148,12 +1214,13 @@ function createCore(env) {
     if (status === 'Completed') await awardPoints(b, cat0);
     if (b.rider && Rules.DELIVERED.concat(Rules.CLOSED).indexOf(status) >= 0) {
       var others = (await allBookings()).filter(function (x) { return x.ref !== b.ref && x.rider === b.rider && liveFor(x); });
-      if (!others.length) { var rr = await env.db.get(T.staff, b.rider); if (rr && rr.loc) { delete rr.loc; await env.db.put(T.staff, rr); } }
+      if (!others.length) { var rr = await env.db.get(T.staff, b.rider); if (rr && rr.loc && !rr.available) { delete rr.loc; await env.db.put(T.staff, rr); } }
     }
     if (Rules.FREE.indexOf(status) >= 0) await refundPoints(b, cat0);
     b.history = (b.history || []).concat([{ at: now(), status: status, by: who.name || who.email || 'System', role: who.role, note: note || '' }]);
     b.updated = now(); await env.db.put(T.book, b);
     var cat = await catalog(), bn = bizName(cat, b.bizId), txt = b.ref + ' (' + bn + '): ' + prev + ' to ' + status;
+    if (prev === 'Finding Rider') { if (b.offer) b.offer.closed = now(), await env.db.put(T.book, b); await event('status', txt, ['cust:' + b.email, 'super'].concat(((b.offer && b.offer.riders) || []).map(function (e) { return 'rider:' + e; })), b.ref, b.bizId, ['cust:' + b.email], 'Update on ' + b.ref + ': ' + status, 'Your order ' + b.ref + ' is now: ' + status + (note ? '\nNote: ' + note : ''), who.email); return b; }
     var mailTo = ['cust:' + b.email]; if (who.role === 'super' || who.role === 'system' || who.role === 'rider') mailTo.push('biz:' + b.bizId);
     if (b.rider && ['Ready for Pick-up', 'Cancelled', 'Rejected'].indexOf(status) >= 0) mailTo.push('rider:' + b.rider);
     await event('status', txt, audFor(b), b.ref, b.bizId, mailTo, 'Update on ' + b.ref + ': ' + status, 'Your ' + (b.kind === 'food' ? 'order' : 'booking') + ' ' + b.ref + ' with ' + bn + ' is now: ' + status + (note ? '\nNote: ' + note : '') + '\n\n' + summary(b), who.email);
@@ -1222,6 +1289,7 @@ function createCore(env) {
       var b = Object.assign(d, { id: '', ref: newRef('TR'), group: group, created: created, updated: created, email: me.email, customer: { name: me.name, phone: me.phone, address: me.address }, notes: String(p.notes || '').slice(0, 500),
         status: Rules.CASH.indexOf(d.payMethod) >= 0 ? 'New' : 'Awaiting Payment', payStatus: Rules.CASH.indexOf(d.payMethod) >= 0 ? 'Unpaid' : 'Pending',
         fee: Rules.feeFor(biz(cat, d.bizId), Rules.gross(d)), discount: 0, idFile: idFile, proofFile: proofFile, rider: '', riderAccepted: false, history: [] });
+      if (b.kind === 'food' && b.fulfillment === 'delivery' && st.riderDispatch !== false) { b.dispatch = true; if (b.status === 'New') b.status = 'Finding Rider'; }
       b.id = b.ref; b.history.push({ at: created, status: b.status, by: me.name, role: 'customer' }); out.push(b);
     });
     var due = out.reduce(function (t, b) { return t + (+b.dueNow || 0); }, 0);
@@ -1233,6 +1301,7 @@ function createCore(env) {
       var b = out[i], bn = bizName(cat, b.bizId), what = b.kind === 'food' ? 'order' : 'booking';
       if (b.points) await addPoints(cat, member(me), b.bizId, -b.points.points, 'redeem', b.ref, 'Redeemed on ' + b.ref);
       await env.db.put(T.book, b);
+      if (b.dispatch) { await event('new', 'New delivery order ' + b.ref + ' for ' + bn + ' from ' + me.name + ' - P' + b.quote.total + ' (' + (b.status === 'Finding Rider' ? 'finding a rider' : b.status) + ')', ['super', 'cust:' + b.email], b.ref, b.bizId, [], '', '', me.email); if (b.status === 'Finding Rider') await startOffer(b, cat); continue; }
       await event('new', 'New ' + what + ' ' + b.ref + ' for ' + bn + ' from ' + me.name + ' - P' + b.quote.total + ' (' + b.status + ')', ['biz:' + b.bizId, 'super', 'cust:' + b.email], b.ref, b.bizId,
         ['biz:' + b.bizId, 'super'], 'New ' + what + ' ' + b.ref + ' - ' + bn, me.name + ' | ' + me.phone + ' | ' + me.email + '\n' + me.address + '\n\n' + summary(b) + (b.code ? '\nDiscount code ' + b.code.code + ': -P' + b.code.amount : '') + (b.points ? '\nPoints redeemed: ' + b.points.points + ' (-P' + b.points.amount + ')' : ''), '');
     }
@@ -1529,7 +1598,7 @@ function createCore(env) {
     return {};
   };
   A.myBookings = async function (p) {
-    var who = await auth(p.token, 'customer'), mine = (await allBookings()).filter(function (b) { return b.email === who.email; }), riders = {};
+    var who = await auth(p.token, 'customer'); await sweepOffers(); var mine = (await allBookings()).filter(function (b) { return b.email === who.email; }), riders = {};
     for (var i = 0; i < mine.length; i++) { var e = mine[i].rider; if (e && !riders[e]) { var r = await env.db.get(T.staff, e) || {}; riders[e] = { name: r.name || 'Your rider', phone: r.phone || '', vehicle: r.vehicle || '', plate: r.plate || '' }; } }
     return { bookings: mine.map(function (b) { var c = strip(b); delete c.fee; if (b.rider) c.riderInfo = riders[b.rider]; return c; }).sort(function (a, b) { return b.created.localeCompare(a.created); }) };
   };
@@ -1646,7 +1715,7 @@ function createCore(env) {
   /* merchant */
   A.mBookings = async function (p) {
     var who = await auth(p.token, 'merchant'), td = env.today();
-    var list = (await allBookings()).filter(function (b) { return b.bizId === who.bizId; });
+    var list = (await allBookings()).filter(function (b) { return b.bizId === who.bizId && !(b.dispatch && (b.status === 'Finding Rider' || (b.status === 'Awaiting Payment' && b.payMethod === 'online') || (b.status === 'Cancelled' && !b.rider && (b.history || []).every(function (h) { return h.status !== 'New' && h.status !== 'Accepted'; })))); });
     if (who.role === 'staff') list = list.filter(function (b) { return Rules.CLOSED.indexOf(b.status) < 0 || b.created.slice(0, 10) === td || String(b.updated || '').slice(0, 10) === td; });
     return { bookings: list.map(function (b) { var c = strip(b); if (who.role === 'staff') { delete c.fee; delete c.discount; } return c; }) };
   };
@@ -1659,10 +1728,11 @@ function createCore(env) {
   };
   A.assignRider = async function (p) {
     var who = await auth(p.token), b = await getB(p.ref);
-    if (!(who.role === 'super' || ((who.role === 'manager' || who.role === 'staff') && b.bizId === who.bizId))) err('Not allowed.');
+    if (!(who.role === 'super' || ((who.role === 'manager' || who.role === 'staff') && b.bizId === who.bizId && !b.dispatch))) err(b.dispatch ? 'Riders accept delivery orders themselves. Ask MJV Services OPC if you need help.' : 'Not allowed.');
     if (b.kind !== 'food' || b.fulfillment !== 'delivery') err('Only delivery orders can have a rider.');
     var r = p.rider ? await env.db.get(T.staff, low(p.rider)) : null; if (p.rider && (!r || r.role !== 'rider')) err('Rider not found.');
     var old = b.rider; b.rider = r ? r.email : ''; b.riderAccepted = false; b.updated = now(); await env.db.put(T.book, b);
+    if (r && b.dispatch && !old && b.status === 'Finding Rider') { b.offer = b.offer || { at: now(), round: 2, riders: [], declined: [] }; b.rider = ''; b.offer.riders = b.offer.riders.filter(function (e) { return e !== r.email; }).concat([r.email]); b.offer.closed = null; b.offer.declined = (b.offer.declined || []).filter(function (e) { return e !== r.email; }); await env.db.put(T.book, b); await event('offer', 'Delivery request ' + b.ref + ' sent to you by MJV Services OPC. Open the Rider app to accept.', ['rider:' + r.email], b.ref, b.bizId, ['rider:' + r.email], 'Delivery request ' + b.ref, summary(b), who.email); return { booking: strip(b) }; }
     if (r) await event('assigned', 'Delivery ' + b.ref + ' assigned to you - ' + (b.landmark || b.customer.address), ['rider:' + r.email, 'biz:' + b.bizId, 'super'], b.ref, b.bizId, ['rider:' + r.email], 'New delivery assigned: ' + b.ref, summary(b), who.email);
     if (old && old !== b.rider) await event('unassigned', 'Delivery ' + b.ref + ' was reassigned', ['rider:' + old], b.ref, b.bizId, [], '', '', who.email);
     return { booking: strip(b) };
@@ -1775,12 +1845,36 @@ function createCore(env) {
     return { dataUrl: await env.files.read(id) };
   };
   /* rider */
-  A.rOrders = async function (p) { var who = await auth(p.token, 'rider'); return { me: pubStaff(who.rec), orders: (await allBookings()).filter(function (b) { return b.rider === who.email; }).map(function (b) { var c = strip(b); delete c.fee; delete c.discount; delete c.idFile; delete c.proofFile; return c; }) }; };
-  A.rAvailable = async function (p) { var who = await auth(p.token, 'rider'); who.rec.available = !!p.value; who.rec.lastSeen = now(); await env.db.put(T.staff, who.rec); await event('rider', who.name + ' is now ' + (p.value ? 'available' : 'offline'), ['super'], '', '', []); return { me: pubStaff(who.rec) }; };
+  A.rOrders = async function (p) { var who = await auth(p.token, 'rider'); await sweepOffers(); var cat = await catalog(), all = await allBookings(); return { me: pubStaff(who.rec), offers: who.rec.available ? all.filter(function (b) { return b.dispatch && !b.rider && b.offer && !b.offer.closed && b.offer.riders.indexOf(who.email) >= 0 && (b.offer.declined || []).indexOf(who.email) < 0 && Rules.CLOSED.indexOf(b.status) < 0; }).map(function (b) { return offerView(b, cat, who.rec); }) : [], orders: (await allBookings()).filter(function (b) { return b.rider === who.email; }).map(function (b) { var c = strip(b); delete c.fee; delete c.discount; delete c.idFile; delete c.proofFile; return c; }) }; };
+  A.rAvailable = async function (p) { var who = await auth(p.token, 'rider'); who.rec.available = !!p.value; who.rec.lastSeen = now(); if (!p.value) { var still = (await allBookings()).some(function (b) { return b.rider === who.email && liveFor(b); }); if (!still) delete who.rec.loc; } await env.db.put(T.staff, who.rec); await event('rider', who.name + ' is now ' + (p.value ? 'available' : 'offline'), ['super'], '', '', []); return { me: pubStaff(who.rec) }; };
+  A.rOffer = async function (p) {
+    var who = await auth(p.token, 'rider'), b = await getB(p.ref), cat = await catalog();
+    if (b.rider && b.dispatch) err(b.rider === who.email ? 'You already accepted this delivery.' : 'Another rider already accepted this delivery.');
+    if (!b.dispatch || !b.offer || b.offer.closed || Rules.CLOSED.indexOf(b.status) >= 0) err('This delivery request is no longer available.');
+    if (b.offer.riders.indexOf(who.email) < 0) err('This delivery request was not sent to you.');
+    if (!p.accept) {
+      b.offer.declined = (b.offer.declined || []).concat([who.email]); await env.db.put(T.book, b);
+      if (b.offer.riders.every(function (e) { return b.offer.declined.indexOf(e) >= 0; }) && b.offer.round < 2) { b.offer.at = new Date(Date.parse(now()) - 60 * 6e4).toISOString(); await env.db.put(T.book, b); await sweepOffers(); }
+      return { ok: true };
+    }
+    if (!who.rec.available) err('Go online first to accept deliveries.');
+    var prev = b.status; b.rider = who.email; b.riderAccepted = true; b.offer.closed = now(); b.offer.by = who.email;
+    if (b.status === 'Finding Rider') b.status = b.payMethod === 'online' || b.payMethod === 'transfer' ? 'Payment Confirmed' : 'New';
+    b.history = (b.history || []).concat([{ at: now(), status: b.status, by: who.name, role: 'rider', note: 'Rider ' + who.name + ' accepted the delivery' }]);
+    b.updated = now(); await env.db.put(T.book, b);
+    var bn = bizName(cat, b.bizId), me = b.customer || {};
+    if (prev === 'Finding Rider') await event('new', 'New delivery order ' + b.ref + ' for ' + bn + ' from ' + (me.name || b.email) + ' - P' + b.quote.total + ' · rider ' + who.name + ' accepted', ['biz:' + b.bizId, 'super'], b.ref, b.bizId, ['biz:' + b.bizId], 'New order ' + b.ref + ' - ' + bn + ' (rider ' + who.name + ')', (me.name || '') + ' | ' + (me.phone || '') + '\n' + (b.landmark || me.address || '') + '\n\n' + summary(b) + '\n\nRider: ' + who.name + (who.rec.phone ? ' ' + who.rec.phone : ''), who.email);
+    else await event('assigned', 'Rider ' + who.name + ' accepted delivery ' + b.ref, ['biz:' + b.bizId, 'super'], b.ref, b.bizId, [], '', '', who.email);
+    await event('status', b.ref + ': rider ' + who.name + ' accepted your order' + (prev === 'Finding Rider' ? ' and it was sent to ' + bn : '') + '.', ['cust:' + b.email], b.ref, b.bizId, ['cust:' + b.email], 'A rider accepted ' + b.ref, 'Good news! ' + who.name + ' will deliver your order ' + b.ref + ' from ' + bn + '.', who.email);
+    var others = b.offer.riders.filter(function (e) { return e !== who.email; }); if (others.length) await event('unassigned', 'Delivery request ' + b.ref + ' was taken by another rider', others.map(function (e) { return 'rider:' + e; }), b.ref, b.bizId, [], '', '', who.email);
+    return { booking: strip(b) };
+  };
+  A.custCancel = async function (p) { var who = await auth(p.token, 'customer'), b = await getB(p.ref); if (b.email !== who.email) err('Booking not found.'); if (b.status !== 'Finding Rider') err('This order can no longer be cancelled here. Message the store.'); return { booking: strip(await setStatus(who, p.ref, 'Cancelled', 'Cancelled by the customer while finding a rider' + (b.payStatus === 'Paid' ? '. Refund due.' : ''))) }; };
   A.rRespond = async function (p) {
     var who = await auth(p.token, 'rider'), b = await getB(p.ref); if (b.rider !== who.email) err('This delivery is not assigned to you.');
     if (p.accept) { b.riderAccepted = true; } else { b.rider = ''; b.riderAccepted = false; }
     b.updated = now(); await env.db.put(T.book, b);
+    if (!p.accept && b.dispatch) { b.offer = { at: now(), round: 1, riders: [], declined: [who.email] }; await startOffer(b, await catalog()); }
     await event('rider', who.name + (p.accept ? ' accepted' : ' declined') + ' delivery ' + b.ref, ['biz:' + b.bizId, 'super'], b.ref, b.bizId, p.accept ? [] : ['biz:' + b.bizId], 'Rider declined ' + b.ref, who.name + ' declined delivery ' + b.ref + '. Please assign another rider.', who.email);
     return { booking: strip(b) };
   };
@@ -1790,10 +1884,10 @@ function createCore(env) {
     var who = await auth(p.token, 'rider'), lat = +p.lat, lng = +p.lng;
     if (!isFinite(lat) || !isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) err('Invalid location.');
     var active = (await allBookings()).filter(function (b) { return b.rider === who.email && liveFor(b); });
-    if (!active.length) { if (who.rec.loc) { delete who.rec.loc; await env.db.put(T.staff, who.rec); } return { sharing: false, refs: [] }; }
+    if (!active.length && !who.rec.available) { if (who.rec.loc) { delete who.rec.loc; await env.db.put(T.staff, who.rec); } return { sharing: false, refs: [] }; }
     who.rec.loc = { lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6, acc: Math.round(+p.acc || 0), heading: isFinite(+p.heading) ? Math.round(+p.heading) : null, at: now() };
     who.rec.lastSeen = now(); await env.db.put(T.staff, who.rec);
-    return { sharing: true, refs: active.map(function (b) { return b.ref; }) };
+    return { sharing: true, area: !active.length, refs: active.map(function (b) { return b.ref; }) };
   };
   A.track = async function (p) {
     var who = await auth(p.token), b = await getB(p.ref), cat = await catalog(true);
@@ -3223,6 +3317,7 @@ function vSettings() {
     <div class="acard"><h3><span class="hl">${ic('upload')} Photo uploads at checkout</span></h3><div class="field mt"><label>Valid ID photo (stays & rentals)</label></div>${three('settings.idUploadAtCheckout', st.idUploadAtCheckout)}
       <div class="field mt"><label>Payment proof (bank / e-wallet transfers)</label></div>${three('settings.proofUpload', st.proofUpload)}</div>
     <div class="acard"><h3><span class="hl">${ic('wallet')} Payments</span></h3>${aIn('settings.transferEnabled', 'Offer bank / e-wallet transfer with proof (in addition to HitPay)', 'bool')}${aIn('settings.transferInstructions', 'Transfer instructions shown to customers', 'textarea', 3)}<div class="agrid mt">${aIn('business.downpaymentPct', 'Downpayment for stays & rentals (%)', 'num')}</div></div>
+    <div class="acard"><h3><span class="hl">${ic('bike')} Rider dispatch</span></h3>${aIn('settings.riderDispatch', 'Nearby riders accept delivery orders first; the merchant gets the order once a rider accepts', 'bool')}<div class="agrid">${aIn('settings.dispatchKm', 'Send requests to online riders within (km of the store)', 'num')}${aIn('settings.dispatchWidenMin', 'If nobody accepts, send to all online riders after (minutes)', 'num')}${aIn('settings.dispatchAlertMin', 'Alert Super Admin and the customer after (minutes)', 'num')}</div><p class="hint">Riders without a recent location get requests from stores in their town. Off: merchants assign riders themselves (older behaviour). You can always send a waiting order to a specific rider from Transactions.</p></div>
     <div class="acard"><h3><span class="hl">${ic('bike')} Riders</span></h3><div class="agrid">${aIn('settings.riderSharePct', 'Rider share of the delivery fee for older orders only (%)', 'num')}</div>
       <div class="agrid">${aIn('settings.codMinCompleted', 'Cash on delivery unlocks after this many completed orders or bookings', 'num')}${aIn('settings.codMax', 'Cash on delivery ceiling per order (₱, total incl. delivery fee; 0 = no limit)', 'num')}${aIn('settings.codExemptBefore', 'Customers who signed up before this date (YYYY-MM-DD) skip the completed-orders rule; empty = no one')}</div>
       <div class="field mt"><label>Cash collected by riders on COD orders goes to</label></div><div class="seg">${[['merchant', 'The merchant'], ['tara', 'Tara Romblon']].map(o => `<button type="button" class="${(st.codCashTo || 'merchant') === o[0] ? 'on' : ''}" data-set="settings.codCashTo" data-val="${o[0]}">${o[1]}</button>`).join('')}</div>
