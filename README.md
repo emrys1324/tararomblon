@@ -116,7 +116,15 @@ Example: 3.2 km → 2 started km → ₱20 fee: customer ₱14, store ₱6, ride
 - **Privacy:** only the customer, that store's users and Super Admins can see the location. It is only shared while the delivery is in progress, and it's cleared afterwards.
 - **Maps:** Google Maps is used when a key is set. Without one, the apps use OpenStreetMap, the same map as the delivery pin.
 
-### Google Maps setup (optional)
+### Google Maps setup (optional, recommended)
+
+With a key, food checkout uses a live Google map to pick the delivery location: search an address or landmark, tap the map or drag the pin, see the store and the delivery area, and the pinned address is shown. Riders' live tracking also uses Google Maps. Without a key, the free OpenStreetMap map is used.
+
+1. Google Cloud Console → create a project → APIs & Services → enable **Maps JavaScript API**, **Places API (New)** and **Geocoding API** (billing must be on; there is a monthly free allowance).
+2. Credentials → Create credentials → API key → Restrict it: Application restriction **Websites** = `https://tararomblon.vercel.app/*`; API restriction = the three APIs above.
+3. Vercel → Project → Settings → Environment Variables: `GOOGLE_MAPS_API_KEY` = the key (optional `GOOGLE_MAPS_MAP_ID` = a Map ID from Google Maps Platform → Map management). Redeploy.
+
+### Google Maps setup (older notes)
 1. In Google Cloud Console, create a project and add a billing account. The Maps JavaScript API needs billing enabled, but has a monthly free usage allowance.
 2. Go to **APIs & Services > Library**, then enable **Maps JavaScript API**.
 3. Go to **APIs & Services > Credentials > Create credentials > API key**. Restrict it:

@@ -567,6 +567,40 @@ function checkoutBooking() {
   }));
 }
 
+/* Google Maps location picker for delivery: address search (Places), tap or drag the pin, store marker, address of the pin */
+async function googlePicker(elId, F, setPin, fallback) {
+  window.gm_authFailure = () => { console.warn('Google Maps key rejected'); const m = $('#' + elId); if (m && fallback) { window._pinMove = null; const n = m.cloneNode(false); m.replaceWith(n); fallback(); } };
+  await loadGoogle();
+  const [{ Map, Circle }, { AdvancedMarkerElement }] = await Promise.all([google.maps.importLibrary('maps'), google.maps.importLibrary('marker')]);
+  const el = $('#' + elId); if (!el) return;
+  const store = { lat: +F.lat, lng: +F.lng };
+  const map = new Map(el, { center: store, zoom: 15, mapId: MAPCFG.mapId || 'DEMO_MAP_ID', disableDefaultUI: true, zoomControl: true, fullscreenControl: true, gestureHandling: 'greedy', clickableIcons: false });
+  const tag = (cls, html) => { const e = document.createElement('div'); e.className = 'tpin ' + cls; e.innerHTML = html; return e; };
+  new AdvancedMarkerElement({ map, position: store, content: tag('store', ic('cup', 16)), title: F.storeName });
+  const R = Pricing.deliveryRule(CAT), max = +F.maxKm || R.maxKm;
+  try { new Circle({ map, center: store, radius: max * 1000, strokeColor: '#13305a', strokeOpacity: .35, strokeWeight: 1, fillColor: '#13305a', fillOpacity: .04, clickable: false }); } catch (e) { }
+  const pin = new AdvancedMarkerElement({ map, position: store, content: tag('dest', ic('home', 16)), title: 'Delivery location', gmpDraggable: true, zIndex: 10 }); pin.element && (pin.element.style.opacity = '.45');
+  let geocoder = null; try { const { Geocoder } = await google.maps.importLibrary('geocoding'); geocoder = new Geocoder(); } catch (e) { }
+  const showAddr = (lat, lng, label) => { const a = $('#pinAddr'); if (!a) return; if (label) { a.textContent = '📍 ' + label; return; } a.textContent = ''; if (!geocoder) return;
+    geocoder.geocode({ location: { lat, lng } }).then(r => { const x = r.results && r.results[0]; if (x && $('#pinAddr') && st_same(lat, lng)) $('#pinAddr').textContent = '📍 ' + x.formatted_address; }).catch(() => {}); };
+  let last = null; const st_same = (a, b) => last && last[0] === a && last[1] === b;
+  window._pinMove = (lat, lng, center) => { pin.position = { lat, lng }; if (pin.element) pin.element.style.opacity = '1'; if (center) { map.panTo({ lat, lng }); if (map.getZoom() < 16) map.setZoom(17); } last = [lat, lng]; showAddr(lat, lng); };
+  pin.addListener('dragend', () => { const p = pin.position, lat = typeof p.lat === 'function' ? p.lat() : p.lat, lng = typeof p.lng === 'function' ? p.lng() : p.lng; setPin(lat, lng); });
+  map.addListener('click', e => setPin(e.latLng.lat(), e.latLng.lng()));
+  /* address search */
+  try {
+    const { PlaceAutocompleteElement } = await google.maps.importLibrary('places');
+    const pac = new PlaceAutocompleteElement({ includedRegionCodes: ['ph'], locationBias: { center: store, radius: Math.max(5000, max * 1000) } });
+    pac.setAttribute('placeholder', 'Search your address or a landmark'); pac.className = 'gpac';
+    const box = $('#mapSearch'); if (box) { box.innerHTML = ''; box.appendChild(pac); }
+    pac.addEventListener('gmp-select', async ev => {
+      try { const place = ev.placePrediction.toPlace(); await place.fetchFields({ fields: ['location', 'formattedAddress', 'displayName'] }); if (!place.location) return;
+        setPin(place.location.lat(), place.location.lng(), true); showAddr(0, 0, [place.displayName, place.formattedAddress].filter(Boolean).join(' · '));
+        const lm = $('#lmk'); if (lm && !lm.value.trim()) lm.value = place.displayName || place.formattedAddress || ''; } catch (e) { toast('Could not open that place. Tap the map instead.'); }
+    });
+  } catch (e) { console.warn('Places search not available', e); }
+}
+
 /* ================= CHECKOUT: FOOD ================= */
 function checkoutFood() {
   requireSignIn(() => {
@@ -575,7 +609,7 @@ function checkoutFood() {
     openSheet(`<div class="sbody"><h2>Checkout — ${esc(F.storeName)}</h2>
       <div class="opts" style="margin-top:12px">${F.deliveryEnabled ? `<label><input type="radio" name="ful" value="delivery" ${st.ful === 'delivery' ? 'checked' : ''}> ${ic('scooter')} Delivery</label>` : ''}${F.pickupEnabled ? `<label><input type="radio" name="ful" value="pickup" ${st.ful === 'pickup' ? 'checked' : ''}> ${ic('store')} Pick-up</label>` : ''}</div>
       <div id="delBox">
-        <div class="field mt"><label>Pin your delivery location</label><span class="hint">Tap the map or drag the pin. Fee is based on distance from ${esc(F.storeName)}.</span></div>
+        <div class="field mt"><label>Pin your delivery location</label><span class="hint">Search your address, tap the map or drag the pin. Fee is based on distance from ${esc(F.storeName)}.</span></div><div id="mapSearch"></div><div class="hint" id="pinAddr"></div>
         <div class="map" id="map"></div>
         <button class="btn ghost sm mt" id="geoBtn" type="button">${ic('nav')} Use my current location</button>
         <div class="field mt"><label>House / landmark for the rider</label><input id="lmk" value="${esc(p.address)}"></div>
@@ -619,19 +653,22 @@ function checkoutFood() {
     };
     document.querySelectorAll('input[name=ful]').forEach(r => r.addEventListener('change', () => { st.ful = r.value; calc(); if (st.ful === 'delivery') setTimeout(() => window._map && window._map.invalidateSize(), 50); }));
     $('#payOpts').addEventListener('change', calc);
-    const setPin = (lat, lng) => { st.lat = +lat.toFixed(6); st.lng = +lng.toFixed(6); if (window._mk) { window._mk.setLatLng([lat, lng]).setOpacity(1); } calc(); };
+    const setPin = (lat, lng, center) => { st.lat = +lat.toFixed(6); st.lng = +lng.toFixed(6); if (window._pinMove) window._pinMove(st.lat, st.lng, center); calc(); };
     $('#geoBtn').onclick = () => {
       if (!navigator.geolocation) { toast('Location is not available on this device. Tap the map instead.'); return; }
       $('#geoBtn').disabled = true; $('#geoBtn').textContent = 'Finding your location…';
-      navigator.geolocation.getCurrentPosition(pos => { $('#geoBtn').disabled = false; $('#geoBtn').innerHTML = ic('locate') + ' Use my current location'; setPin(pos.coords.latitude, pos.coords.longitude); window._map && window._map.setView([st.lat, st.lng], 16); },
+      navigator.geolocation.getCurrentPosition(pos => { $('#geoBtn').disabled = false; $('#geoBtn').innerHTML = ic('locate') + ' Use my current location'; setPin(pos.coords.latitude, pos.coords.longitude, true); },
         e => { $('#geoBtn').disabled = false; $('#geoBtn').innerHTML = ic('locate') + ' Use my current location'; $('#ckErr').textContent = e && e.code === 1 ? 'Location is blocked. Turn on location services and allow this site, or tap the map to pin your location.' : 'Could not detect your location. Turn on Location / GPS and try again, or tap the map.'; }, { enableHighAccuracy: true, timeout: 12000 });
     };
-    loadMap('map', F.lat, F.lng, (map) => {
+    window._pinMove = null;
+    const osmMap = () => loadMap('map', F.lat, F.lng, (map) => {
       L.marker([F.lat, F.lng], { icon: L.divIcon({ html: ic('cup', 16), className: 'storepin', iconSize: [28, 28] }) }).addTo(map).bindTooltip(F.storeName);
       window._mk = L.marker([F.lat, F.lng], { draggable: true, opacity: .4 }).addTo(map);
+      window._pinMove = (a, b, center) => { window._mk.setLatLng([a, b]).setOpacity(1); if (center) map.setView([a, b], 16); };
       window._mk.on('dragend', e => { const ll = e.target.getLatLng(); setPin(ll.lat, ll.lng); });
       map.on('click', e => setPin(e.latlng.lat, e.latlng.lng));
     });
+    if (window.MAPCFG && MAPCFG.key) googlePicker('map', F, setPin, osmMap).catch(e => { console.warn('Google Maps picker', e); if ($('#map')) { $('#map').innerHTML = ''; osmMap(); } }); else osmMap();
     calc(); if (F.codEnabled) api('myBookings', { token: session.token }).then(r => { window._myB = r.bookings; calc(); }).catch(() => {}); wireUpload('fProof'); wirePromo(() => ({ [F.bizId]: Pricing.food(CAT, { bizId: F.bizId, lines: cart.food, fulfillment: 'quote' }).subtotal || 0 }), calc);
     $('#ckBtn').onclick = async () => {
       const q = calc(); if (!q || q.error) return;
