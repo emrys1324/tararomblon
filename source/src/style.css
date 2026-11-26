@@ -581,3 +581,4 @@ footer .fown span{display:inline}
 .icalcard{border-left:4px solid var(--navy)}.icalcard h3{display:flex;gap:8px;align-items:center}
 .icalst{margin-top:10px;padding:10px 12px;border-radius:10px;background:#eaf6ee;border:1px solid #bfe3cb;color:#1d5b33;font-size:13px}.icalst.bad{background:#fdecea;border-color:#f3c3bc;color:#9b2c1f}
 .copyrow{display:flex;gap:8px}.copyrow input{flex:1;min-width:0;border:1.5px solid var(--line);border-radius:10px;padding:9px 12px;background:#f8f7f3;font-size:13px}
+.soonwarn{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}

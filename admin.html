@@ -593,6 +593,7 @@ footer .fown span{display:inline}
 .icalcard{border-left:4px solid var(--navy)}.icalcard h3{display:flex;gap:8px;align-items:center}
 .icalst{margin-top:10px;padding:10px 12px;border-radius:10px;background:#eaf6ee;border:1px solid #bfe3cb;color:#1d5b33;font-size:13px}.icalst.bad{background:#fdecea;border-color:#f3c3bc;color:#9b2c1f}
 .copyrow{display:flex;gap:8px}.copyrow input{flex:1;min-width:0;border:1.5px solid var(--line);border-radius:10px;padding:9px 12px;background:#f8f7f3;font-size:13px}
+.soonwarn{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
 
 </style>
 </head>
@@ -2854,7 +2855,7 @@ function aPhoto(path) {
 function aBiz(path, type) { const v = getP(ADM.draft, path) || ''; const list = ADM.draft.businesses.filter(b => !type || b.type === type || b.id === v); return `<div class="field"><label>Business</label><select data-b="${path}">${list.map(b => `<option value="${b.id}" ${b.id === v ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select></div>`; }
 function admTabHtml() {
   const D = ADM.draft;
-  if (ADM.tab === 'stays') return D.stays.map((s, i) => `<div class="acard"><h3>${esc(s.name || 'New accommodation')}<button class="xbtn" title="Remove" onclick="admDel('stays',${i})">${ic('x')}</button></h3>
+  if (ADM.tab === 'stays') return (!(D.settings || {}).staysLive ? `<div class="warn soonwarn"><b>Customers can't see any stay yet.</b> Stays are set to <b>Coming soon</b>, so active stays are hidden on the customer site. <button class="btn sm" onclick="ADM.draft.settings=Object.assign({},ADM.draft.settings||{},{staysLive:true});admDirty();admRerender();toast('Stays will be open once you tap Save')">Open stays to customers</button></div>` : '') + D.stays.map((s, i) => `<div class="acard"><h3>${esc(s.name || 'New accommodation')}<button class="xbtn" title="Remove" onclick="admDel('stays',${i})">${ic('x')}</button></h3>
     ${aIn(`stays.${i}.active`, 'Show on website', 'bool')}
     <div class="agrid">${aIn(`stays.${i}.name`, 'Name')}${aBiz(`stays.${i}.bizId`, 'Stay')}${aTown(`stays.${i}.town`)}${aIn(`stays.${i}.location`, 'Address / location')}${aIn(`stays.${i}.rate`, 'Rate per night (₱)', 'num')}${aIn(`stays.${i}.promoPct`, 'Discount (%)', 'num')}${aIn(`stays.${i}.deposit`, 'Security deposit (₱)', 'num')}${aIn(`stays.${i}.maxGuests`, 'Max guests', 'num')}${aIn(`stays.${i}.checkInTime`, 'Check-in time')}${aIn(`stays.${i}.checkOutTime`, 'Check-out time')}</div>
     ${aIn(`stays.${i}.amenities`, 'Amenities (one per line)', 'textarea', 7)}<div class="field mt"><label>Photo</label></div>${aPhoto(`stays.${i}.photo`)}</div><div class="acard icalcard" data-ical="${esc(s.id)}"><h3>${ic('cal')} Calendar sync · ${esc(s.name || '')}</h3><p class="meta">Loading…</p></div>`).join('') + (setTimeout(icalFill, 0), '')
