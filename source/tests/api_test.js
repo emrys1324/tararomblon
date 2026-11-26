@@ -62,6 +62,7 @@ global.fetch = async (url, opt = {}) => {
     const b = JSON.parse(opt.body); const i = LV.customers.findIndex(c => c.id === b.id); if (i >= 0) LV.customers[i] = Object.assign(LV.customers[i], b); else LV.customers.push(Object.assign({ id: 'lv' + (LV.customers.length + 1) }, b)); return J(b);
   }
   if (u.host === 'oauth2.googleapis.com' && u.pathname === '/tokeninfo') { const g = GTOK[u.searchParams.get('id_token')]; return g ? J(g) : J({ error_description: 'Invalid Value' }, 400); }
+  if (u.host === 'cal.test') { calls++; if (u.pathname === '/bad.ics') return new Response('nope', { status: 404 }); const d = (k) => ph(k).replace(/-/g, ''); return new Response(['BEGIN:VCALENDAR', 'VERSION:2.0', 'BEGIN:VEVENT', 'DTSTART;VALUE=DATE:' + d(40), 'DTEND;VALUE=DATE:' + d(43), 'SUMMARY:Reserved', 'END:VEVENT', 'BEGIN:VEVENT', 'DTSTART;VALUE=DATE:' + d(50), 'DTEND;VALUE=DATE:' + d(51), 'SUMMARY:Airbnb (Not available)', 'END:VEVENT', 'BEGIN:VEVENT', 'DTSTART;VALUE=DATE:' + d(60), 'DTEND;VALUE=DATE:' + d(62), 'STATUS:CANCELLED', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n'), { status: 200, headers: { 'Content-Type': 'text/calendar' } }); }
   if (u.host === 'push.test') { PUSHES.push({ path: u.pathname, h, body: opt.body }); return new Response(null, { status: u.pathname === '/gone' ? 410 : 201 }); }
   if (u.host === 'api.resend.com') { const b = JSON.parse(opt.body); MAILS.push(b); return J({ id: 'm' + MAILS.length }); }
   throw new Error('Unexpected fetch ' + url);
@@ -589,6 +590,23 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   const rb = await ok('createBooking', { token: cust, kind: 'rental', agree: true, payMethod: 'online', rentalTerms: { at: new Date().toISOString() }, lines: [rl] }).catch(e => ({ err: e.message }));
   if (!rb.err) { const rbd = DB.bookings.find(r => r.id === rb.refs[0]).data, anaV = DB.customers.find(r => r.id === 'ana@mail.com').data.verify; assert(anaV.status === 'verified' && rbd.idFile === anaV.file, 'verified customer books without uploading an ID again; the booking uses the verified ID'); }
   if (rb.err) console.log('  (rental booking skipped: ' + rb.err + ')'); else assert(DB.bookings.find(r => r.id === rb.refs[0]).data.rentalTerms.text === CATALOG.business.rentalTerms, 'accepted terms and time saved on the rental booking');
+
+  console.log('Airbnb calendar sync (stays)');
+  const icalFn = require(V + 'ical.js'), sid = CATALOG.stays[0].id;
+  await fails('adminSaveIcal', { token: admin, stayId: sid, urls: ['not a link'] }, /starts with https/);
+  await fails('adminSaveIcal', { token: cust, stayId: sid, urls: [] }, /Not allowed|sign in/i);
+  const ic1 = await ok('adminSaveIcal', { token: admin, stayId: sid, urls: ['webcal://cal.test/airbnb.ics'] }), st1 = ic1.stays.find(x => x.id === sid);
+  assert(st1.urls[0] === 'https://cal.test/airbnb.ics' && st1.nights === 4 && !st1.error && st1.blocks.length === 2, 'Airbnb link saved and synced: 4 nights blocked (cancelled event ignored)');
+  const av = (await ok('availability')).busy.filter(b => b.itemId === sid && b.ext); assert(av.length === 2 && av[0].start === ph(40) && av[0].end === ph(43), 'Airbnb nights show as booked in the customer calendar');
+  await fails('createBooking', { token: cust, kind: 'stay', agree: true, payMethod: 'online', lines: [{ type: 'stay', itemId: sid, checkin: ph(41), checkout: ph(42), guests: 2 }] }, /already booked/);
+  const sb2 = await ok('createBooking', { token: cust, kind: 'stay', agree: true, payMethod: 'online', lines: [{ type: 'stay', itemId: sid, checkin: ph(44), checkout: ph(46), guests: 2 }] });
+  assert(sb2.refs.length === 1, 'dates not booked on Airbnb can still be booked here');
+  const iex = st1.exportPath, irq = { method: 'GET', query: Object.fromEntries(new URL('https://x' + iex).searchParams), headers: {} }, irs = mkRes(); irs.send = function (t) { this.body = t; return this; };
+  await icalFn(irq, irs); assert(irs.code === 200 && /BEGIN:VCALENDAR/.test(irs.body) && irs.body.includes('DTSTART;VALUE=DATE:' + ph(44).replace(/-/g, '')) && !irs.body.includes(ph(40).replace(/-/g, '')), 'export link lists Tara Romblon bookings for Airbnb (not the imported ones)');
+  const irs2 = mkRes(); irs2.send = function (t) { this.body = t; return this; }; await icalFn({ method: 'GET', query: { stay: sid, key: 'wrong' }, headers: {} }, irs2); assert(irs2.code === 404, 'export link needs its secret key');
+  const ic2 = await ok('adminSaveIcal', { token: admin, stayId: sid, urls: ['https://cal.test/airbnb.ics', 'https://cal.test/bad.ics'] }); assert(/404/.test(ic2.stays.find(x => x.id === sid).error) && ic2.stays.find(x => x.id === sid).nights === 4, 'a broken link is reported; the good one still blocks nights');
+  await ok('setStatus', { token: admin, ref: sb2.refs[0], status: 'Cancelled' }).catch(() => {});
+  await ok('adminSaveIcal', { token: admin, stayId: sid, urls: [] });
 
   console.log('\nALL PASSED · ' + calls + ' simulated network calls · ' + MAILS.length + ' emails');
 })().catch(e => { console.error('\nFAILED:', e.stack || e); process.exit(1); });

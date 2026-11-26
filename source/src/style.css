@@ -578,3 +578,6 @@ footer .fown{margin-top:20px;padding-top:14px;border-top:1px solid rgba(255,255,
 footer .fown span{display:inline}
 .termsbox{max-height:46vh;overflow:auto;white-space:pre-line;margin-top:12px}
 .okline{margin-top:12px;padding:10px 12px;border-radius:10px;background:#eaf6ee;border:1px solid #bfe3cb;color:#1d5b33;font-size:14px}.okline summary{cursor:pointer;display:flex;gap:6px;align-items:center;flex-wrap:wrap;list-style:none}.okline .policy{margin-top:8px;color:var(--ink,#223)}
+.icalcard{border-left:4px solid var(--navy)}.icalcard h3{display:flex;gap:8px;align-items:center}
+.icalst{margin-top:10px;padding:10px 12px;border-radius:10px;background:#eaf6ee;border:1px solid #bfe3cb;color:#1d5b33;font-size:13px}.icalst.bad{background:#fdecea;border-color:#f3c3bc;color:#9b2c1f}
+.copyrow{display:flex;gap:8px}.copyrow input{flex:1;min-width:0;border:1.5px solid var(--line);border-radius:10px;padding:9px 12px;background:#f8f7f3;font-size:13px}

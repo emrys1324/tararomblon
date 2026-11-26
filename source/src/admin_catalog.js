@@ -23,6 +23,24 @@ function deliveryMatrix(F, P0) {
     <button class="btn ghost sm mt" onclick="admAdd('${P0}.matrix',${esc(JSON.stringify(on ? { upToKm: last + 2, customerFee: 0, storeFee: 0, riderFee: 0 } : { upToKm: last + 2, fee: 0 }))})">+ Add distance band</button>
     ${on && M.length ? `<div class="mxprev"><b>Customers see:</b> ${esc(Pricing.deliveryText(ADM.draft, F))}</div>` : ''}</div>`;
 }
+/* Calendar sync for stays: import Airbnb / Booking.com / Vrbo / Google calendars (blocks those nights here) and export ours to them */
+let ICAL = null;
+async function icalFill(sync) {
+  const cards = document.querySelectorAll('[data-ical]'); if (!cards.length) return;
+  try { if (!ICAL || sync) ICAL = await api('adminIcal', { token: ADM.token, sync: sync || undefined }); } catch (x) { cards.forEach(c => c.querySelector('.meta') && (c.querySelector('.meta').textContent = x.message)); return; }
+  cards.forEach(c => { const s = ICAL.stays.find(x => x.id === c.dataset.ical); if (!s) { c.innerHTML = `<h3>${ic('cal')} Calendar sync</h3><p class="meta">Save the listing first, then connect its calendars.</p>`; return; }
+    const exp = s.exportPath ? location.origin + s.exportPath : '';
+    c.innerHTML = `<h3>${ic('cal')} Calendar sync · ${esc(s.name)}</h3>
+      <p class="hint">Avoid double bookings with Airbnb (or Booking.com, Vrbo, Google Calendar). Nights booked there are blocked here, and nights booked here are blocked there.</p>
+      <div class="field mt"><label>1. Import: paste the Airbnb calendar link (Airbnb → Listing → Availability → Connect calendars → Export calendar). One link per line, up to 5.</label><textarea rows="2" data-icalurls="${esc(s.id)}" placeholder="https://www.airbnb.com/calendar/ical/123456.ics?s=...">${esc(s.urls.join('\n'))}</textarea></div>
+      <div class="rowbtns"><button class="btn sm" data-icalsave="${esc(s.id)}">Save and sync now</button>${s.urls.length ? `<button class="btn ghost sm" data-icalsync="${esc(s.id)}">Sync now</button>` : ''}</div>
+      ${s.urls.length ? `<div class="icalst ${s.error ? 'bad' : ''}">${s.error ? 'Problem with link ' + esc(s.error) : s.synced ? `Synced ${new Date(s.synced).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })} · ${s.nights} night${s.nights === 1 ? '' : 's'} blocked from the other calendar${s.blocks.length ? ': ' + s.blocks.slice(0, 6).map(b => esc(b.start + ' → ' + b.end)).join(', ') + (s.blocks.length > 6 ? '…' : '') : ''}` : 'Not synced yet'}. It refreshes automatically about every 15 minutes.</div>` : ''}
+      <div class="field mt"><label>2. Export: copy this link into Airbnb (Availability → Connect calendars → Import calendar) so nights booked on Tara Romblon are blocked on Airbnb.</label>${exp ? `<div class="copyrow"><input readonly value="${esc(exp)}" onclick="this.select()"><button class="btn ghost sm" onclick="navigator.clipboard.writeText('${esc(exp)}').then(()=>toast('Link copied'))">Copy</button></div><span class="hint">Airbnb checks it every few hours. Keep this link private.</span>` : `<p class="hint">${ICAL.live ? 'Unavailable.' : 'Available on the live site.'}</p>`}</div>
+      ${ICAL.live ? '' : '<p class="hint">Demo mode: calendars are not downloaded here.</p>'}`; });
+  document.querySelectorAll('[data-icalsave]').forEach(b => b.onclick = async () => { const id = b.dataset.icalsave, urls = document.querySelector(`[data-icalurls="${id}"]`).value.split(/\s+/).filter(Boolean);
+    loading(true, 'Saving and syncing…'); try { ICAL = await api('adminSaveIcal', { token: ADM.token, stayId: id, urls }); loading(false); toast(urls.length ? 'Calendar connected' : 'Calendar links removed'); icalFill(); } catch (x) { loading(false); toast(x.message); } });
+  document.querySelectorAll('[data-icalsync]').forEach(b => b.onclick = async () => { loading(true, 'Syncing…'); await icalFill(b.dataset.icalsync); loading(false); toast('Synced'); });
+}
 function aTown(path) { const v = getP(ADM.draft, path) || 'San Agustin'; return `<div class="field"><label>Town</label><select data-b="${path}">${ISLANDS.map(i => `<optgroup label="${i.name}">${i.towns.map(t => `<option ${t === v ? 'selected' : ''}>${t}</option>`).join('')}</optgroup>`).join('')}</select></div>`; }
 function aPhoto(path) {
   const v = getP(ADM.draft, path);
@@ -34,7 +52,7 @@ function admTabHtml() {
   if (ADM.tab === 'stays') return D.stays.map((s, i) => `<div class="acard"><h3>${esc(s.name || 'New accommodation')}<button class="xbtn" title="Remove" onclick="admDel('stays',${i})">${ic('x')}</button></h3>
     ${aIn(`stays.${i}.active`, 'Show on website', 'bool')}
     <div class="agrid">${aIn(`stays.${i}.name`, 'Name')}${aBiz(`stays.${i}.bizId`, 'Stay')}${aTown(`stays.${i}.town`)}${aIn(`stays.${i}.location`, 'Address / location')}${aIn(`stays.${i}.rate`, 'Rate per night (₱)', 'num')}${aIn(`stays.${i}.promoPct`, 'Discount (%)', 'num')}${aIn(`stays.${i}.deposit`, 'Security deposit (₱)', 'num')}${aIn(`stays.${i}.maxGuests`, 'Max guests', 'num')}${aIn(`stays.${i}.checkInTime`, 'Check-in time')}${aIn(`stays.${i}.checkOutTime`, 'Check-out time')}</div>
-    ${aIn(`stays.${i}.amenities`, 'Amenities (one per line)', 'textarea', 7)}<div class="field mt"><label>Photo</label></div>${aPhoto(`stays.${i}.photo`)}</div>`).join('')
+    ${aIn(`stays.${i}.amenities`, 'Amenities (one per line)', 'textarea', 7)}<div class="field mt"><label>Photo</label></div>${aPhoto(`stays.${i}.photo`)}</div><div class="acard icalcard" data-ical="${esc(s.id)}"><h3>${ic('cal')} Calendar sync · ${esc(s.name || '')}</h3><p class="meta">Loading…</p></div>`).join('') + (setTimeout(icalFill, 0), '')
     + `<button class="btn ghost" onclick="admAdd('stays',{id:uid(),bizId:(ADM.draft.businesses.find(b=>b.type==='Stay')||{}).id||'',name:'New accommodation',town:'San Agustin',location:'San Agustin, Romblon',rate:0,maxGuests:2,checkInTime:'2:00 PM',checkOutTime:'12:00 NN',amenities:'',photo:'',active:false})">+ Add accommodation</button>`;
   if (ADM.tab === 'rentals') {
     const R = D.rentals;

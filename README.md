@@ -35,6 +35,11 @@ source/                  editable source + build.py + tests
 
 There are no npm packages to install. The functions use Node's built-in `fetch` and `crypto`.
 
+## New: Airbnb calendar sync for stays (Super Admin → Listings & rates → Stays → Calendar sync)
+
+- **Import** (Airbnb → Tara Romblon): in Airbnb open the listing → Availability → Connect calendars → **Export calendar**, copy the link and paste it in the stay's Calendar sync box, then **Save and sync now**. Nights booked on Airbnb are blocked here (customer calendar and checkout). It refreshes about every 15 minutes. Booking.com, Vrbo and Google Calendar links work too (up to 5 per stay).
+- **Export** (Tara Romblon → Airbnb): copy the stay's export link into Airbnb → Availability → Connect calendars → **Import calendar**. Airbnb checks it every few hours, so nights booked here get blocked there. Keep the link private.
+
 ## New: riders accept delivery orders first (rider dispatch)
 
 1. A customer places a delivery order (online payments: once paid). Status **Finding Rider**. The merchant does not see or hear about it yet.

@@ -590,6 +590,9 @@ footer .fown{margin-top:20px;padding-top:14px;border-top:1px solid rgba(255,255,
 footer .fown span{display:inline}
 .termsbox{max-height:46vh;overflow:auto;white-space:pre-line;margin-top:12px}
 .okline{margin-top:12px;padding:10px 12px;border-radius:10px;background:#eaf6ee;border:1px solid #bfe3cb;color:#1d5b33;font-size:14px}.okline summary{cursor:pointer;display:flex;gap:6px;align-items:center;flex-wrap:wrap;list-style:none}.okline .policy{margin-top:8px;color:var(--ink,#223)}
+.icalcard{border-left:4px solid var(--navy)}.icalcard h3{display:flex;gap:8px;align-items:center}
+.icalst{margin-top:10px;padding:10px 12px;border-radius:10px;background:#eaf6ee;border:1px solid #bfe3cb;color:#1d5b33;font-size:13px}.icalst.bad{background:#fdecea;border-color:#f3c3bc;color:#9b2c1f}
+.copyrow{display:flex;gap:8px}.copyrow input{flex:1;min-width:0;border:1.5px solid var(--line);border-radius:10px;padding:9px 12px;background:#f8f7f3;font-size:13px}
 
 </style>
 </head>
@@ -1184,8 +1187,42 @@ function createCore(env) {
   async function allBookings() { return await env.db.all(T.book); }
   async function getB(ref) { var b = await env.db.get(T.book, ref); if (!b) err('Booking not found.'); return b; }
   async function busy() {
-    return (await allBookings()).filter(function (b) { return b.kind !== 'food' && Rules.FREE.indexOf(b.status) < 0; })
+    var own = (await allBookings()).filter(function (b) { return b.kind !== 'food' && Rules.FREE.indexOf(b.status) < 0; })
       .reduce(function (o, b) { return o.concat(b.lines.map(function (l) { return { type: l.type, itemId: l.itemId, start: l.start, end: l.end }; })); }, []);
+    var ext = []; try { var d = await icalData(false); Object.keys(d).forEach(function (id) { (d[id].events || []).forEach(function (e) { ext.push({ type: 'stay', itemId: id, start: e.start, end: e.end, ext: true }); }); }); } catch (x) { }
+    return own.concat(ext);
+  }
+  /* ---------- calendar sync (Airbnb, Booking.com, Vrbo, Google… any iCal link) ---------- */
+  function parseIcs(txt) {
+    var lines = String(txt || '').replace(/\r\n/g, '\n').replace(/\n[ \t]/g, '').split('\n'), out = [], ev = null;
+    var day = function (v) { var m = /(\d{4})(\d{2})(\d{2})(T(\d{2})(\d{2})(\d{2})(Z)?)?/.exec(v || ''); if (!m) return null; if (m[8]) { var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[5], +m[6], +m[7]) + 8 * 3600e3); return d.toISOString().slice(0, 10); } return m[1] + '-' + m[2] + '-' + m[3]; };
+    lines.forEach(function (ln) {
+      if (ln === 'BEGIN:VEVENT') ev = {}; else if (ln === 'END:VEVENT') { if (ev && ev.start && ev.status !== 'CANCELLED') { if (!ev.end || ev.end <= ev.start) { var d2 = new Date(ev.start + 'T00:00:00Z'); d2.setUTCDate(d2.getUTCDate() + 1); ev.end = d2.toISOString().slice(0, 10); } out.push({ start: ev.start, end: ev.end, summary: String(ev.summary || '').slice(0, 60) }); } ev = null; }
+      else if (ev) { var i = ln.indexOf(':'), k = ln.slice(0, i).split(';')[0].toUpperCase(), v = ln.slice(i + 1); if (k === 'DTSTART') ev.start = day(v); else if (k === 'DTEND') ev.end = day(v); else if (k === 'SUMMARY') ev.summary = v; else if (k === 'STATUS') ev.status = v.trim().toUpperCase(); }
+    });
+    return out;
+  }
+  async function icalData(force) {
+    var d = (await env.db.kvGet('ical')) || {}; if (!env.fetchText) return d;
+    var t = Date.parse(now()), ids = Object.keys(d).filter(function (id) { return (d[id].urls || []).length; });
+    var stale = ids.filter(function (id) { return force === id || force === true || !d[id].synced || t - Date.parse(d[id].synced) > 15 * 6e4; });
+    if (!stale.length || (!force && await env.cache.get('icslock'))) return d;
+    await env.cache.put('icslock', '1', 60);
+    for (var i = 0; i < stale.length; i++) {
+      var id = stale[i], evs = [], errs = [];
+      for (var j = 0; j < d[id].urls.length; j++) { try { evs = evs.concat(parseIcs(await env.fetchText(d[id].urls[j]))); } catch (x) { errs.push((j + 1) + ': ' + String(x.message || x).slice(0, 80)); } }
+      d[id].synced = now(); d[id].error = errs.join(' · ');
+      if (evs.length || !errs.length) d[id].events = evs.filter(function (e) { return e.end >= env.today(); }).slice(0, 400);
+    }
+    await env.db.kvPut('ical', d); return d;
+  }
+  function icsEsc(s) { return String(s).replace(/[\;,]/g, function (c) { return '\\' + c; }); }
+  async function icsFeed(stayId, key) {
+    if (!env.sign || !stayId || key !== env.sign('ical:' + stayId)) err('Not found.');
+    var cat = await catalog(), s = cat.stays.filter(function (x) { return x.id === stayId; })[0]; if (!s) err('Not found.');
+    var ymd = function (d) { return String(d).replace(/-/g, '').slice(0, 8); }, stamp = now().replace(/[-:]/g, '').replace(/\.\d+/, '');
+    var ev = (await allBookings()).filter(function (b) { return b.kind !== 'food' && Rules.FREE.indexOf(b.status) < 0; }).reduce(function (o, b) { return o.concat(b.lines.filter(function (l) { return l.type === 'stay' && l.itemId === stayId && l.end >= env.today(); }).map(function (l) { return ['BEGIN:VEVENT', 'UID:' + b.ref + '-' + l.itemId + '@tararomblon', 'DTSTAMP:' + stamp, 'DTSTART;VALUE=DATE:' + ymd(l.start), 'DTEND;VALUE=DATE:' + ymd(l.end), 'SUMMARY:' + icsEsc('Reserved - Tara Romblon (' + b.ref + ')'), 'END:VEVENT'].join('\r\n'); })); }, []);
+    return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Tara Romblon//Calendar//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:' + icsEsc(s.name + ' - Tara Romblon')].concat(ev, ['END:VCALENDAR']).join('\r\n') + '\r\n';
   }
   function summary(b) {
     var s = b.lines.map(function (l) {
@@ -1470,6 +1507,20 @@ function createCore(env) {
   /* public */
   A.getCatalog = async function () { return { catalog: Pricing.norm(await env.db.kvGet('catalog')), maps: env.maps || null, google: env.googleClientId || null }; };
   A.availability = async function () { return { busy: await busy() }; };
+  /* Super Admin: calendar links per stay (import from Airbnb etc., export to them) */
+  A.adminIcal = async function (p) {
+    await auth(p.token, 'super'); var cat = await catalog(), d = p.sync ? await icalData(p.sync === true ? true : String(p.sync)) : ((await env.db.kvGet('ical')) || {});
+    return { live: !!env.fetchText, stays: cat.stays.map(function (s) { var x = d[s.id] || {}; return { id: s.id, name: s.name, urls: x.urls || [], synced: x.synced || '', error: x.error || '', nights: (x.events || []).reduce(function (t, e) { return t + Math.max(1, Math.round((Date.parse(e.end) - Date.parse(e.start)) / 864e5)); }, 0), blocks: (x.events || []).slice(0, 30), exportPath: env.sign ? '/api/ical?stay=' + encodeURIComponent(s.id) + '&key=' + env.sign('ical:' + s.id) : '' }; }) };
+  };
+  A.adminSaveIcal = async function (p) {
+    await auth(p.token, 'super'); var cat = await catalog(); if (!cat.stays.some(function (s) { return s.id === p.stayId; })) err('Stay not found.');
+    var urls = (p.urls || []).map(function (u) { return String(u || '').trim(); }).filter(Boolean).slice(0, 5);
+    urls.forEach(function (u) { if (!/^(https?|webcal):\/\/[^\s]+$/i.test(u)) err('Paste the full calendar link (it starts with https://).'); });
+    urls = urls.map(function (u) { return u.replace(/^webcal:/i, 'https:'); });
+    var d = (await env.db.kvGet('ical')) || {}; d[p.stayId] = Object.assign(d[p.stayId] || {}, { urls: urls, synced: '' }); if (!urls.length) d[p.stayId].events = [];
+    await env.db.kvPut('ical', d); await icalData(p.stayId);
+    return await A.adminIcal({ token: p.token });
+  };
   A.submitApplication = async function (p) {
     var f = p.application || {}, rider = f.appType === 'rider';
     var need = rider ? ['name', 'phone', 'email', 'address', 'town', 'vehicle', 'plate', 'licenseNo'] : ['businessName', 'type', 'town', 'contactName', 'phone', 'email', 'description', 'registration', 'permits'];
@@ -2090,6 +2141,7 @@ function createCore(env) {
   };
 
   return {
+    icsFeed: icsFeed,
     handle: async function (action, p) { var h = A[action]; if (!h) err('Unknown action: ' + action); reqBiz = String((p && p.biz) || ''); return await h(p || {}); },
     /* Confirms HitPay payments found by the webhook or the daily check, and expires unpaid online bookings after 60 minutes */
     paymentWebhook: async function (ref) { var bs = (await allBookings()).filter(function (b) { return b.group === ref || b.ref === ref; }); if (bs.length) return await checkHitpay(bs[0].group); return false; },
@@ -2776,6 +2828,24 @@ function deliveryMatrix(F, P0) {
     <button class="btn ghost sm mt" onclick="admAdd('${P0}.matrix',${esc(JSON.stringify(on ? { upToKm: last + 2, customerFee: 0, storeFee: 0, riderFee: 0 } : { upToKm: last + 2, fee: 0 }))})">+ Add distance band</button>
     ${on && M.length ? `<div class="mxprev"><b>Customers see:</b> ${esc(Pricing.deliveryText(ADM.draft, F))}</div>` : ''}</div>`;
 }
+/* Calendar sync for stays: import Airbnb / Booking.com / Vrbo / Google calendars (blocks those nights here) and export ours to them */
+let ICAL = null;
+async function icalFill(sync) {
+  const cards = document.querySelectorAll('[data-ical]'); if (!cards.length) return;
+  try { if (!ICAL || sync) ICAL = await api('adminIcal', { token: ADM.token, sync: sync || undefined }); } catch (x) { cards.forEach(c => c.querySelector('.meta') && (c.querySelector('.meta').textContent = x.message)); return; }
+  cards.forEach(c => { const s = ICAL.stays.find(x => x.id === c.dataset.ical); if (!s) { c.innerHTML = `<h3>${ic('cal')} Calendar sync</h3><p class="meta">Save the listing first, then connect its calendars.</p>`; return; }
+    const exp = s.exportPath ? location.origin + s.exportPath : '';
+    c.innerHTML = `<h3>${ic('cal')} Calendar sync · ${esc(s.name)}</h3>
+      <p class="hint">Avoid double bookings with Airbnb (or Booking.com, Vrbo, Google Calendar). Nights booked there are blocked here, and nights booked here are blocked there.</p>
+      <div class="field mt"><label>1. Import: paste the Airbnb calendar link (Airbnb → Listing → Availability → Connect calendars → Export calendar). One link per line, up to 5.</label><textarea rows="2" data-icalurls="${esc(s.id)}" placeholder="https://www.airbnb.com/calendar/ical/123456.ics?s=...">${esc(s.urls.join('\n'))}</textarea></div>
+      <div class="rowbtns"><button class="btn sm" data-icalsave="${esc(s.id)}">Save and sync now</button>${s.urls.length ? `<button class="btn ghost sm" data-icalsync="${esc(s.id)}">Sync now</button>` : ''}</div>
+      ${s.urls.length ? `<div class="icalst ${s.error ? 'bad' : ''}">${s.error ? 'Problem with link ' + esc(s.error) : s.synced ? `Synced ${new Date(s.synced).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })} · ${s.nights} night${s.nights === 1 ? '' : 's'} blocked from the other calendar${s.blocks.length ? ': ' + s.blocks.slice(0, 6).map(b => esc(b.start + ' → ' + b.end)).join(', ') + (s.blocks.length > 6 ? '…' : '') : ''}` : 'Not synced yet'}. It refreshes automatically about every 15 minutes.</div>` : ''}
+      <div class="field mt"><label>2. Export: copy this link into Airbnb (Availability → Connect calendars → Import calendar) so nights booked on Tara Romblon are blocked on Airbnb.</label>${exp ? `<div class="copyrow"><input readonly value="${esc(exp)}" onclick="this.select()"><button class="btn ghost sm" onclick="navigator.clipboard.writeText('${esc(exp)}').then(()=>toast('Link copied'))">Copy</button></div><span class="hint">Airbnb checks it every few hours. Keep this link private.</span>` : `<p class="hint">${ICAL.live ? 'Unavailable.' : 'Available on the live site.'}</p>`}</div>
+      ${ICAL.live ? '' : '<p class="hint">Demo mode: calendars are not downloaded here.</p>'}`; });
+  document.querySelectorAll('[data-icalsave]').forEach(b => b.onclick = async () => { const id = b.dataset.icalsave, urls = document.querySelector(`[data-icalurls="${id}"]`).value.split(/\s+/).filter(Boolean);
+    loading(true, 'Saving and syncing…'); try { ICAL = await api('adminSaveIcal', { token: ADM.token, stayId: id, urls }); loading(false); toast(urls.length ? 'Calendar connected' : 'Calendar links removed'); icalFill(); } catch (x) { loading(false); toast(x.message); } });
+  document.querySelectorAll('[data-icalsync]').forEach(b => b.onclick = async () => { loading(true, 'Syncing…'); await icalFill(b.dataset.icalsync); loading(false); toast('Synced'); });
+}
 function aTown(path) { const v = getP(ADM.draft, path) || 'San Agustin'; return `<div class="field"><label>Town</label><select data-b="${path}">${ISLANDS.map(i => `<optgroup label="${i.name}">${i.towns.map(t => `<option ${t === v ? 'selected' : ''}>${t}</option>`).join('')}</optgroup>`).join('')}</select></div>`; }
 function aPhoto(path) {
   const v = getP(ADM.draft, path);
@@ -2787,7 +2857,7 @@ function admTabHtml() {
   if (ADM.tab === 'stays') return D.stays.map((s, i) => `<div class="acard"><h3>${esc(s.name || 'New accommodation')}<button class="xbtn" title="Remove" onclick="admDel('stays',${i})">${ic('x')}</button></h3>
     ${aIn(`stays.${i}.active`, 'Show on website', 'bool')}
     <div class="agrid">${aIn(`stays.${i}.name`, 'Name')}${aBiz(`stays.${i}.bizId`, 'Stay')}${aTown(`stays.${i}.town`)}${aIn(`stays.${i}.location`, 'Address / location')}${aIn(`stays.${i}.rate`, 'Rate per night (₱)', 'num')}${aIn(`stays.${i}.promoPct`, 'Discount (%)', 'num')}${aIn(`stays.${i}.deposit`, 'Security deposit (₱)', 'num')}${aIn(`stays.${i}.maxGuests`, 'Max guests', 'num')}${aIn(`stays.${i}.checkInTime`, 'Check-in time')}${aIn(`stays.${i}.checkOutTime`, 'Check-out time')}</div>
-    ${aIn(`stays.${i}.amenities`, 'Amenities (one per line)', 'textarea', 7)}<div class="field mt"><label>Photo</label></div>${aPhoto(`stays.${i}.photo`)}</div>`).join('')
+    ${aIn(`stays.${i}.amenities`, 'Amenities (one per line)', 'textarea', 7)}<div class="field mt"><label>Photo</label></div>${aPhoto(`stays.${i}.photo`)}</div><div class="acard icalcard" data-ical="${esc(s.id)}"><h3>${ic('cal')} Calendar sync · ${esc(s.name || '')}</h3><p class="meta">Loading…</p></div>`).join('') + (setTimeout(icalFill, 0), '')
     + `<button class="btn ghost" onclick="admAdd('stays',{id:uid(),bizId:(ADM.draft.businesses.find(b=>b.type==='Stay')||{}).id||'',name:'New accommodation',town:'San Agustin',location:'San Agustin, Romblon',rate:0,maxGuests:2,checkInTime:'2:00 PM',checkOutTime:'12:00 NN',amenities:'',photo:'',active:false})">+ Add accommodation</button>`;
   if (ADM.tab === 'rentals') {
     const R = D.rentals;

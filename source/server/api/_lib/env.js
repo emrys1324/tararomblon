@@ -227,6 +227,9 @@ function createEnv() {
     /* passwords: scrypt with a random salt per account */
     hashPw: async (pw, salt) => crypto.scryptSync(String(pw), 'tr:' + salt, 32).toString('hex'),
     push, pushKey: async () => (await vapidKeys()).pub,
+    /* calendar sync: download an iCal link (Airbnb etc.); sign: unguessable key for our export links */
+    fetchText: async url => { const r = await fetch(url, { headers: { 'User-Agent': 'TaraRomblon-CalendarSync/1.0', Accept: 'text/calendar,*/*' }, signal: AbortSignal.timeout(10000) }); if (!r.ok) throw new Error('the calendar link answered ' + r.status); const t = await r.text(); if (!/BEGIN:VCALENDAR/.test(t)) throw new Error('that link is not a calendar (.ics) link'); return t.slice(0, 2e6); },
+    sign: s => crypto.createHmac('sha256', E('SUPABASE_SERVICE_ROLE_KEY') || 'tr').update(String(s)).digest('hex').slice(0, 24),
     /* public browser key (restrict it to your site in Google Cloud) */
     maps: E('GOOGLE_MAPS_API_KEY') ? { key: E('GOOGLE_MAPS_API_KEY'), mapId: E('GOOGLE_MAPS_MAP_ID', 'DEMO_MAP_ID') } : null
   };

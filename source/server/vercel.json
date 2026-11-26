@@ -15,6 +15,9 @@
     },
     "api/icon.js": {
       "maxDuration": 10
+    },
+    "api/ical.js": {
+      "maxDuration": 15
     }
   },
   "crons": [
