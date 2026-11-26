@@ -35,6 +35,12 @@ source/                  editable source + build.py + tests
 
 There are no npm packages to install. The functions use Node's built-in `fetch` and `crypto`.
 
+## New: delivery fee matrix with customer / store / rider amounts (Super Admin → Listings & rates → restaurant → Delivery)
+
+- Turn on **Charge delivery by this matrix** for a restaurant. Each distance band then has **Customer pays**, **Store pays** and **Rider gets** (₱). Example: 0–3 km: customer ₱0, store pays ₱20, rider gets ₱20.
+- "From" is the previous band's "Up to". Orders beyond the last band can't be delivered. If "Rider gets" differs from customer + store, the screen shows what Tara keeps or adds.
+- Turned off, the restaurant follows Settings → Delivery fee (the formula) as before. Customers see the bands at checkout; riders, merchants and payouts use the band's amounts.
+
 ## New: passwords, phone notifications, riders stay signed in, COD amount required
 
 - **Customers** create an account with email + password (or Continue with Google) and log in with it. No more sign-in codes. "Forgot password?" emails a one-time code to set a new password; customers from before this change use it once to set their password. Account → Password lets them change it.

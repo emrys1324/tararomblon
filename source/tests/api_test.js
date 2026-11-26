@@ -316,6 +316,16 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   assert(done.status === 'Completed', 'COD order completed');
   const L = Rules.ledger(done, {}); assert(L.bizNet === -L.fee - L.storeDelivery && L.cashBiz === Rules.gross(done) && L.cashRecorded, 'cash order: merchant recorded cash, owes the fee and its delivery share');
   assert(L.riderShare === done.quote.riderFee && L.riderNet === done.quote.storeDeliveryShare && L.riderShare === done.quote.deliveryFee + done.quote.storeDeliveryShare, 'COD delivery: rider keeps the customer part in cash, store share paid out (km ' + done.quote.km + ', rider ₱' + L.riderShare + ')');
+  console.log('Delivery fee matrix per restaurant');
+  const MXF = { matrixFees: true, matrix: [{ upToKm: 3, customerFee: 0, storeFee: 20, riderFee: 20 }, { upToKm: 5, customerFee: 30, storeFee: 10, riderFee: 40 }, { upToKm: 8, customerFee: 60, storeFee: 0, riderFee: 50 }] };
+  const x1 = Pricing.deliverySplit({ settings: {} }, MXF, 1.2), x2 = Pricing.deliverySplit({ settings: {} }, MXF, 3.0), x3 = Pricing.deliverySplit({ settings: {} }, MXF, 4.1), x4 = Pricing.deliverySplit({ settings: {} }, MXF, 7.9);
+  assert(x1.fee === 0 && x1.storeShare === 20 && x1.riderFee === 20 && x2.riderFee === 20, '0-3 km: customer 0, merchant pays rider 20, rider gets 20');
+  assert(x3.fee === 30 && x3.storeShare === 10 && x3.riderFee === 40 && x4.fee === 60 && x4.riderFee === 50, 'other bands use their own customer / store / rider amounts');
+  assert(Pricing.deliverySplit({ settings: {} }, MXF, 8.2) === null, 'beyond the last band: no delivery');
+  assert(Pricing.deliverySplit({ settings: {} }, Object.assign({}, MXF, { matrixFees: false }), 3.2).riderFee === 20 && Pricing.deliverySplit({ settings: {} }, Object.assign({}, MXF, { matrixFees: false }), 3.2).fee === 14, 'matrix switched off: Settings formula, bands only limit distance');
+  assert(Pricing.deliverySplit({ settings: {} }, { matrixFees: true, matrix: [{ upToKm: 4, customerFee: 25, storeFee: 15 }] }, 2).riderFee === 40, 'rider gets customer + store when left empty');
+  assert(/0–3 km: Free · 3–5 km: ₱30/.test(Pricing.deliveryText({ settings: {} }, MXF)), 'customers see the bands');
+  const mxB = Pricing.food(Object.assign(JSON.parse(JSON.stringify(CATALOG)), {}), { bizId: 'pahuway', lines: [{ itemId: item.id, qty: 1, addons: [] }], fulfillment: 'delivery', lat: 12.5720, lng: 122.1330 });
   console.log('Delivery fee rule');
   const DC = { settings: {} }, DF = { maxKm: 10 };
   const d1 = Pricing.deliverySplit(DC, DF, 1.2), d2 = Pricing.deliverySplit(DC, DF, 3.2), d3 = Pricing.deliverySplit(DC, DF, 1.5), d4 = Pricing.deliverySplit(DC, DF, 2.0);

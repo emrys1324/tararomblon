@@ -557,3 +557,8 @@ input,select,textarea,button{font-family:inherit}
 .pushst{padding:10px 12px;border-radius:10px;background:#eaf6ee;border:1px solid #bfe3cb;color:#1d5b33}
 .pushnudge{position:fixed;left:12px;right:12px;top:calc(10px + env(safe-area-inset-top));z-index:80;max-width:560px;margin:0 auto;display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:var(--navy);color:#fff;box-shadow:0 10px 30px rgba(0,0,0,.25);font-size:14px}
 .pushnudge span{flex:1}.pushnudge .xbtn{width:30px;height:30px;background:rgba(255,255,255,.15);color:#fff}.pushnudge svg{flex:none}
+.mxrow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr)) auto;gap:8px;align-items:end;padding:10px 0;border-bottom:1px solid var(--marble-2)}
+.mxrow .field{margin:0}.mxrow .field label{font-size:11px}.mxrow .xbtn{margin-bottom:2px}.mxrow input:disabled{background:#f4f2ee;color:var(--mute)}
+.mxnote{grid-column:1/-1;font-size:13px;color:var(--mute)}.warnc{color:var(--coral-d,#c4561c)}.mxrow.bad input{border-color:var(--coral-d,#c4561c)}
+.mxprev{margin-top:10px;padding:10px 12px;border-radius:10px;background:#fbfaf7;border:1px solid var(--marble-2);font-size:14px}
+@media(max-width:640px){.mxrow{grid-template-columns:1fr 1fr}.mxrow .xbtn{justify-self:end}}

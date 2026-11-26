@@ -107,10 +107,24 @@ var Pricing = {
      The customer pays customerPct % of that fee, the store pays the rest, and the rider earns the whole fee.
      Within freeKm the customer pays nothing and the store pays the rider baseFee. Beyond the store's delivery area: null. */
   DELIVERY: { freeKm: 1.5, perKm: 10, customerPct: 70, baseFee: 20, maxKm: 10, minRider: 20 },
+  /* short text for customers: how delivery is charged for this restaurant */
+  deliveryText: function (cat, food) {
+    var b = Pricing.bands(food);
+    if (food.matrixFees && b.length) return b.map(function (m, i) { var c = +(m.customerFee != null && m.customerFee !== '' ? m.customerFee : m.fee) || 0; return (i ? b[i - 1].upToKm : 0) + '–' + m.upToKm + ' km: ' + (c ? '₱' + c : 'Free'); }).join(' · ');
+    var R = Pricing.deliveryRule(cat); return 'Free within ' + R.freeKm + ' km of the store, then ₱' + Math.round(R.perKm * R.customerPct / 100) + ' per km.';
+  },
   deliveryRule: function (cat) { var d = (cat && cat.settings && cat.settings.delivery) || {}, D = Pricing.DELIVERY, o = {}; for (var k in D) o[k] = d[k] == null || d[k] === '' || isNaN(+d[k]) ? D[k] : +d[k]; return o; },
   deliverySplit: function (cat, food, km) {
     var R = Pricing.deliveryRule(cat), b = Pricing.bands(food), max = +food.maxKm || (b.length ? +b[b.length - 1].upToKm : R.maxKm);
     if (km == null || km > max + 1e-9) return null;
+    /* the restaurant's own matrix: each band sets what the customer pays, what the store pays and what the rider gets */
+    if (food.matrixFees && b.length) {
+      for (var i = 0; i < b.length; i++) if (km <= +b[i].upToKm + 1e-9) {
+        var m = b[i], c = +(m.customerFee != null && m.customerFee !== '' ? m.customerFee : m.fee) || 0, s = +m.storeFee || 0, r = m.riderFee == null || m.riderFee === '' ? c + s : +m.riderFee;
+        return { km: km, fee: Pricing.round(c), riderFee: Pricing.round(r), storeShare: Pricing.round(s), extraKm: 0, band: i, fromKm: i ? +b[i - 1].upToKm : 0, toKm: +m.upToKm };
+      }
+      return null;
+    }
     if (km <= R.freeKm + 1e-9) return { km: km, fee: 0, riderFee: R.baseFee, storeShare: R.baseFee, extraKm: 0 };
     var extra = Math.ceil(Pricing.round(km - R.freeKm) - 1e-9), full = extra * R.perKm, cust = Math.round(full * R.customerPct / 100);
     var rider = Math.max(full, R.minRider);

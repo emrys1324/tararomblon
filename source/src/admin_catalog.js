@@ -7,6 +7,22 @@ function aIn(path, label, type, extra) {
   if (type === 'bool') return `<label class="tog"><input type="checkbox" data-b="${path}" data-t="bool" ${v ? 'checked' : ''}> ${label}</label>`;
   return `<div class="field"><label>${label}</label><input data-b="${path}" ${type === 'num' ? 'type="number" step="any" min="0" data-t="num"' : ''} value="${esc(v)}"></div>`;
 }
+/* Delivery fee matrix of one restaurant: distance bands with what the customer pays, what the store pays and what the rider gets */
+function deliveryMatrix(F, P0) {
+  const on = !!F.matrixFees, M = F.matrix || [];
+  const num = (path, v, label) => `<div class="field"><label>${label}</label><input type="number" min="0" step="any" data-b="${path}" data-t="num" value="${v == null ? '' : esc(v)}" onchange="admRerender()"></div>`;
+  const val = (m, k) => m[k] != null && m[k] !== '' ? +m[k] : (k === 'customerFee' ? +m.fee || 0 : k === 'storeFee' ? 0 : (+(m.customerFee != null ? m.customerFee : m.fee) || 0) + (+m.storeFee || 0));
+  const rows = M.map((m, i) => { const prev = i ? +M[i - 1].upToKm : 0, bad = i && +m.upToKm <= prev, c = val(m, 'customerFee'), s = val(m, 'storeFee'), r = val(m, 'riderFee'), d = Pricing.round(c + s - r);
+    return `<div class="mxrow ${bad ? 'bad' : ''}"><div class="field"><label>From (km)</label><input value="${prev}" disabled></div>${num(`${P0}.matrix.${i}.upToKm`, m.upToKm, 'Up to (km)')}${on ? num(`${P0}.matrix.${i}.customerFee`, c, 'Customer pays (₱)') + num(`${P0}.matrix.${i}.storeFee`, s, 'Store pays (₱)') + num(`${P0}.matrix.${i}.riderFee`, r, 'Rider gets (₱)') : ''}<button class="xbtn" title="Remove band" onclick="admDel('${P0}.matrix',${i})">${ic('x')}</button>
+      ${on ? `<div class="mxnote">${prev}–${m.upToKm} km: customer ${c ? peso(c) : 'free'} · store pays ${peso(s)} · rider gets ${peso(r)}${d > 0 ? ` · <b>Tara keeps ${peso(d)}</b>` : d < 0 ? ` · <b class="warnc">Tara adds ${peso(-d)}</b> (rider gets more than customer + store)` : ''}</div>` : ''}${bad ? '<div class="mxnote warnc">"Up to" must be more than the band before it.</div>' : ''}</div>`; }).join('');
+  const last = M.length ? +M[M.length - 1].upToKm : 0;
+  return `<div class="acard"><h3>Delivery fee matrix · ${esc(F.storeName)}</h3>
+    <label class="tog"><input type="checkbox" data-b="${P0}.matrixFees" data-t="bool" ${on ? 'checked' : ''} onchange="setTimeout(()=>{ const f = ADM.draft.foods[ADM.si]; if (f.matrixFees && !(f.matrix || []).length) f.matrix = [{ upToKm: 3, customerFee: 0, storeFee: 20, riderFee: 20 }]; admRerender(); }, 0)"> Charge delivery by this matrix (instead of the Settings → Delivery fee formula)</label>
+    <p class="hint">${on ? 'Each band sets what the customer pays, what the store pays and what the rider gets. Usually the rider gets customer + store.' : 'Off: fees follow Super Admin → Settings → Delivery fee. The bands below only set how far this restaurant delivers.'} Distance is a straight line from the restaurant pin to the customer's pin. Orders beyond the last band can't be delivered.</p>
+    ${rows || '<p class="meta">No bands yet. Add one below.</p>'}
+    <button class="btn ghost sm mt" onclick="admAdd('${P0}.matrix',${esc(JSON.stringify(on ? { upToKm: last + 2, customerFee: 0, storeFee: 0, riderFee: 0 } : { upToKm: last + 2, fee: 0 }))})">+ Add distance band</button>
+    ${on && M.length ? `<div class="mxprev"><b>Customers see:</b> ${esc(Pricing.deliveryText(ADM.draft, F))}</div>` : ''}</div>`;
+}
 function aTown(path) { const v = getP(ADM.draft, path) || 'San Agustin'; return `<div class="field"><label>Town</label><select data-b="${path}">${ISLANDS.map(i => `<optgroup label="${i.name}">${i.towns.map(t => `<option ${t === v ? 'selected' : ''}>${t}</option>`).join('')}</optgroup>`).join('')}</select></div>`; }
 function aPhoto(path) {
   const v = getP(ADM.draft, path);
@@ -35,9 +51,7 @@ function admTabHtml() {
     if (!D.foods.length) return `<div class="empty">No restaurants yet. Approve a Food business application, or add one.</div>${addStoreBtn()}`;
     const si = ADM.si = Math.min(Math.max(ADM.si || 0, 0), D.foods.length - 1), F = D.foods[si], P0 = `foods.${si}`;
     const pick = `<div class="acard"><div class="field"><label>Restaurant</label><select onchange="ADM.si=+this.value;admRerender()">${D.foods.map((f, k) => `<option value="${k}" ${k === si ? 'selected' : ''}>${esc(f.storeName)} · ${esc(bizName(f.bizId))}</option>`).join('')}</select></div>${addStoreBtn()}</div>`;
-    if (ADM.tab === 'delivery') return pick + `<div class="acard"><h3>Delivery fee matrix · ${esc(F.storeName)}</h3><p class="hint">Distance is measured in a straight line from the restaurant pin to the customer's pin. Orders beyond the last band can't be delivered.</p>
-      ${F.matrix.map((m, i) => `<div class="arow three">${aIn(`${P0}.matrix.${i}.upToKm`, 'Up to (km)', 'num')}${aIn(`${P0}.matrix.${i}.fee`, 'Fee (₱)', 'num')}<button class="xbtn" onclick="admDel('${P0}.matrix',${i})">${ic('x')}</button></div>`).join('')}
-      <button class="btn ghost sm mt" onclick="admAdd('${P0}.matrix',{upToKm:0,fee:0})">+ Add distance band</button></div>
+    if (ADM.tab === 'delivery') return pick + deliveryMatrix(F, P0) + `
       <div class="acard"><h3>Restaurant location</h3><p class="hint">Tap the map to move the pin to the exact location.</p><div class="agrid">${aIn(`${P0}.lat`, 'Latitude', 'num')}${aIn(`${P0}.lng`, 'Longitude', 'num')}</div><div class="map" id="admMap"></div></div>`;
     return pick + `<div class="acard"><h3>${esc(F.storeName)} <button class="xbtn" title="Remove restaurant" onclick="admDelStore(${si})">${ic('x')}</button></h3><div class="agrid">${aIn(`${P0}.storeName`, 'Restaurant name')}${aBiz(`${P0}.bizId`, 'Food')}${aTown(`${P0}.town`)}${aIn(`${P0}.hours`, 'Opening hours')}</div><div class="mt">${aIn(`${P0}.address`, 'Address')}</div>
       <div class="field mt"><label>Logo / photo (shown on the home screen)</label></div>${aPhoto(`${P0}.photo`)}

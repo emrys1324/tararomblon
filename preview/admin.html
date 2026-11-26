@@ -569,6 +569,11 @@ input,select,textarea,button{font-family:inherit}
 .pushst{padding:10px 12px;border-radius:10px;background:#eaf6ee;border:1px solid #bfe3cb;color:#1d5b33}
 .pushnudge{position:fixed;left:12px;right:12px;top:calc(10px + env(safe-area-inset-top));z-index:80;max-width:560px;margin:0 auto;display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:var(--navy);color:#fff;box-shadow:0 10px 30px rgba(0,0,0,.25);font-size:14px}
 .pushnudge span{flex:1}.pushnudge .xbtn{width:30px;height:30px;background:rgba(255,255,255,.15);color:#fff}.pushnudge svg{flex:none}
+.mxrow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr)) auto;gap:8px;align-items:end;padding:10px 0;border-bottom:1px solid var(--marble-2)}
+.mxrow .field{margin:0}.mxrow .field label{font-size:11px}.mxrow .xbtn{margin-bottom:2px}.mxrow input:disabled{background:#f4f2ee;color:var(--mute)}
+.mxnote{grid-column:1/-1;font-size:13px;color:var(--mute)}.warnc{color:var(--coral-d,#c4561c)}.mxrow.bad input{border-color:var(--coral-d,#c4561c)}
+.mxprev{margin-top:10px;padding:10px 12px;border-radius:10px;background:#fbfaf7;border:1px solid var(--marble-2);font-size:14px}
+@media(max-width:640px){.mxrow{grid-template-columns:1fr 1fr}.mxrow .xbtn{justify-self:end}}
 
 </style>
 </head>
@@ -696,10 +701,24 @@ var Pricing = {
      The customer pays customerPct % of that fee, the store pays the rest, and the rider earns the whole fee.
      Within freeKm the customer pays nothing and the store pays the rider baseFee. Beyond the store's delivery area: null. */
   DELIVERY: { freeKm: 1.5, perKm: 10, customerPct: 70, baseFee: 20, maxKm: 10, minRider: 20 },
+  /* short text for customers: how delivery is charged for this restaurant */
+  deliveryText: function (cat, food) {
+    var b = Pricing.bands(food);
+    if (food.matrixFees && b.length) return b.map(function (m, i) { var c = +(m.customerFee != null && m.customerFee !== '' ? m.customerFee : m.fee) || 0; return (i ? b[i - 1].upToKm : 0) + '–' + m.upToKm + ' km: ' + (c ? '₱' + c : 'Free'); }).join(' · ');
+    var R = Pricing.deliveryRule(cat); return 'Free within ' + R.freeKm + ' km of the store, then ₱' + Math.round(R.perKm * R.customerPct / 100) + ' per km.';
+  },
   deliveryRule: function (cat) { var d = (cat && cat.settings && cat.settings.delivery) || {}, D = Pricing.DELIVERY, o = {}; for (var k in D) o[k] = d[k] == null || d[k] === '' || isNaN(+d[k]) ? D[k] : +d[k]; return o; },
   deliverySplit: function (cat, food, km) {
     var R = Pricing.deliveryRule(cat), b = Pricing.bands(food), max = +food.maxKm || (b.length ? +b[b.length - 1].upToKm : R.maxKm);
     if (km == null || km > max + 1e-9) return null;
+    /* the restaurant's own matrix: each band sets what the customer pays, what the store pays and what the rider gets */
+    if (food.matrixFees && b.length) {
+      for (var i = 0; i < b.length; i++) if (km <= +b[i].upToKm + 1e-9) {
+        var m = b[i], c = +(m.customerFee != null && m.customerFee !== '' ? m.customerFee : m.fee) || 0, s = +m.storeFee || 0, r = m.riderFee == null || m.riderFee === '' ? c + s : +m.riderFee;
+        return { km: km, fee: Pricing.round(c), riderFee: Pricing.round(r), storeShare: Pricing.round(s), extraKm: 0, band: i, fromKm: i ? +b[i - 1].upToKm : 0, toKm: +m.upToKm };
+      }
+      return null;
+    }
     if (km <= R.freeKm + 1e-9) return { km: km, fee: 0, riderFee: R.baseFee, storeShare: R.baseFee, extraKm: 0 };
     var extra = Math.ceil(Pricing.round(km - R.freeKm) - 1e-9), full = extra * R.perKm, cust = Math.round(full * R.customerPct / 100);
     var rider = Math.max(full, R.minRider);
@@ -2634,6 +2653,22 @@ function aIn(path, label, type, extra) {
   if (type === 'bool') return `<label class="tog"><input type="checkbox" data-b="${path}" data-t="bool" ${v ? 'checked' : ''}> ${label}</label>`;
   return `<div class="field"><label>${label}</label><input data-b="${path}" ${type === 'num' ? 'type="number" step="any" min="0" data-t="num"' : ''} value="${esc(v)}"></div>`;
 }
+/* Delivery fee matrix of one restaurant: distance bands with what the customer pays, what the store pays and what the rider gets */
+function deliveryMatrix(F, P0) {
+  const on = !!F.matrixFees, M = F.matrix || [];
+  const num = (path, v, label) => `<div class="field"><label>${label}</label><input type="number" min="0" step="any" data-b="${path}" data-t="num" value="${v == null ? '' : esc(v)}" onchange="admRerender()"></div>`;
+  const val = (m, k) => m[k] != null && m[k] !== '' ? +m[k] : (k === 'customerFee' ? +m.fee || 0 : k === 'storeFee' ? 0 : (+(m.customerFee != null ? m.customerFee : m.fee) || 0) + (+m.storeFee || 0));
+  const rows = M.map((m, i) => { const prev = i ? +M[i - 1].upToKm : 0, bad = i && +m.upToKm <= prev, c = val(m, 'customerFee'), s = val(m, 'storeFee'), r = val(m, 'riderFee'), d = Pricing.round(c + s - r);
+    return `<div class="mxrow ${bad ? 'bad' : ''}"><div class="field"><label>From (km)</label><input value="${prev}" disabled></div>${num(`${P0}.matrix.${i}.upToKm`, m.upToKm, 'Up to (km)')}${on ? num(`${P0}.matrix.${i}.customerFee`, c, 'Customer pays (₱)') + num(`${P0}.matrix.${i}.storeFee`, s, 'Store pays (₱)') + num(`${P0}.matrix.${i}.riderFee`, r, 'Rider gets (₱)') : ''}<button class="xbtn" title="Remove band" onclick="admDel('${P0}.matrix',${i})">${ic('x')}</button>
+      ${on ? `<div class="mxnote">${prev}–${m.upToKm} km: customer ${c ? peso(c) : 'free'} · store pays ${peso(s)} · rider gets ${peso(r)}${d > 0 ? ` · <b>Tara keeps ${peso(d)}</b>` : d < 0 ? ` · <b class="warnc">Tara adds ${peso(-d)}</b> (rider gets more than customer + store)` : ''}</div>` : ''}${bad ? '<div class="mxnote warnc">"Up to" must be more than the band before it.</div>' : ''}</div>`; }).join('');
+  const last = M.length ? +M[M.length - 1].upToKm : 0;
+  return `<div class="acard"><h3>Delivery fee matrix · ${esc(F.storeName)}</h3>
+    <label class="tog"><input type="checkbox" data-b="${P0}.matrixFees" data-t="bool" ${on ? 'checked' : ''} onchange="setTimeout(()=>{ const f = ADM.draft.foods[ADM.si]; if (f.matrixFees && !(f.matrix || []).length) f.matrix = [{ upToKm: 3, customerFee: 0, storeFee: 20, riderFee: 20 }]; admRerender(); }, 0)"> Charge delivery by this matrix (instead of the Settings → Delivery fee formula)</label>
+    <p class="hint">${on ? 'Each band sets what the customer pays, what the store pays and what the rider gets. Usually the rider gets customer + store.' : 'Off: fees follow Super Admin → Settings → Delivery fee. The bands below only set how far this restaurant delivers.'} Distance is a straight line from the restaurant pin to the customer's pin. Orders beyond the last band can't be delivered.</p>
+    ${rows || '<p class="meta">No bands yet. Add one below.</p>'}
+    <button class="btn ghost sm mt" onclick="admAdd('${P0}.matrix',${esc(JSON.stringify(on ? { upToKm: last + 2, customerFee: 0, storeFee: 0, riderFee: 0 } : { upToKm: last + 2, fee: 0 }))})">+ Add distance band</button>
+    ${on && M.length ? `<div class="mxprev"><b>Customers see:</b> ${esc(Pricing.deliveryText(ADM.draft, F))}</div>` : ''}</div>`;
+}
 function aTown(path) { const v = getP(ADM.draft, path) || 'San Agustin'; return `<div class="field"><label>Town</label><select data-b="${path}">${ISLANDS.map(i => `<optgroup label="${i.name}">${i.towns.map(t => `<option ${t === v ? 'selected' : ''}>${t}</option>`).join('')}</optgroup>`).join('')}</select></div>`; }
 function aPhoto(path) {
   const v = getP(ADM.draft, path);
@@ -2662,9 +2697,7 @@ function admTabHtml() {
     if (!D.foods.length) return `<div class="empty">No restaurants yet. Approve a Food business application, or add one.</div>${addStoreBtn()}`;
     const si = ADM.si = Math.min(Math.max(ADM.si || 0, 0), D.foods.length - 1), F = D.foods[si], P0 = `foods.${si}`;
     const pick = `<div class="acard"><div class="field"><label>Restaurant</label><select onchange="ADM.si=+this.value;admRerender()">${D.foods.map((f, k) => `<option value="${k}" ${k === si ? 'selected' : ''}>${esc(f.storeName)} · ${esc(bizName(f.bizId))}</option>`).join('')}</select></div>${addStoreBtn()}</div>`;
-    if (ADM.tab === 'delivery') return pick + `<div class="acard"><h3>Delivery fee matrix · ${esc(F.storeName)}</h3><p class="hint">Distance is measured in a straight line from the restaurant pin to the customer's pin. Orders beyond the last band can't be delivered.</p>
-      ${F.matrix.map((m, i) => `<div class="arow three">${aIn(`${P0}.matrix.${i}.upToKm`, 'Up to (km)', 'num')}${aIn(`${P0}.matrix.${i}.fee`, 'Fee (₱)', 'num')}<button class="xbtn" onclick="admDel('${P0}.matrix',${i})">${ic('x')}</button></div>`).join('')}
-      <button class="btn ghost sm mt" onclick="admAdd('${P0}.matrix',{upToKm:0,fee:0})">+ Add distance band</button></div>
+    if (ADM.tab === 'delivery') return pick + deliveryMatrix(F, P0) + `
       <div class="acard"><h3>Restaurant location</h3><p class="hint">Tap the map to move the pin to the exact location.</p><div class="agrid">${aIn(`${P0}.lat`, 'Latitude', 'num')}${aIn(`${P0}.lng`, 'Longitude', 'num')}</div><div class="map" id="admMap"></div></div>`;
     return pick + `<div class="acard"><h3>${esc(F.storeName)} <button class="xbtn" title="Remove restaurant" onclick="admDelStore(${si})">${ic('x')}</button></h3><div class="agrid">${aIn(`${P0}.storeName`, 'Restaurant name')}${aBiz(`${P0}.bizId`, 'Food')}${aTown(`${P0}.town`)}${aIn(`${P0}.hours`, 'Opening hours')}</div><div class="mt">${aIn(`${P0}.address`, 'Address')}</div>
       <div class="field mt"><label>Logo / photo (shown on the home screen)</label></div>${aPhoto(`${P0}.photo`)}
@@ -3178,7 +3211,7 @@ function vSettings() {
       <p class="hint" style="margin:0 0 8px">Applies to every food delivery. The rider earns the whole fee; the customer and the store share it.</p>
       <div class="agrid">${aIn('settings.delivery.baseFee', 'Base delivery fee (₱) — paid by the store, free for the customer', 'num')}${aIn('settings.delivery.freeKm', 'Base fee covers the first (km)', 'num')}${aIn('settings.delivery.perKm', 'Fee per succeeding km (₱, each started km)', 'num')}${aIn('settings.delivery.customerPct', 'Customer pays (% of the succeeding-km fee; the store pays the rest)', 'num')}${aIn('settings.delivery.minRider', 'Minimum rider earning per delivery (₱; the store tops up)', 'num')}${aIn('settings.delivery.maxKm', 'Longest delivery (km), unless a store sets its own', 'num')}</div>
       <div id="delEx" class="mt"></div>
-      <p class="hint">Empty fields use the defaults: ₱20 base for the first 1.5 km · ₱10 per succeeding km · customer 70% · ₱20 minimum · 10 km. Tap Save to apply; new orders use the new fees.</p></div>
+      <p class="hint">Restaurants that charge by their own delivery matrix (Listings &amp; rates → restaurant → Delivery) use that instead. Empty fields use the defaults: ₱20 base for the first 1.5 km · ₱10 per succeeding km · customer 70% · ₱20 minimum · 10 km. Tap Save to apply; new orders use the new fees.</p></div>
     <div class="acard" id="iconCard"><h3><span class="hl">${ic('upload')} Website icon & app</span></h3>
       <div class="iconset"><div class="iconpv">${st.siteIcon ? `<img src="${esc(st.siteIcon)}" alt="Website icon">` : `<img src="${DEMO ? '' : '/img/icon-192.png'}" alt="Default icon" onerror="this.replaceWith(document.createTextNode('Default'))">`}</div>
         <div><p class="hint" style="margin:0 0 8px">Shown on the browser tab, bookmarks and the phone home screen when customers install the Tara Romblon app. Use a square logo (PNG or JPG, at least 512×512). Non-square pictures are fitted inside a square on the background colour below.</p>
