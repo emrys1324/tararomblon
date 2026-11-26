@@ -586,6 +586,8 @@ input,select,textarea,button{font-family:inherit}
 .osmlist{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:20;background:#fff;border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.18);overflow:hidden}.osmlist:empty{display:none}
 .osmlist button{display:flex;gap:8px;align-items:flex-start;width:100%;text-align:left;padding:10px 12px;border-bottom:1px solid var(--marble-2);background:#fff}.osmlist button:hover{background:#f6f3ec}
 .osmlist button span{display:flex;flex-direction:column}.osmlist small{color:var(--mute);font-size:12px}
+footer .fown{margin-top:20px;padding-top:14px;border-top:1px solid rgba(255,255,255,.12);font-size:13px;color:#aeb9d3}footer .fown b{display:inline;color:#fff;margin:0}footer .fown a{display:inline;color:var(--gold);text-decoration:underline}
+footer .fown span{display:inline}
 
 </style>
 </head>
@@ -707,6 +709,7 @@ input,select,textarea,button{font-family:inherit}
       <div><b>Account</b><button data-go="orders">My orders & bookings</button><button data-go="account">Sign in / Account</button><button data-go="messages">Messages</button></div>
       <div><b>For businesses</b><button data-go="list">List your business</button><button data-go="rider">Deliver with us</button><a href="merchant.html" id="merchantLink">Merchant login</a></div>
     </div>
+    <div class="fown">© <span id="footYear">2026</span> Tara Romblon · Owned by <b>Beyond Tech Solutions</b> · <a href="https://beyondsolutionsopc.com" target="_blank" rel="noopener">beyondsolutionsopc.com</a></div>
   </div>
 </footer>
 
@@ -2920,8 +2923,8 @@ async function loadCatalog() {
   try { const r = await api('getCatalog'); window.CAT_SAVED = !!r.catalog; if (r.catalog) CAT = r.catalog; } catch (e) { toast('Could not load latest rates: ' + e.message); }
   try { const r = await api('availability'); BUSY = r.busy || []; } catch (e) { }
   $('#brandName').textContent = CAT.business.name; $('#footBrand').textContent = CAT.business.name;
-  const c = [CAT.business.phone && 'Tel: ' + CAT.business.phone, CAT.business.email && 'Email: ' + CAT.business.email, CAT.business.facebook && CAT.business.facebook].filter(Boolean).join('\n');
-  $('#footContact').textContent = c;
+  const c = [CAT.business.phone && 'Tel: ' + CAT.business.phone, CAT.business.facebook && CAT.business.facebook].filter(Boolean).join('\n');
+  $('#footContact').textContent = c; if ($('#footYear')) $('#footYear').textContent = new Date().getFullYear();
 }
 
 /* ================= STAYS ================= */

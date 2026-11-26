@@ -56,8 +56,8 @@ async function loadCatalog() {
   try { const r = await api('getCatalog'); window.CAT_SAVED = !!r.catalog; if (r.catalog) CAT = r.catalog; } catch (e) { toast('Could not load latest rates: ' + e.message); }
   try { const r = await api('availability'); BUSY = r.busy || []; } catch (e) { }
   $('#brandName').textContent = CAT.business.name; $('#footBrand').textContent = CAT.business.name;
-  const c = [CAT.business.phone && 'Tel: ' + CAT.business.phone, CAT.business.email && 'Email: ' + CAT.business.email, CAT.business.facebook && CAT.business.facebook].filter(Boolean).join('\n');
-  $('#footContact').textContent = c;
+  const c = [CAT.business.phone && 'Tel: ' + CAT.business.phone, CAT.business.facebook && CAT.business.facebook].filter(Boolean).join('\n');
+  $('#footContact').textContent = c; if ($('#footYear')) $('#footYear').textContent = new Date().getFullYear();
 }
 
 /* ================= STAYS ================= */
