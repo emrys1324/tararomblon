@@ -10,8 +10,8 @@ const earn = b => Rules.riderEarning(b, ST()); /* rider earns the full delivery 
 async function initPortal() {
   if (DEMO) document.body.classList.add('demo');
   try { const r = await api('getCatalog'); if (r.catalog) CAT = r.catalog; } catch (e) { }
-  const s = store('tr5_staff_rider');
-  if (s && s.token) { try { const r = await api('staffMe', { token: s.token }); if (r.me.role === 'rider') return start(s.token, r.me); } catch (e) { } }
+  const s = await restoreStaff('tr5_staff_rider', me => me.role === 'rider');
+  if (s) { if (s.offline) toast('Weak connection. Showing your saved session; it will refresh automatically.'); return start(s.token, s.me); }
   staffLogin('rider', v => start(v.token, v.me));
 }
 async function start(token, me) {

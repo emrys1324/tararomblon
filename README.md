@@ -35,6 +35,14 @@ source/                  editable source + build.py + tests
 
 There are no npm packages to install. The functions use Node's built-in `fetch` and `crypto`.
 
+## New: passwords, phone notifications, riders stay signed in, COD amount required
+
+- **Customers** create an account with email + password (or Continue with Google) and log in with it. No more sign-in codes. "Forgot password?" emails a one-time code to set a new password; customers from before this change use it once to set their password. Account → Password lets them change it.
+- **Riders** create their account on the rider application form (with a password) and sign in to the Rider app with email + password once approved. Riders added before this change tap "Forgot password? / Set my password" once.
+- **Riders stay signed in** when they leave or reopen the app. Only "Sign out", a password reset or removal by an admin signs them out; a weak connection no longer sends them back to the sign-in screen.
+- **Phone notifications (Web Push)**: after signing in, every app shows "Turn on notifications". New orders, status changes, rider assignments and messages then pop up on the phone even when the app is closed. Android: Chrome. iPhone: add the app to the Home Screen first (iOS 16.4+). In-app notifications (bell + pop-up) still work as before. No setup needed: the server creates its push keys automatically.
+- **Cash on delivery**: when marking "Payment Collected", the merchant must type the amount collected (no longer pre-filled; must be more than ₱0).
+
 ## New: My orders & bookings for customers (Orders tab)
 
 - New **Orders** tab (bottom bar on phones, "My orders" in the top menu) lists every order and booking: food, rentals, stays and things to do. Filters: In progress, All, by type, Past. A badge shows how many are in progress.

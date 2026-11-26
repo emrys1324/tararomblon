@@ -15,7 +15,7 @@ PAGES=[('template.html',R('app_body.js'),'index.html','',''),
 def page(tpl,app,title,role,live):
     c=common.replace(APIDEMO,APILIVE) if live else common
     t0=R(tpl)
-    if live: t0=re.sub(r'<link rel="icon"[^>]*>', LIVEHEAD if tpl=='template.html' else LIVEHEAD.split('<link rel="manifest"')[0], t0, count=1)
+    if live: t0=re.sub(r'<link rel="icon"[^>]*>', LIVEHEAD if tpl=='template.html' else LIVEHEAD.replace('/manifest.webmanifest','/api/manifest?app='+{'SUPER ADMIN':'admin','MERCHANT':'merchant','RIDER':'rider'}[role]).replace('content="Tara Romblon"','content="TR '+{'SUPER ADMIN':'Admin','MERCHANT':'Merchant','RIDER':'Rider'}[role]+'"'), t0, count=1)
     return t0.replace('/*CSS*/',css).replace('/*PRICING*/',pricing).replace('/*RULES*/',rules).replace('/*CORE*/',core).replace('/*APP*/',c+'\n'+app).replace('/*TITLE*/',title).replace('/*ROLE*/',role)
 for folder,live in (('preview',False),('vercel',True)):
     os.makedirs(o+folder,exist_ok=True)

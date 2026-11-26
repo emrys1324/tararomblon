@@ -62,13 +62,13 @@ function wireStatus(root, getToken, onDone, lookup) {
     const ref = btn.dataset.ss, st = btn.dataset.st, b = lookup ? lookup(ref) : null, ovr = btn.dataset.ovr;
     openSheet(`<div class="sbody"><h2>${esc(b ? actionLabel(b, st) : st)}?</h2><p class="meta" style="margin-top:6px">${esc(ref)} will change from <b>${esc(b ? b.status : '')}</b> to <b>${esc(st)}</b>. The customer${b && b.rider ? ', rider' : ''} and business will be notified.</p>
       ${ovr ? '<div class="warn">This is an override. It skips the normal order flow and is recorded in the history.</div>' : ''}
-      ${st === 'Payment Collected' && b ? `<div class="field mt"><label>Cash received (P) *</label><input id="ssAmt" type="number" min="0" step="any" value="${Rules.cashExpected(b)}"><span class="hint">Expected ${peso(Rules.cashExpected(b))}${b.payMethod === 'cod' ? ' from the rider (food amount; the rider keeps the delivery fee)' : b.payMethod === 'pickup' ? ' at pick-up' : ' balance at the venue'}. This goes to the Super Admin cash report.</span></div>` : ''}
+      ${st === 'Payment Collected' && b ? `<div class="field mt"><label>Amount collected (P) * — required</label><input id="ssAmt" type="number" min="0" step="any" inputmode="decimal" required placeholder="Type the amount you received" value=""><span class="hint">Expected ${peso(Rules.cashExpected(b))}${b.payMethod === 'cod' ? ' from the rider (food amount; the rider keeps the delivery fee)' : b.payMethod === 'pickup' ? ' at pick-up' : ' balance at the venue'}. This goes to the Super Admin cash report.</span></div>` : ''}
       <div class="field mt"><label>Note (optional, shared in the history)</label><input id="ssNote" maxlength="200"></div><div class="err" id="ssErr"></div>
       <div class="row2"><button class="btn ghost" onclick="closeSheet()">Back</button><button class="btn ${Rules.EXCEPTIONS.indexOf(st) >= 0 ? 'dangerbtn' : ''}" id="ssGo">Yes, ${esc(st)}</button></div></div>`);
     $('#ssGo').onclick = async () => {
       loading(true, 'Updating…');
       const amt = $('#ssAmt') ? $('#ssAmt').value : undefined;
-      if ($('#ssAmt') && (amt === '' || !(+amt >= 0))) { $('#ssErr').textContent = 'Enter the cash amount received.'; return; }
+      if ($('#ssAmt') && (amt === '' || !(+amt >= 0) || (b && b.payMethod === 'cod' && !(+amt > 0)))) { loading(false); $('#ssErr').textContent = 'Enter the amount collected. This is required.'; $('#ssAmt').focus(); return; }
       try { const r = await api('setStatus', { token: getToken(), ref, status: st, note: $('#ssNote').value.trim(), amount: amt }); loading(false); closeSheet(); toast(ref + ': ' + st); onDone && onDone(r.booking); }
       catch (x) { loading(false); $('#ssErr').textContent = x.message; }
     };
@@ -79,6 +79,7 @@ function wireStatus(root, getToken, onDone, lookup) {
 const Notif = {
   token: null, key: '', since: '', items: [], unread: 0, timer: null, onEvents: null,
   start(token, key, onEvents) {
+    Push.start(() => this.token);
     this.token = token; this.key = 'tr5_notif_' + key; this.onEvents = onEvents;
     const s = store(this.key) || {}; this.items = s.items || []; this.unread = s.unread || 0; this.since = s.since || new Date(Date.now() - 3 * 864e5).toISOString();
     this.badge(); clearInterval(this.timer); this.poll(); this.timer = setInterval(() => this.poll(), DEMO ? 8000 : 20000);
@@ -103,10 +104,60 @@ const Notif = {
   badge() { document.querySelectorAll('.bellbadge').forEach(b => { b.textContent = this.unread || ''; b.dataset.n = this.unread; }); },
   open() {
     this.unread = 0; this.badge(); store(this.key, { items: this.items, unread: 0, since: this.since });
-    const perm = 'Notification' in window ? Notification.permission : 'unsupported';
-    openSheet(`<div class="sbody"><h2>Notifications</h2>
-      ${perm === 'default' ? `<button class="btn ghost sm mt" onclick="Notification.requestPermission().then(()=>Notif.open())">${ic('bell')} Turn on phone & desktop notifications</button>` : perm === 'denied' ? '<p class="hint mt">Device notifications are blocked in your browser settings. You will still see updates here and by email.</p>' : perm === 'granted' ? '<p class="hint mt">Device notifications are on. Updates also arrive by email.</p>' : ''}
+    openSheet(`<div class="sbody"><h2>Notifications</h2><div id="pushBox2" class="mt"></div>
       <div class="nlist">${this.items.map(e => `<div class="nitem ${e.type}">${ic({ message: 'chat', status: 'arrow', new: 'receipt', assigned: 'bike', verification: 'id', application: 'doc', proof: 'upload', payout: 'wallet', rider: 'bike' }[e.type] || 'bell')}<div><div>${esc(e.text)}</div><small>${new Date(e.at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}</small></div></div>`).join('') || '<div class="empty">No notifications yet.</div>'}</div></div>`);
+    Push.box('#pushBox2');
+  }
+};
+/* Phone notifications (Web Push): arrive even when the app is closed. iPhone: only after "Add to Home Screen" (iOS 16.4+). */
+const Push = {
+  tokenFn: null,
+  supported() { return !DEMO && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; },
+  iosNeedsInstall() { const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); return ios && !(navigator.standalone || matchMedia('(display-mode: standalone)').matches); },
+  async reg() { return navigator.serviceWorker.getRegistration('/') .then(r => r || navigator.serviceWorker.register('/sw.js', { scope: '/' })); },
+  async state() {
+    if (!this.supported()) return this.iosNeedsInstall() ? 'install' : 'unsupported';
+    if (Notification.permission === 'denied') return 'denied';
+    try { const r = await this.reg(), sub = r && await r.pushManager.getSubscription(); return sub && Notification.permission === 'granted' ? 'on' : 'off'; } catch (e) { return 'off'; }
+  },
+  b64(s) { const p = '='.repeat((4 - s.length % 4) % 4), b = atob((s + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(b, c => c.charCodeAt(0)); },
+  async subscribe(token, quiet) {
+    const r = await this.reg(); await navigator.serviceWorker.ready;
+    let sub = await r.pushManager.getSubscription();
+    if (!sub) { const k = (await api('pushKey')).key; if (!k) throw new Error('Notifications are not set up on the server yet.'); sub = await r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: this.b64(k) }); }
+    await api('pushSubscribe', { token, sub: sub.toJSON() }); if (!quiet) toast('Notifications are on for this phone');
+  },
+  async enable() {
+    const t = this.tokenFn && this.tokenFn(); if (!t) return;
+    try { const p = await Notification.requestPermission(); if (p !== 'granted') { toast(p === 'denied' ? 'Notifications are blocked. Allow them in your browser or phone settings.' : 'Notifications were not turned on.'); return this.refresh(); }
+      loading(true, 'Turning on notifications…'); await this.subscribe(t); loading(false); }
+    catch (e) { loading(false); toast(e.message || 'Could not turn on notifications.'); }
+    this.refresh();
+  },
+  async disable() { try { const r = await this.reg(), sub = r && await r.pushManager.getSubscription(); if (sub) { const t = this.tokenFn && this.tokenFn(); if (t) await api('pushUnsubscribe', { token: t, endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe(); } toast('Notifications are off for this phone'); } catch (e) { } this.refresh(); },
+  async test() { try { const r = await this.reg(); await r.showNotification(CAT.business.name || 'Tara Romblon', { body: 'Notifications are working on this phone.', icon: (CAT.settings && CAT.settings.siteIcon) || '/img/icon-192.png', badge: '/img/icon-192.png' }); } catch (e) { toast(e.message); } },
+  async html() {
+    const s = await this.state();
+    return s === 'on' ? `<div class="pushst on">${ic('bell', 16)} <b>Phone notifications are on</b> for this device.</div><div class="rowbtns mt"><button class="btn ghost sm" onclick="Push.test()">Send a test</button><button class="btn ghost sm" onclick="Push.disable()">Turn off</button></div>`
+      : s === 'off' ? `<button class="btn sm" onclick="Push.enable()">${ic('bell', 14)} Turn on phone notifications</button><p class="hint" style="margin-top:6px">New orders, status updates and messages will pop up on this phone, even when the app is closed.</p>`
+      : s === 'denied' ? `<p class="hint">Notifications are blocked for this site. Open your browser or phone settings → Notifications, allow this site, then reopen the app.</p>`
+      : s === 'install' ? `<p class="hint">On iPhone, first add this app to your Home Screen (Share → <b>Add to Home Screen</b>), open it from there, then turn on notifications here.</p>`
+      : `<p class="hint">${DEMO ? 'Phone notifications work on the live site.' : 'This browser does not support phone notifications. Try Chrome on Android or the home-screen app on iPhone.'} You still get updates here in the app and by email.</p>`;
+  },
+  async refresh() { for (const id of ['#pushBox', '#pushBox2']) { const el = $(id); if (el) el.innerHTML = await this.html(); } const n = $('#pushNudge'); if (n && (await this.state()) !== 'off') n.remove(); },
+  box(sel, tokenFn) { if (tokenFn) this.tokenFn = tokenFn; const el = $(sel); if (el) this.html().then(h => { el.innerHTML = h; }); },
+  /* after sign-in: keep this device's subscription linked to the account; otherwise show a small "Turn on" bar */
+  async start(tokenFn) {
+    this.tokenFn = tokenFn; const st = await this.state(), t = tokenFn();
+    if (st === 'on' && t) { this.subscribe(t, true).catch(() => {}); return; }
+    let dis = false; try { dis = sessionStorage.getItem('tr_push_nudge') === '1'; } catch (e) { }
+    if ((st === 'off' || st === 'install') && !dis && !$('#pushNudge')) {
+      const d = document.createElement('div'); d.id = 'pushNudge'; d.className = 'pushnudge';
+      d.innerHTML = `${ic('bell', 18)}<span>${st === 'install' ? 'Add this app to your Home Screen to get notifications on your iPhone.' : 'Turn on notifications so you don\'t miss orders and updates.'}</span>${st === 'off' ? '<button class="btn sm" id="pnGo">Turn on</button>' : ''}<button class="xbtn" id="pnX" aria-label="Dismiss">${ic('x', 14)}</button>`;
+      document.body.appendChild(d);
+      if ($('#pnGo')) $('#pnGo').onclick = () => this.enable();
+      $('#pnX').onclick = () => { d.remove(); try { sessionStorage.setItem('tr_push_nudge', '1'); } catch (e) { } };
+    }
   }
 };
 const bellBtn = () => `<button class="iconbtn bell" onclick="Notif.open()" aria-label="Notifications">${ic('bell', 22)}<span class="badge bellbadge" data-n="0"></span></button>`;

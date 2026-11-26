@@ -17,8 +17,8 @@ async function initPortal() {
   try { const r = await api('getCatalog'); window.CAT_SAVED = !!r.catalog; if (r.catalog) CAT = r.catalog; } catch (e) { }
   CAT = Pricing.norm(CAT);
   CAT.businesses = CAT.businesses || clone(DEFAULT_CATALOG.businesses); CAT.settings = Object.assign({}, DEFAULT_SETTINGS, CAT.settings || {});
-  const s = store('tr5_staff_admin');
-  if (s && s.token) { try { const r = await api('staffMe', { token: s.token }); if (r.me.role === 'super') return start(s.token, r.me); } catch (e) { } }
+  const s = await restoreStaff('tr5_staff_admin', me => me.role === 'super');
+  if (s) return start(s.token, s.me);
   staffLogin('admin', v => start(v.token, v.me));
 }
 async function start(token, me) {

@@ -404,11 +404,11 @@ function createCore(env) {
   async function payees() { return (await env.db.kvGet('payees')) || {}; }
   async function savePayee(party, bank) { var p = await payees(); p[party] = Object.assign(cleanBank(bank), { updated: now() }); await env.db.kvPut('payees', p); return p[party]; }
   function slug(t) { return String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30); }
-  function pubCust(c) { return { email: c.email, name: c.name || '', phone: c.phone || '', address: c.address || '', birthday: c.birthday || '', created: c.created, verify: c.verify || { status: 'unverified' } }; }
+  function pubCust(c) { return { email: c.email, name: c.name || '', phone: c.phone || '', address: c.address || '', birthday: c.birthday || '', created: c.created, verify: c.verify || { status: 'unverified' }, hasPassword: !!c.pw, google: c.signup === 'google' }; }
   function strip(b, keep) { var c = clone(b); delete c.hitpayId; if (!keep) { delete c.adminNotes; } return c; }
 
   /* ---------- auth ---------- */
-  function addToken(rec) { var t = env.uuid() + env.uuid().slice(0, 8); rec.tokens = [t].concat(rec.tokens || []).slice(0, 5); return t; }
+  function addToken(rec) { var t = env.uuid() + env.uuid().slice(0, 8); rec.tokens = [t].concat(rec.tokens || []).slice(0, 10); return t; }
   var reqBiz = ''; /* the business a merchant user is working on (sent by the Merchant app as "biz") */
   async function auth(token, need) {
     if (!token) err('Please sign in again.');
@@ -429,12 +429,13 @@ function createCore(env) {
     if (need === 'rider' && s.role !== 'rider') err('Rider access only.');
     return who;
   }
-  async function code(key, email, cat) {
+  async function code(key, email, cat, purpose) {
     var n = +((await env.cache.get('otpn_' + key)) || 0); if (n >= 5) err('Too many codes requested. Try again in 15 minutes.');
     var c = String(Math.floor(100000 + Math.random() * 900000));
     await env.cache.put('otp_' + key, c, 600); await env.cache.put('otpn_' + key, String(n + 1), 900); await env.cache.remove('otpt_' + key);
     var app = (cat && cat.business && cat.business.name) || 'Tara Romblon';
-    await env.mail(email, 'Your ' + app + ' sign-in code: ' + c, 'Your sign-in code is ' + c + '. It expires in 10 minutes. If you did not request this, ignore this email.');
+    if (purpose === 'reset') await env.mail(email, 'Your ' + app + ' password reset code: ' + c, 'Use this code to set a new password: ' + c + '. It expires in 10 minutes. If you did not ask to reset your password, ignore this email.');
+    else await env.mail(email, 'Your ' + app + ' sign-in code: ' + c, 'Your sign-in code is ' + c + '. It expires in 10 minutes. If you did not request this, ignore this email.');
     return env.demo ? { demoCode: c } : {};
   }
   async function check(key, c) {
@@ -457,6 +458,7 @@ function createCore(env) {
   async function event(type, text, aud, ref, bizId, mailTo, subject, body, actorEmail) {
     var e = { id: env.uuid(), at: now(), type: type, text: text, ref: ref || '', bizId: bizId || '', aud: aud, by: actorEmail || '' };
     await env.db.put(T.ev, e);
+    await pushEvent(e);
     var cat = await catalog(), st = settings(cat), sent = {};
     for (var i = 0; i < (mailTo || []).length; i++) {
       var a = mailTo[i]; if (!emailOk(a, st)) continue;
@@ -466,6 +468,37 @@ function createCore(env) {
         try { await env.mail(m, subject || text, (body || text) + (env.siteUrl ? '\n\nOpen the app: ' + env.siteUrl : '')); } catch (x) { }
       }
     }
+  }
+  /* ---------- passwords (customers and riders) ---------- */
+  async function makePw(pw) { pw = String(pw || ''); if (pw.length < 8) err('Password must be at least 8 characters.'); if (pw.length > 200) err('Password is too long.'); var salt = env.uuid(); return { salt: salt, hash: await env.hashPw(pw, salt), at: now() }; }
+  async function pwMatches(rec, pw) { return !!(rec && rec.pw && rec.pw.salt && (await env.hashPw(String(pw || ''), rec.pw.salt)) === rec.pw.hash); }
+  async function pwGate(key) { var n = +((await env.cache.get('lgn_' + key)) || 0); if (n >= 10) err('Too many attempts. Try again in 15 minutes or tap "Forgot password?".'); return n; }
+  async function pwFail(key, n) { await env.cache.put('lgn_' + key, String(n + 1), 900); err('Incorrect email or password.'); }
+  /* ---------- phone notifications (Web Push) ---------- */
+  var PUSH_TYPES = ['status', 'new', 'assigned', 'message', 'application', 'verification', 'proof', 'payout', 'points'];
+  async function pushRecipients(aud, actor) {
+    var out = [], seen = {}, staff = null;
+    for (var i = 0; i < aud.length; i++) {
+      var a = aud[i], recs = [];
+      if (a.indexOf('cust:') === 0) { var c = await env.db.get(T.cust, a.slice(5)); if (c) recs.push([T.cust, c, '/#orders']); }
+      else { staff = staff || await staffAll();
+        if (a.indexOf('rider:') === 0) staff.filter(function (s) { return s.email === a.slice(6) && s.role === 'rider'; }).forEach(function (s) { recs.push([T.staff, s, '/rider']); });
+        else if (a === 'super') staff.filter(function (s) { return s.role === 'super'; }).forEach(function (s) { recs.push([T.staff, s, '/admin']); });
+        else if (a.indexOf('biz:') === 0) staff.filter(function (s) { return !!roleIn(s, a.slice(4)); }).forEach(function (s) { recs.push([T.staff, s, '/merchant']); }); }
+      recs.forEach(function (r) { if (r[1].email !== actor && !seen[r[1].email] && (r[1].push || []).length) { seen[r[1].email] = 1; out.push(r); } });
+    }
+    return out;
+  }
+  async function pushEvent(e) {
+    if (!env.push || PUSH_TYPES.indexOf(e.type) < 0) return;
+    try {
+      var cat = await catalog(), title = (cat && cat.business && cat.business.name) || 'Tara Romblon', list = await pushRecipients(e.aud || [], e.by);
+      await Promise.all(list.map(async function (r) {
+        var rec = r[1], gone = [];
+        await Promise.all(rec.push.map(async function (sub) { var res = await env.push(sub, { title: title, body: String(e.text).slice(0, 180), url: r[2], tag: e.ref || e.type }); if (res === 'gone') gone.push(sub.endpoint); }));
+        if (gone.length) { var fresh = await env.db.get(r[0], rec.id || rec.email); if (fresh) { fresh.push = (fresh.push || []).filter(function (s) { return gone.indexOf(s.endpoint) < 0; }); await env.db.put(r[0], fresh); } }
+      }));
+    } catch (x) { console.error('push', x && x.message); }
   }
   function myAud(who) { return who.kind === 'customer' ? ['cust:' + who.email] : who.role === 'super' ? ['super'] : who.role === 'rider' ? ['rider:' + who.email] : ['biz:' + who.bizId]; }
 
@@ -495,7 +528,7 @@ function createCore(env) {
     var prev = b.status, cat0 = await catalog();
     if (status === 'Payment Collected' && who.role !== 'system') {
       var exp = Rules.cashExpected(b);
-      if (amount == null || amount === '' || !(+amount >= 0)) err('Enter the cash amount received (expected P' + exp + ').');
+      if (amount == null || amount === '' || !(+amount >= 0) || (b.payMethod === 'cod' && !(+amount > 0))) err('Enter the amount collected (expected P' + exp + '). This is required.');
       b.cashCollected = { amount: Rules.r2(+amount), expected: exp, by: who.name || who.email, role: who.role, at: now() };
       if (Rules.r2(+amount) !== exp) note = (note ? note + ' · ' : '') + 'Cash received P' + Rules.r2(+amount) + ' (expected P' + exp + ')';
     }
@@ -749,6 +782,7 @@ function createCore(env) {
     need.forEach(function (k) { if (!String(f[k] || '').trim()) err(k === 'registration' ? 'DTI / SEC / CDA registration number is required.' : k === 'permits' ? "Mayor's / Business permit number is required." : 'Please fill in all required fields.'); });
     var bank = cleanBank(f.bank); if (!bank.accountName || !bank.bank || !bank.accountNo) err('Please add the bank or e-wallet account for payouts (name, bank and account number).');
     if (rider && !f.licensePhoto) err("Please upload a photo of the driver's license.");
+    if (rider) { var pwr = await makePw(f.password); var exr = await env.db.get(T.staff, low(f.email)); if (exr && exr.role === 'rider') err('You already have a rider account. Sign in to the Rider app instead.'); }
     if (!validEmail(f.email)) err('Enter a valid email address.');
     var n = +((await env.cache.get('appn_' + low(f.email))) || 0); if (n >= 3) err('Too many submissions. Please try again later.'); await env.cache.put('appn_' + low(f.email), String(n + 1), 3600);
     var a = { id: env.uuid(), appType: rider ? 'rider' : 'business', created: now(), status: 'New', adminNotes: '', bank: bank };
@@ -757,6 +791,7 @@ function createCore(env) {
     keys.forEach(function (k) { a[k] = str(f[k], k === 'description' || k === 'experience' ? 1500 : 200); });
     a.email = low(a.email); a.photos = [];
     if (rider) {
+      a.pw = pwr;
       a.licenseFile = (await env.files.save(f.licensePhoto, 'license-' + a.email, true)).id;
       await env.db.put(T.app, a);
       await event('application', 'New rider application: ' + a.name + ' (' + a.town + ')', ['super'], '', '', ['super'], 'New rider application: ' + a.name, a.name + ' - ' + a.vehicle + ' ' + a.plate + ' - ' + a.town + '\n' + a.phone + ' ' + a.email + "\nDriver's license " + a.licenseNo + '\n\nReview it in the Super Admin app > Rider applications.');
@@ -788,6 +823,64 @@ function createCore(env) {
     var c = (await env.db.get(T.cust, e)) || { id: e, email: e, name: '', phone: '', address: '', created: now(), verify: { status: 'unverified' } };
     var t = addToken(c); await env.db.put(T.cust, c); return { token: t, profile: pubCust(c) };
   };
+  /* Customers: create an account with email + password, log in, reset a forgotten password */
+  A.signUp = async function (p) {
+    var e = low(p.email); if (!validEmail(e)) err('Enter a valid email address.');
+    var n = +((await env.cache.get('sgn_' + e)) || 0); if (n >= 5) err('Too many attempts. Please try again later.'); await env.cache.put('sgn_' + e, String(n + 1), 3600);
+    var c = await env.db.get(T.cust, e);
+    if (c && c.pw) err('An account with this email already exists. Log in instead.');
+    if (c) err('NO_PASSWORD: This email already has an account without a password. Tap "Forgot password?" to set one.');
+    c = { id: e, email: e, name: str(p.name, 120), phone: '', address: '', created: now(), verify: { status: 'unverified' }, signup: 'password', pw: await makePw(p.password) };
+    var t = addToken(c); await env.db.put(T.cust, c); return { token: t, profile: pubCust(c), created: true };
+  };
+  A.login = async function (p) {
+    var e = low(p.email); if (!validEmail(e)) err('Enter a valid email address.');
+    var n = await pwGate('cust:' + e), c = await env.db.get(T.cust, e);
+    if (!c) { await env.cache.put('lgn_cust:' + e, String(n + 1), 900); err('No account found for this email. Tap "Create account".'); }
+    if (!c.pw) err('NO_PASSWORD: This account has no password yet' + (c.signup === 'google' ? ' (you signed up with Google; you can keep using Continue with Google)' : '') + '. Tap "Forgot password?" to set one.');
+    if (!(await pwMatches(c, p.password))) await pwFail('cust:' + e, n);
+    await env.cache.remove('lgn_cust:' + e);
+    var t = addToken(c); await env.db.put(T.cust, c); return { token: t, profile: pubCust(c) };
+  };
+  /* Forgot password (customers and riders): a one-time code by email, then a new password */
+  A.pwResetSend = async function (p) {
+    var e = low(p.email), kind = p.kind === 'rider' ? 'rider' : 'cust'; if (!validEmail(e)) err('Enter a valid email address.');
+    var rec = kind === 'rider' ? await env.db.get(T.staff, e) : await env.db.get(T.cust, e);
+    if (!rec || (kind === 'rider' && rec.role !== 'rider')) err(kind === 'rider' ? 'This email is not registered as a rider. Apply to become a rider first.' : 'No account found for this email. Tap "Create account".');
+    return await code('reset:' + kind + ':' + e, e, await catalog(), 'reset');
+  };
+  A.pwReset = async function (p) {
+    var e = low(p.email), kind = p.kind === 'rider' ? 'rider' : 'cust', tb = kind === 'rider' ? T.staff : T.cust;
+    var pw = await makePw(p.password); await check('reset:' + kind + ':' + e, p.code);
+    var rec = await env.db.get(tb, e); if (!rec || (kind === 'rider' && rec.role !== 'rider')) err('Account not found.');
+    rec.pw = pw; rec.tokens = []; var t = addToken(rec); await env.db.put(tb, rec); await env.cache.remove('lgn_' + kind + ':' + e);
+    return kind === 'rider' ? { token: t, me: pubStaff(rec) } : { token: t, profile: pubCust(rec) };
+  };
+  A.changePassword = async function (p) {
+    var who = await auth(p.token); if (who.kind !== 'customer' && who.role !== 'rider') err('Not allowed.');
+    var rec = who.rec; if (rec.pw && !(await pwMatches(rec, p.current))) err('Your current password is incorrect.');
+    rec.pw = await makePw(p.password); rec.tokens = [p.token]; await env.db.put(who.kind === 'customer' ? T.cust : T.staff, rec); return {};
+  };
+  /* Riders: sign in with email + password */
+  A.riderLogin = async function (p) {
+    var e = low(p.email); if (!validEmail(e)) err('Enter a valid email address.');
+    var n = await pwGate('rider:' + e), s = await env.db.get(T.staff, e);
+    if (!s || s.role !== 'rider') { await env.cache.put('lgn_rider:' + e, String(n + 1), 900); err('This email is not registered as a rider. Tap "Create rider account" to apply.'); }
+    if (s.active === false) err('Your rider account is not active. Contact MJV Services OPC.');
+    if (!s.pw) err('NO_PASSWORD: Your rider account has no password yet. Tap "Forgot password?" to set one.');
+    if (!(await pwMatches(s, p.password))) await pwFail('rider:' + e, n);
+    await env.cache.remove('lgn_rider:' + e);
+    var t = addToken(s); await env.db.put(T.staff, s); return { token: t, me: pubStaff(s) };
+  };
+  /* Phone notifications: public key, subscribe and unsubscribe this device */
+  A.pushKey = async function () { return { key: env.pushKey ? await env.pushKey() : '' }; };
+  A.pushSubscribe = async function (p) {
+    var who = await auth(p.token), s = p.sub || {}; if (!s.endpoint || !/^https:\/\//.test(s.endpoint) || !s.keys || !s.keys.p256dh || !s.keys.auth) err('Notifications are not supported on this device.');
+    var rec = who.rec, sub = { endpoint: String(s.endpoint).slice(0, 800), keys: { p256dh: String(s.keys.p256dh).slice(0, 200), auth: String(s.keys.auth).slice(0, 100) }, at: now() };
+    rec.push = [sub].concat((rec.push || []).filter(function (x) { return x.endpoint !== sub.endpoint; })).slice(0, 6);
+    await env.db.put(who.kind === 'customer' ? T.cust : T.staff, rec); return { ok: true };
+  };
+  A.pushUnsubscribe = async function (p) { var who = await auth(p.token), rec = who.rec; rec.push = (rec.push || []).filter(function (x) { return x.endpoint !== p.endpoint; }); await env.db.put(who.kind === 'customer' ? T.cust : T.staff, rec); return {}; };
   A.me = async function (p) { return { profile: pubCust((await auth(p.token, 'customer')).rec) }; };
   A.saveProfile = async function (p) {
     var who = await auth(p.token, 'customer'), c = who.rec, pr = p.profile || {};
@@ -1123,7 +1216,7 @@ function createCore(env) {
   A.uploadPhoto = async function (p) { await auth(p.token, 'super'); return { url: (await env.files.save(p.dataUrl, p.name, false)).url }; };
   A.adminData = async function (p) {
     await auth(p.token, 'super');
-    return { bookings: (await allBookings()).map(function (b) { return strip(b, true); }), customers: (await env.db.all(T.cust)).map(pubCust), applications: await env.db.all(T.app), staff: staffRows(await staffAll()),
+    return { bookings: (await allBookings()).map(function (b) { return strip(b, true); }), customers: (await env.db.all(T.cust)).map(pubCust), applications: (await env.db.all(T.app)).map(function (a) { var c = clone(a); delete c.pw; return c; }), staff: staffRows(await staffAll()),
       threads: await env.db.all(T.thr), events: await env.db.tail(T.ev, 100), payees: await payees(), payouts: await env.db.all(T.pay), discounts: await discounts() };
   };
   A.adminUpdate = async function (p) {
@@ -1167,7 +1260,7 @@ function createCore(env) {
       var s = merged[k], o = old[k];
       if (isMerchantRole(s.role)) setAccess(s, s.access); else delete s.access;
       var sameKind = o && (isMerchantRole(o.role) ? isMerchantRole(s.role) : o.role === s.role);
-      s.tokens = sameKind ? o.tokens || [] : []; s.available = o ? !!o.available : false; s.lastSeen = o ? o.lastSeen || '' : '';
+      s.tokens = sameKind ? o.tokens || [] : []; if (o && sameKind) ['pw', 'push', 'loc', 'vehicle', 'plate'].forEach(function (f) { if (o[f] != null && s[f] == null) s[f] = o[f]; }); s.available = o ? !!o.available : false; s.lastSeen = o ? o.lastSeen || '' : '';
       if (o && s.role === 'rider') RIDER_FIELDS.forEach(function (f) { if (o[f] != null) s[f] = o[f]; });
       return s;
     }));
@@ -1221,10 +1314,11 @@ function createCore(env) {
       if (ex && ex.role !== 'rider') err(e + ' already has a ' + (Rules.ROLE_LABEL[ex.role] || ex.role) + ' account.');
       var rec = ex || { id: e, email: e, role: 'rider', bizId: '', tokens: [], available: false, lastSeen: '' };
       Object.assign(rec, { name: a.name, phone: a.phone, address: a.address, town: a.town, vehicle: a.vehicle, plate: a.plate, licenseNo: a.licenseNo, licenseExpiry: a.licenseExpiry || '', licenseFile: a.licenseFile, licenseStatus: p.licenseVerified === false ? 'pending' : 'verified', licenseBy: who.email, licenseAt: now(), active: true, joined: now(), appId: a.id });
+      if (a.pw) rec.pw = a.pw;
       await env.db.put(T.staff, rec);
       if (a.bank) await savePayee('rider:' + e, a.bank);
       a.status = 'Approved'; a.decided = now(); a.adminNotes = (a.adminNotes ? a.adminNotes + '\n' : '') + 'Approved as rider'; await env.db.put(T.app, a);
-      await event('application', 'Rider approved: ' + a.name, ['super', 'rider:' + e], '', '', ['rider:' + e], 'You are now a delivery rider', 'Hi ' + a.name + ',\n\nYour rider application is approved. Sign in to the Rider app with ' + e + ' to start receiving deliveries.' + (env.siteUrl ? '\n\n' + env.siteUrl.replace(/\/+$/, '') + '/rider' : ''), who.email);
+      await event('application', 'Rider approved: ' + a.name, ['super', 'rider:' + e], '', '', ['rider:' + e], 'You are now a delivery rider', 'Hi ' + a.name + ',\n\nYour rider application is approved. Sign in to the Rider app with ' + e + ' and the password you created to start receiving deliveries.' + (env.siteUrl ? '\n\n' + env.siteUrl.replace(/\/+$/, '') + '/rider' : ''), who.email);
       return { rider: adminStaff(rec) };
     }
     var cat = await catalog(true), bid = slug(p.bizId || a.businessName) || env.uuid().slice(0, 8);

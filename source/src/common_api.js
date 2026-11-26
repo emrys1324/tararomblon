@@ -22,6 +22,7 @@ function demoEnv() {
   return {
     demo: true, defaultCatalog: DEFAULT_CATALOG, notifyEmail: '', siteUrl: '',
     now: () => new Date().toISOString(), today: () => today, uuid: () => (crypto.randomUUID ? crypto.randomUUID() : uid() + uid() + uid()),
+    hashPw: async (pw, salt) => { try { const k = await crypto.subtle.importKey('raw', new TextEncoder().encode(String(pw)), 'PBKDF2', false, ['deriveBits']); const b = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: new TextEncoder().encode('tr:' + salt), iterations: 100000, hash: 'SHA-256' }, k, 256); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join(''); } catch (e) { return 'demo:' + salt + ':' + pw; } },
     db: {
       all: t => Object.values(tb(t)), get: (t, id) => tb(t)[id] || null, put: (t, o) => { tb(t)[o.id] = o; },
       tail: (t, n) => Object.values(tb(t)).slice(-n), replaceAll: (t, list) => { D().tables[t] = {}; list.forEach(o => tb(t)[o.id] = o); },
@@ -124,7 +125,47 @@ function bookingDates(l) { return l.type === 'stay' ? fmtD(l.start) + ' to ' + f
 function lineText(l) { return l.type ? l.label + ' - ' + bookingDates(l) + (l.type === 'rental' ? ' · ' + l.helmets + ' helmet(s) · ' + l.pickup + ' → ' + l.ret : l.type === 'tour' ? ' · ' + l.pax + (l.category === 'service' ? ' person(s)' : ' guest(s)') : ' · ' + l.guests + ' guest(s)') : l.qty + '× ' + l.name + (l.addons && l.addons.length ? ' (' + l.addons.join(', ') + ')' : '') + (l.note ? ' “' + l.note + '”' : ''); }
 
 /* Staff sign-in (Super Admin, merchant and rider apps) */
+const pwField = (id, label, ac) => `<div class="field mt"><label>${label}</label><div class="pwbox"><input type="password" id="${id}" autocomplete="${ac}" minlength="8"><button type="button" class="link pweye" data-eye="${id}">Show</button></div></div>`;
+function wireEyes() { document.querySelectorAll('[data-eye]').forEach(b => b.onclick = () => { const i = $('#' + b.dataset.eye); i.type = i.type === 'password' ? 'text' : 'password'; b.textContent = i.type === 'password' ? 'Show' : 'Hide'; }); }
+/* Rider app sign-in: email + password; new riders create an account by applying; forgotten password by email code */
+function riderLogin(onDone, email) {
+  const root = $('#root'); let demoList = []; if (DEMO) { DemoStore.load(); demoList = Object.values(DemoStore.d.tables.staff || {}).filter(s => s.role === 'rider'); }
+  root.innerHTML = `<div class="acard login"><div class="lmark">${ic('bike', 34)}</div><h2>Rider app</h2><p class="meta">Sign in with your email and password. You stay signed in on this phone until you sign out.</p>
+    <div class="field mt"><label>Email</label><input id="lgE" type="email" autocomplete="email" value="${esc(email || '')}"></div>${pwField('lgP', 'Password', 'current-password')}
+    <div class="err" id="lgErr"></div><button class="btn navy full mt" id="lgBtn">Sign in</button>
+    <button class="link" style="display:block;margin:12px auto 0" id="lgForgot">Forgot password? / Set my password</button>
+    <p class="meta swap">New rider? <a class="link" href="${DEMO ? 'index.html' : '/'}#rider">Create rider account</a></p>
+    ${DEMO ? `<div class="warn mt"><b>Demo riders</b> (tap to fill; first set a password with "Set my password")<div class="demoacc">${demoList.map(s => `<button onclick="$('#lgE').value='${s.email}'">${s.email}<small>${esc(s.name || '')}</small></button>`).join('')}</div></div>` : ''}</div>`;
+  wireEyes();
+  const go = async () => { const e = $('#lgE').value.trim().toLowerCase(), pw = $('#lgP').value;
+    if (!validEmail(e)) { $('#lgErr').textContent = 'Enter a valid email.'; return; } if (!pw) { $('#lgErr').textContent = 'Enter your password.'; return; }
+    loading(true, 'Signing in…');
+    try { const v = await api('riderLogin', { email: e, password: pw }); store('tr5_staff_rider', { token: v.token, me: v.me }); loading(false); onDone({ token: v.token, me: v.me }); }
+    catch (x) { loading(false); $('#lgErr').textContent = x.message.replace(/^NO_PASSWORD: /, ''); } };
+  $('#lgBtn').onclick = go; $('#lgP').onkeydown = ev => { if (ev.key === 'Enter') go(); };
+  $('#lgForgot').onclick = async () => { const e = $('#lgE').value.trim().toLowerCase(); if (!validEmail(e)) { $('#lgErr').textContent = 'Enter your rider email first.'; return; }
+    loading(true, 'Sending code…');
+    try { const r = await api('pwResetSend', { email: e, kind: 'rider' }); loading(false);
+      root.querySelector('.login').innerHTML = `<div class="lmark">${ic('mail', 34)}</div><h2>Set your password</h2><p class="meta">Enter the code we sent to <b>${esc(e)}</b> and choose a password.</p>${r.demoCode ? `<div class="warn">Demo code: <b>${r.demoCode}</b></div>` : ''}
+        <div class="field mt"><label>6-digit code</label><input id="lgC" class="otp" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></div>${pwField('lgW', 'New password (at least 8 characters)', 'new-password')}${pwField('lgW2', 'Confirm password', 'new-password')}
+        <div class="err" id="lgErr"></div><button class="btn navy full mt" id="lgSet">Save password and sign in</button><button class="link" style="display:block;margin:12px auto 0" onclick="riderLogin(window._rOnDone,'${esc(e)}')">Back</button>`;
+      wireEyes();
+      $('#lgSet').onclick = async () => { const pw = $('#lgW').value; if (pw.length < 8) { $('#lgErr').textContent = 'At least 8 characters.'; return; } if (pw !== $('#lgW2').value) { $('#lgErr').textContent = 'The passwords do not match.'; return; }
+        loading(true, 'Saving…'); try { const v = await api('pwReset', { email: e, code: $('#lgC').value.trim(), password: pw, kind: 'rider' }); store('tr5_staff_rider', { token: v.token, me: v.me }); loading(false); toast('Password saved'); onDone({ token: v.token, me: v.me }); } catch (x) { loading(false); $('#lgErr').textContent = x.message; } };
+    } catch (x) { loading(false); $('#lgErr').textContent = x.message; } };
+  window._rOnDone = onDone;
+}
+/* Keep staff signed in: only a real "sign in again" answer from the server signs them out; network hiccups keep the saved session */
+async function restoreStaff(key, ok) {
+  const s = store(key); if (!s || !s.token) return false;
+  for (let i = 0; i < 3; i++) {
+    try { const r = await api('staffMe', { token: s.token }); if (!ok(r.me)) { store(key, null); return false; } store(key, { token: s.token, me: r.me }); return { token: s.token, me: r.me }; }
+    catch (e) { if (/sign in again|Not allowed|Access removed/i.test(e.message)) { store(key, null); return false; } await new Promise(res => setTimeout(res, 1500)); }
+  }
+  return s.me && ok(s.me) ? { token: s.token, me: s.me, offline: true } : false;
+}
 function staffLogin(portal, onDone) {
+  if (portal === 'rider') return riderLogin(onDone);
   const root = $('#root'), title = { admin: 'Super Admin', merchant: 'Merchant app', rider: 'Rider app' }[portal], roles = { admin: ['super'], merchant: ['manager', 'staff'], rider: ['rider'] }[portal];
   let demoList = []; if (DEMO) { DemoStore.load(); demoList = Object.values(DemoStore.d.tables.staff || {}).filter(s => roles.indexOf(s.role) >= 0); }
   root.innerHTML = `<div class="acard login"><div class="lmark">${ic(portal === 'admin' ? 'shield' : portal === 'rider' ? 'bike' : 'store', 34)}</div><h2>${title}</h2><p class="meta">Sign in with your registered email. We'll send a 6-digit code.</p>

@@ -553,3 +553,7 @@ input,select,textarea,button{font-family:inherit}
 .bnav button{font-size:11px;min-width:0}.bnav svg{width:23px;height:23px}@media(max-width:360px){.bnav{left:6px;right:6px}.bnav button{font-size:10px}}
 #mapSearch:empty{display:none}#mapSearch{margin:6px 0 8px}.gpac{width:100%;display:block;border:1.5px solid var(--line);border-radius:10px;background:#fff;color-scheme:light}
 #pinAddr:empty{display:none}#pinAddr{margin:6px 0 0}
+.pwbox{position:relative}.pwbox input{padding-right:64px}.pweye{position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:13px}
+.pushst{padding:10px 12px;border-radius:10px;background:#eaf6ee;border:1px solid #bfe3cb;color:#1d5b33}
+.pushnudge{position:fixed;left:12px;right:12px;top:calc(10px + env(safe-area-inset-top));z-index:80;max-width:560px;margin:0 auto;display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:var(--navy);color:#fff;box-shadow:0 10px 30px rgba(0,0,0,.25);font-size:14px}
+.pushnudge span{flex:1}.pushnudge .xbtn{width:30px;height:30px;background:rgba(255,255,255,.15);color:#fff}.pushnudge svg{flex:none}

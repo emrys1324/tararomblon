@@ -341,24 +341,32 @@ function requireSignIn(next) {
   if (session && session.profile && session.profile.name && session.profile.phone && session.profile.address) return next();
   openSignIn(next);
 }
-function openSignIn(next) {
+function signedIn(r, next, pre, msg) { session = { token: r.token, profile: r.profile }; store('tr4_session', session); loading(false); renderBadges(); startCustomerNotif(); if (msg) toast(msg); openProfileSheet(next, pre); }
+/* Log in: email + password (or Google) */
+function openSignIn(next, email) {
   if (session && session.token) return openProfileSheet(next);
-  openSheet(`<div class="sbody"><h2>Sign in</h2><p class="meta" style="margin-top:4px">${window.GOOGLE_CLIENT ? 'Continue with Google, or get' : "We'll email you"} a 6-digit code${window.GOOGLE_CLIENT ? ' by email' : ''}. No password needed.</p>
+  openSheet(`<div class="sbody"><h2>Log in</h2><p class="meta" style="margin-top:4px">Welcome back! Log in with your email and password${window.GOOGLE_CLIENT ? ', or continue with Google' : ''}.</p>
     ${googleBlock()}
-    <div class="field mt"><label>Email</label><input type="email" id="siE" autocomplete="email" placeholder="you@email.com"></div>
-    <div class="err" id="siErr"></div><button class="btn navy full mt" id="siBtn">Send code</button>
+    <div class="field mt"><label>Email</label><input type="email" id="siE" autocomplete="email" placeholder="you@email.com" value="${esc(email || '')}"></div>
+    ${pwField('siP', 'Password', 'current-password')}
+    <div class="err" id="siErr"></div><button class="btn navy full mt" id="siBtn">Log in</button>
+    <button class="link" style="display:block;margin:12px auto 0" id="toForgot">Forgot password?</button>
     <p class="meta swap">New to Tara Romblon? <button class="link" id="toSignUp">Create an account</button></p></div>`);
-  mountGoogle(next, 'signin');
+  mountGoogle(next, 'signin'); wireEyes();
   $('#toSignUp').onclick = () => openSignUp(next);
-  $('#siBtn').onclick = async () => {
+  $('#toForgot').onclick = () => openForgot(next, $('#siE').value.trim().toLowerCase());
+  const go = async () => {
     $('#siErr').textContent = '';
-    const e = $('#siE').value.trim().toLowerCase();
+    const e = $('#siE').value.trim().toLowerCase(), pw = $('#siP').value;
     if (!validEmail(e)) { $('#siErr').textContent = 'Enter a valid email address.'; return; }
-    loading(true, 'Sending code…');
-    try { const r = await api('sendOtp', { email: e }); loading(false); codeStep(e, r.demoCode, next); } catch (x) { loading(false); $('#siErr').textContent = x.message; }
+    if (!pw) { $('#siErr').textContent = 'Enter your password.'; return; }
+    loading(true, 'Logging in…');
+    try { signedIn(await api('login', { email: e, password: pw }), next); }
+    catch (x) { loading(false); const m = x.message.replace(/^NO_PASSWORD: /, ''); $('#siErr').innerHTML = esc(m) + (/NO_PASSWORD|Forgot/.test(x.message) ? ` <button class="link" onclick="openForgot(null,'${esc(e)}')">Set a password</button>` : ''); }
   };
+  $('#siBtn').onclick = go; $('#siP').onkeydown = ev => { if (ev.key === 'Enter') go(); };
 }
-/* Sign up: Google in one tap, or name + mobile + email (then a 6-digit code). Address is asked right after. */
+/* Create account: Google in one tap, or name + mobile + email + password. Address is asked right after. */
 function openSignUp(next) {
   if (session && session.token) return openProfileSheet(next);
   openSheet(`<div class="sbody"><h2>Create your account</h2><p class="meta" style="margin-top:4px">Book stays, rentals, food and tours across Romblon, and keep your reward points in one place.</p>
@@ -366,19 +374,45 @@ function openSignUp(next) {
     <div class="field mt"><label>Full name</label><input id="suN" autocomplete="name" placeholder="Juan dela Cruz"></div>
     <div class="field mt"><label>Mobile number</label><input id="suP" inputmode="tel" autocomplete="tel" placeholder="09XX XXX XXXX"></div>
     <div class="field mt"><label>Email</label><input type="email" id="suE" autocomplete="email" placeholder="you@email.com"></div>
+    ${pwField('suW', 'Create a password (at least 8 characters)', 'new-password')}${pwField('suW2', 'Confirm password', 'new-password')}
     <div class="err" id="suErr"></div><button class="btn navy full mt" id="suBtn">Create account</button>
-    <p class="hint" style="margin-top:8px">We'll email you a 6-digit code to confirm. No password needed.</p>
-    <p class="meta swap">Already have an account? <button class="link" id="toSignIn">Sign in</button></p></div>`);
-  mountGoogle(next, 'signup');
+    <p class="meta swap">Already have an account? <button class="link" id="toSignIn">Log in</button></p></div>`);
+  mountGoogle(next, 'signup'); wireEyes();
   $('#toSignIn').onclick = () => openSignIn(next);
   $('#suBtn').onclick = async () => {
     $('#suErr').textContent = '';
-    const pre = { name: $('#suN').value.trim(), phone: $('#suP').value.trim() }, e = $('#suE').value.trim().toLowerCase();
+    const pre = { name: $('#suN').value.trim(), phone: $('#suP').value.trim() }, e = $('#suE').value.trim().toLowerCase(), pw = $('#suW').value;
     if (pre.name.length < 2) { $('#suErr').textContent = 'Enter your full name.'; return; }
     if (!validPhone(pre.phone)) { $('#suErr').textContent = 'Enter a valid PH mobile number (e.g. 0917 123 4567).'; return; }
     if (!validEmail(e)) { $('#suErr').textContent = 'Enter a valid email address.'; return; }
+    if (pw.length < 8) { $('#suErr').textContent = 'Your password must be at least 8 characters.'; return; }
+    if (pw !== $('#suW2').value) { $('#suErr').textContent = 'The passwords do not match.'; return; }
+    loading(true, 'Creating your account…');
+    try { signedIn(await api('signUp', { email: e, password: pw, name: pre.name }), next, pre, 'Welcome to Tara Romblon!'); }
+    catch (x) { loading(false); const m = x.message.replace(/^NO_PASSWORD: /, ''); $('#suErr').innerHTML = esc(m) + (/already/.test(m) ? ` <button class="link" onclick="${/NO_PASSWORD/.test(x.message) ? `openForgot(null,'${esc(e)}')">Set a password` : `openSignIn(null,'${esc(e)}')">Log in`}</button>` : ''); }
+  };
+}
+/* Forgot password / set a password for an older account: one-time code by email, then a new password */
+function openForgot(next, email) {
+  openSheet(`<div class="sbody"><h2>Reset your password</h2><p class="meta" style="margin-top:4px">We'll email you a 6-digit code so you can set a new password.</p>
+    <div class="field mt"><label>Email</label><input type="email" id="fgE" autocomplete="email" value="${esc(email || '')}"></div>
+    <div class="err" id="fgErr"></div><button class="btn navy full mt" id="fgBtn">Send reset code</button>
+    <button class="link" style="display:block;margin:12px auto 0" id="fgBack">Back to log in</button></div>`);
+  $('#fgBack').onclick = () => openSignIn(next, $('#fgE').value.trim());
+  $('#fgBtn').onclick = async () => {
+    const e = $('#fgE').value.trim().toLowerCase(); if (!validEmail(e)) { $('#fgErr').textContent = 'Enter a valid email address.'; return; }
     loading(true, 'Sending code…');
-    try { const r = await api('sendOtp', { email: e }); loading(false); codeStep(e, r.demoCode, next, pre); } catch (x) { loading(false); $('#suErr').textContent = x.message; }
+    try { const r = await api('pwResetSend', { email: e }); loading(false);
+      openSheet(`<div class="sbody"><h2>Set a new password</h2><p class="meta" style="margin-top:4px">Enter the code we sent to <b>${esc(e)}</b> (check spam too) and choose a new password.</p>
+        ${r.demoCode ? `<div class="warn">Demo mode: your code is <b>${r.demoCode}</b></div>` : ''}
+        <div class="field mt"><label>6-digit code</label><input id="fgC" class="otp" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></div>
+        ${pwField('fgW', 'New password (at least 8 characters)', 'new-password')}${pwField('fgW2', 'Confirm new password', 'new-password')}
+        <div class="err" id="fgErr"></div><button class="btn navy full mt" id="fgOk">Save password and log in</button></div>`);
+      wireEyes();
+      $('#fgOk').onclick = async () => { const pw = $('#fgW').value;
+        if (pw.length < 8) { $('#fgErr').textContent = 'Your password must be at least 8 characters.'; return; } if (pw !== $('#fgW2').value) { $('#fgErr').textContent = 'The passwords do not match.'; return; }
+        loading(true, 'Saving…'); try { signedIn(await api('pwReset', { email: e, code: $('#fgC').value.trim(), password: pw }), next, null, 'Password saved. You are logged in.'); } catch (x) { loading(false); $('#fgErr').textContent = x.message; } };
+    } catch (x) { loading(false); $('#fgErr').textContent = x.message; }
   };
 }
 /* "Continue with Google" (only when GOOGLE_CLIENT_ID is set on the server) */
@@ -401,20 +435,6 @@ async function googleDone(credential, next) {
   loading(true, 'Signing in with Google…');
   try { const r = await api('googleSignIn', { credential }); session = { token: r.token, profile: r.profile }; store('tr4_session', session); loading(false); renderBadges(); startCustomerNotif(); if (r.created) toast('Welcome to Tara Romblon!'); openProfileSheet(next); }
   catch (x) { loading(false); const er = $('#siErr') || $('#suErr'); if (er) er.textContent = x.message; else toast(x.message); }
-}
-function codeStep(email, demoCode, next, pre) {
-  openSheet(`<div class="sbody"><h2>Enter your code</h2><p class="meta" style="margin-top:4px">We sent a 6-digit code to <b>${esc(email)}</b>. Check your spam folder too.</p>
-    ${demoCode ? `<div class="warn">Demo mode: your code is <b>${demoCode}</b></div>` : ''}
-    <div class="field mt"><input id="siC" class="otp" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></div>
-    <div class="err" id="siErr"></div><button class="btn navy full mt" id="siBtn">Verify</button>
-    <button class="link mt" style="display:block;margin:12px auto 0" id="siBack">Use a different email</button></div>`);
-  $('#siBack').onclick = () => (pre ? openSignUp(next) : openSignIn(next));
-  $('#siC').focus();
-  $('#siBtn').onclick = async () => {
-    loading(true, 'Verifying…');
-    try { const r = await api('verifyOtp', { email, code: $('#siC').value.trim() }); session = { token: r.token, profile: r.profile }; store('tr4_session', session); loading(false); renderBadges(); startCustomerNotif(); openProfileSheet(next, pre); }
-    catch (x) { loading(false); $('#siErr').textContent = x.message; }
-  };
 }
 function profileFields(p) {
   return `<div class="field mt"><label>Full name</label><input id="pfN" autocomplete="name" value="${esc(p.name)}"></div>
@@ -725,9 +745,13 @@ async function renderAccount() {
       <p class="meta">${v === 'verified' ? 'You can book stays and rentals.' : v === 'pending' ? 'We are reviewing your ID. You will be notified once it is approved.' : 'Needed before your first stay or rental booking.'}</p>${v === 'unverified' || v === 'rejected' ? `<button class="btn sm mt" onclick="verifyGate(()=>{closeSheet();renderAccount()})">Upload ID</button>` : ''}</div>
     <div class="acard"><h3><span class="hl">${ic('star')} Reward points</span></h3><div id="myRw"><p class="meta">Loading…</p></div></div>
     <div class="acard"><h3>Profile</h3>${profileFields(session.profile)}<div class="err" id="acErr"></div><button class="btn navy mt" id="acSave">Save profile</button></div>
-    <div class="acard"><h3><span class="hl">${ic('bell')} Notifications</span></h3><p class="meta">Get alerts for order updates and messages on this device.</p><button class="btn ghost sm mt" onclick="Notif.open()">Notification settings</button></div>
+    <div class="acard"><h3><span class="hl">${ic('bell')} Notifications</span></h3><p class="meta">Get alerts on this phone for order updates, your rider and messages, even when the app is closed.</p><div id="pushBox" class="mt"></div></div>
+    <div class="acard"><h3><span class="hl">${ic('shield')} Password</span></h3>${session.profile.hasPassword ? pwField('cpOld', 'Current password', 'current-password') : `<p class="meta">${session.profile.google ? 'You sign in with Google. You can also add a password to log in with your email.' : 'Add a password so you can log in with your email.'}</p>`}${pwField('cpNew', 'New password (at least 8 characters)', 'new-password')}<div class="err" id="cpErr"></div><button class="btn ghost mt" id="cpBtn">${session.profile.hasPassword ? 'Change password' : 'Save password'}</button></div>
     <div class="acard"><h3><span class="hl">${ic('receipt')} My orders & bookings</span></h3><p class="meta" id="myBsum">Loading…</p><button class="btn sm mt" data-go="orders">View all orders & bookings</button></div>`;
   $('#acSave').onclick = async () => { if (await saveProfileFromFields('#acErr')) toast('Profile saved'); };
+  wireEyes(); Push.box('#pushBox', () => session && session.token);
+  $('#cpBtn').onclick = async () => { const pw = $('#cpNew').value; if (pw.length < 8) { $('#cpErr').textContent = 'Your new password must be at least 8 characters.'; return; }
+    loading(true, 'Saving…'); try { await api('changePassword', { token: session.token, current: $('#cpOld') ? $('#cpOld').value : '', password: pw }); loading(false); session.profile.hasPassword = true; store('tr4_session', session); toast('Password saved'); renderAccount(); } catch (x) { loading(false); $('#cpErr').textContent = x.message; } };
   try { const m = await api('me', { token: session.token }); session.profile = m.profile; store('tr4_session', session); } catch (x) { if (/sign in/i.test(x.message)) return signOut(); }
   loadRewards().then(rw => { const el2 = $('#myRw'); if (!el2) return;
     el2.innerHTML = rw.length ? rw.map(r => `<div class="rwrow"><div class="rwbal"><b>${r.balance}</b><span>points</span></div><div><b>${esc(r.name)}</b><span class="hint">Worth ${peso(r.balance * r.program.pointValue)} · earned ${r.earned} · redeemed ${r.redeemed}${r.source === 'loyverse' ? ' · includes in-store points' : ''}</span>
@@ -938,6 +962,7 @@ function renderRiderApply() {
     <form id="raForm" class="acard" novalidate><h3>Rider application</h3><p class="meta">Fields with * are required. MJV Services OPC reviews every application and your driver's license before you can start.</p>
       <div class="row2"><div class="field"><label>Full name *</label><input id="raName" autocomplete="name" maxlength="120"></div><div class="field"><label>Mobile number *</label><input id="raPhone" inputmode="tel" placeholder="09XX XXX XXXX"></div></div>
       <div class="row2"><div class="field"><label>Email *</label><input id="raEmail" type="email" autocomplete="email"></div><div class="field"><label>Town *</label><select id="raTown">${townOpts}</select></div></div>
+      <div class="row2">${pwField('raPw', 'Create a password for the Rider app *', 'new-password')}${pwField('raPw2', 'Confirm password *', 'new-password')}</div><p class="hint">You'll sign in to the Rider app with your email and this password once you're approved.</p>
       <div class="field mt"><label>Home address *</label><input id="raAddr" maxlength="200" placeholder="Barangay, street"></div>
       <div class="row2"><div class="field"><label>Motorcycle (make / model) *</label><input id="raVeh" maxlength="80" placeholder="e.g. Honda Click 125"></div><div class="field"><label>Plate number *</label><input id="raPlate" maxlength="20"></div></div>
       <div class="row2"><div class="field"><label>Driver's license number *</label><input id="raLic" maxlength="40"></div><div class="field"><label>License expiry</label><input type="date" id="raExp" min="${today}"></div></div>
@@ -948,7 +973,7 @@ function renderRiderApply() {
         <datalist id="raBanks">${['GCash', 'Maya', 'BDO', 'BPI', 'Landbank', 'Metrobank', 'UnionBank'].map(x => `<option>${x}</option>`).join('')}</datalist></div>
       <label class="check"><input type="checkbox" id="raConsent"><span>I confirm the details are true, and I agree that ${esc(CAT.business.name)} / MJV Services OPC may verify my driver's license and process this information to review my application (Data Privacy Act, RA 10173).</span></label>
       <div class="err" id="raErr"></div><button class="btn full mt" style="padding:15px">Submit rider application</button></form>`;
-  wireUpload('raLicPhoto');
+  wireUpload('raLicPhoto'); wireEyes();
   $('#raForm').onsubmit = async e => {
     e.preventDefault(); const v = id => $('#' + id).value.trim(), err = $('#raErr');
     const f = { appType: 'rider', name: v('raName'), phone: v('raPhone'), email: v('raEmail').toLowerCase(), town: v('raTown'), address: v('raAddr'), vehicle: v('raVeh'), plate: v('raPlate'), licenseNo: v('raLic'), licenseExpiry: v('raExp'),
@@ -956,6 +981,7 @@ function renderRiderApply() {
     if (!f.name || !f.address || !f.vehicle || !f.plate || !f.licenseNo) { err.textContent = 'Please fill in all required fields.'; return; }
     if (!validPhone(f.phone)) { err.textContent = 'Enter a valid PH mobile number.'; return; }
     if (!validEmail(f.email)) { err.textContent = 'Enter a valid email address.'; return; }
+    f.password = $('#raPw').value; if (f.password.length < 8) { err.textContent = 'Create a password of at least 8 characters.'; return; } if (f.password !== $('#raPw2').value) { err.textContent = 'The passwords do not match.'; return; }
     if (!f.licensePhoto) { err.textContent = "Upload a photo of your driver's license."; return; }
     if (!f.bank.accountName || !f.bank.bank || !f.bank.accountNo) { err.textContent = 'Add your bank or e-wallet account for payouts.'; return; }
     if (!$('#raConsent').checked) { err.textContent = 'Please tick the confirmation box.'; return; }

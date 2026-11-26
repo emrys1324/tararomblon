@@ -6,6 +6,7 @@ Object.assign(process.env, { SUPABASE_URL: 'https://sb.test', SUPABASE_SERVICE_R
 const GTOK = {}; // fake Google ID tokens -> tokeninfo answers
 
 /* ---------- fake services ---------- */
+const PUSHES = [];
 const DB = {}, STORE = {}, MAILS = [], HP = {}, LV = { customers: [] }; let seq = 0, calls = 0;
 const tbl = t => (DB[t] = DB[t] || []);
 const J = (o, s = 200) => new Response(o == null || s === 204 ? null : JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json' } });
@@ -61,6 +62,7 @@ global.fetch = async (url, opt = {}) => {
     const b = JSON.parse(opt.body); const i = LV.customers.findIndex(c => c.id === b.id); if (i >= 0) LV.customers[i] = Object.assign(LV.customers[i], b); else LV.customers.push(Object.assign({ id: 'lv' + (LV.customers.length + 1) }, b)); return J(b);
   }
   if (u.host === 'oauth2.googleapis.com' && u.pathname === '/tokeninfo') { const g = GTOK[u.searchParams.get('id_token')]; return g ? J(g) : J({ error_description: 'Invalid Value' }, 400); }
+  if (u.host === 'push.test') { PUSHES.push({ path: u.pathname, h, body: opt.body }); return new Response(null, { status: u.pathname === '/gone' ? 410 : 201 }); }
   if (u.host === 'api.resend.com') { const b = JSON.parse(opt.body); MAILS.push(b); return J({ id: 'm' + MAILS.length }); }
   throw new Error('Unexpected fetch ' + url);
 };
@@ -216,7 +218,7 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   assert(!DB.staff.find(r => r.id === 'rider@tara.ph').data.loc, 'rider location cleared after the last delivery');
   assert(!(await ok('rLocation', { token: rider, lat: 12.57, lng: 122.13 })).sharing, 'rider location not stored without an active delivery');
   await fails('setStatus', { token: rider, ref: fref, status: 'Payment Collected' }, /can't set/);
-  await fails('setStatus', { token: pstaff, ref: fref, status: 'Payment Collected' }, /cash amount received/);
+  await fails('setStatus', { token: pstaff, ref: fref, status: 'Payment Collected' }, /amount collected .*required/);
   const fb = (await ok('mBookings', { token: pstaff })).bookings.find(b => b.ref === fref), expCash = Rules.cashExpected(fb);
   assert(expCash === fb.quote.subtotal, 'COD cash expected by merchant = food subtotal (rider keeps delivery fee)');
   await ok('setStatus', { token: pstaff, ref: fref, status: 'Payment Collected', amount: expCash });
@@ -290,12 +292,16 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
 
   console.log('Riders: application, approval, add, license');
   await fails('submitApplication', { application: { appType: 'rider', name: 'Paolo', phone: '0920', email: 'paolo@r.ph', address: 'Cabolutan', town: 'San Agustin', vehicle: 'XRM', plate: '789', licenseNo: 'N03', bank: { accountName: 'P', bank: 'GCash', accountNo: '0920' } } }, /driver's license/);
-  await ok('submitApplication', { application: { appType: 'rider', name: 'Paolo', phone: '0920', email: 'paolo@r.ph', address: 'Cabolutan', town: 'San Agustin', vehicle: 'XRM', plate: '789', licenseNo: 'N03', licensePhoto: IMG, bank: { accountName: 'P', bank: 'GCash', accountNo: '0920' } } });
+  await ok('submitApplication', { application: { appType: 'rider', name: 'Paolo', phone: '0920', email: 'paolo@r.ph', address: 'Cabolutan', town: 'San Agustin', vehicle: 'XRM', plate: '789', licenseNo: 'N03', licensePhoto: IMG, password: 'short', bank: { accountName: 'P', bank: 'GCash', accountNo: '0920' } } }).catch(() => {});
+  await ok('submitApplication', { application: { appType: 'rider', name: 'Paolo', phone: '0920', email: 'paolo@r.ph', address: 'Cabolutan', town: 'San Agustin', vehicle: 'XRM', plate: '789', licenseNo: 'N03', licensePhoto: IMG, password: 'paolo-pass-1', bank: { accountName: 'P', bank: 'GCash', accountNo: '0920' } } });
   const rapp = (await ok('adminData', { token: admin })).applications.find(a => a.appType === 'rider');
-  assert(rapp.licenseFile.startsWith('uploads/'), 'license photo stored privately');
+  assert(rapp.licenseFile.startsWith('uploads/') && rapp.pw === undefined, 'license photo stored privately; password not shown to admins');
   await ok('adminApproveApplication', { token: admin, id: rapp.id });
   const ad3 = await ok('adminData', { token: admin }), paolo = ad3.staff.find(s => s.email === 'paolo@r.ph');
   assert(paolo && paolo.role === 'rider' && paolo.licenseStatus === 'verified' && paolo.plate === '789' && ad3.payees['rider:paolo@r.ph'].bank === 'GCash', 'approved rider has profile, verified license and payout account');
+  await fails('riderLogin', { email: 'paolo@r.ph', password: 'wrong-pass' }, /Incorrect email or password/);
+  const pl = await ok('riderLogin', { email: 'paolo@r.ph', password: 'paolo-pass-1' }); assert(pl.token && pl.me.role === 'rider', 'approved rider signs in with the password from the application (no email code)');
+  await fails('riderLogin', { email: 'nobody@r.ph', password: 'whatever1' }, /not registered as a rider/);
   await ok('adminSaveRider', { token: admin, rider: { email: 'new@r.ph', name: 'New Rider', phone: '0911', vehicle: 'Mio', plate: 'X1', licenseNo: 'L1' }, licensePhoto: IMG, bank: { accountName: 'New', bank: 'Maya', accountNo: '0911' } });
   await ok('adminSaveRider', { token: admin, rider: { email: 'new@r.ph', name: 'New Rider', phone: '0911', licenseStatus: 'rejected', licenseNote: 'Expired' } });
   const nr = (await ok('adminData', { token: admin })).staff.find(s => s.email === 'new@r.ph');
@@ -408,6 +414,47 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   assert(mc1.categories[1].name.endsWith('(renamed)') && mc1.categories[1].id === cats0.filter(c => c !== emptyCat)[0].id && (!emptyCat || !mc1.categories.some(c => c.id === emptyCat.id)), 'rename keeps the id; empty category removed');
   await ok('mMenu', { token: pm2, categories: cats0, items: mc0.items.map(i => ({ id: i.id, name: i.name, desc: i.desc, catId: i.catId, price: i.price, promoPct: i.promoPct, available: i.available !== false })) });
   assert(JSON.stringify(Pricing.store((await ok('getCatalog')).catalog, 'pahuway').categories) === JSON.stringify(cats0), 'categories restored');
+
+  console.log('Customer accounts with passwords');
+  await ok('sendOtp', { email: 'old@mail.com' }); const oldTok = (await ok('verifyOtp', { email: 'old@mail.com', code: lastCode('old@mail.com') })).token;
+  await ok('saveProfile', { token: oldTok, profile: { name: 'Old Customer', phone: '0917 000 1111', address: 'Poblacion, San Agustin' } });
+  await fails('signUp', { email: 'pw@mail.com', password: 'short' }, /at least 8/);
+  const su = await ok('signUp', { email: 'pw@mail.com', password: 'long-enough-1', name: 'Pia' }); assert(su.token && su.profile.hasPassword && su.created, 'customer creates an account with email + password');
+  await fails('signUp', { email: 'pw@mail.com', password: 'long-enough-1' }, /already exists/);
+  await fails('login', { email: 'pw@mail.com', password: 'wrong-pass' }, /Incorrect email or password/);
+  assert((await ok('login', { email: 'pw@mail.com', password: 'long-enough-1' })).token, 'customer logs in with password');
+  await fails('login', { email: 'old@mail.com', password: 'anything1' }, /NO_PASSWORD/);
+  await fails('signUp', { email: 'old@mail.com', password: 'anything1' }, /NO_PASSWORD/);
+  await ok('pwResetSend', { email: 'old@mail.com' }); assert(/password reset code/.test(MAILS[MAILS.length - 1].subject), 'reset code emailed');
+  const rcode = /code: (\d{6})/.exec(MAILS[MAILS.length - 1].subject)[1];
+  await fails('pwReset', { email: 'old@mail.com', code: '000000', password: 'ana-new-pass' }, /incorrect or has expired/);
+  const rs = await ok('pwReset', { email: 'old@mail.com', code: rcode, password: 'ana-new-pass' }); assert(rs.token && rs.profile.hasPassword, 'older account sets a password with the reset code');
+  assert((await ok('login', { email: 'old@mail.com', password: 'ana-new-pass' })).token, 'and then logs in with it');
+  await fails('changePassword', { token: rs.token, current: 'nope-nope', password: 'ana-newer-1' }, /current password is incorrect/);
+  await ok('changePassword', { token: rs.token, current: 'ana-new-pass', password: 'ana-newer-1' }); assert((await ok('login', { email: 'old@mail.com', password: 'ana-newer-1' })).token, 'customer changes password');
+  for (let i = 0; i < 10; i++) await fails('login', { email: 'pw@mail.com', password: 'bad-' + i + 'xxxx' }, /Incorrect|Too many/);
+  await fails('login', { email: 'pw@mail.com', password: 'long-enough-1' }, /Too many attempts/);
+  console.log('Phone notifications (Web Push)');
+  const pk = (await ok('pushKey')).key; assert(pk && Buffer.from(pk, 'base64url').length === 65, 'VAPID public key created and kept');
+  assert((await ok('pushKey')).key === pk, 'same key next time');
+  const ua = crypto.createECDH('prime256v1'); ua.generateKeys(); const auth = crypto.randomBytes(16);
+  const cTok = (await ok('login', { email: 'old@mail.com', password: 'ana-newer-1' })).token;
+  await ok('pushSubscribe', { token: cTok, sub: { endpoint: 'https://push.test/old', keys: { p256dh: ua.getPublicKey().toString('base64url'), auth: auth.toString('base64url') } } });
+  await ok('pushSubscribe', { token: cTok, sub: { endpoint: 'https://push.test/gone', keys: { p256dh: ua.getPublicKey().toString('base64url'), auth: auth.toString('base64url') } } });
+  await fails('pushSubscribe', { token: cTok, sub: { endpoint: 'http://x' } }, /not supported/);
+  const p0 = PUSHES.length, pm3 = await staffLogin('mgr@pahuway.ph', 'merchant');
+  const pb = await ok('createBooking', { token: cTok, kind: 'food', bizId: 'pahuway', fulfillment: 'pickup', payMethod: 'pickup', lines: [{ itemId: item.id, qty: 1, addons: [] }] });
+  await ok('setStatus', { token: pm3, ref: pb.refs[0], status: 'Accepted' });
+  const got = PUSHES.slice(p0).filter(x => x.path === '/old');
+  assert(got.length >= 1 && /^vapid t=[\w-]+\.[\w-]+\.[\w-]+, k=/.test(got[0].h.Authorization) && got[0].h['Content-Encoding'] === 'aes128gcm', 'status change pushed to the customer phone with VAPID auth');
+  const ece = (() => { const b = Buffer.from(got[got.length - 1].body), salt = b.subarray(0, 16), idl = b[20], as = b.subarray(21, 21 + idl), ct = b.subarray(21 + idl);
+    const hm = (k, d) => crypto.createHmac('sha256', k).update(d).digest(), sec = ua.computeSecret(as), ikm = hm(hm(auth, sec), Buffer.concat([Buffer.from('WebPush: info\0'), ua.getPublicKey(), as, Buffer.from([1])])), prk = hm(salt, ikm);
+    const d = crypto.createDecipheriv('aes-128-gcm', hm(prk, Buffer.from('Content-Encoding: aes128gcm\0\x01', 'binary')).subarray(0, 16), hm(prk, Buffer.from('Content-Encoding: nonce\0\x01', 'binary')).subarray(0, 12)); d.setAuthTag(ct.subarray(ct.length - 16));
+    const pt = Buffer.concat([d.update(ct.subarray(0, ct.length - 16)), d.final()]); return JSON.parse(pt.subarray(0, pt.length - 1).toString()); })();
+  assert(/Accepted/.test(ece.body) && ece.url === '/#orders', 'push decrypts on the phone: "' + ece.body.slice(0, 50) + '"');
+  assert(!DB.customers.find(r => r.id === 'old@mail.com').data.push.some(x => x.endpoint.endsWith('/gone')), 'expired phone subscriptions are removed');
+  const mPush = PUSHES.slice(p0).filter(x => x.path !== '/old' && x.path !== '/gone').length; assert(mPush === 0, 'no push to people without a subscription');
+  await ok('setStatus', { token: pm3, ref: pb.refs[0], status: 'Cancelled', note: 'test' }).catch(() => {});
 
   console.log('Points follow the registered mobile number');
   await ok('sendOtp', { email: 'ben@mail.com' }); const ben = (await ok('verifyOtp', { email: 'ben@mail.com', code: lastCode('ben@mail.com') })).token;
