@@ -444,10 +444,10 @@ function openProfileSheet(next, pre) {
 }
 function startCustomerNotif() {
   Chat.token = () => session && session.token; Chat.me = session && session.profile;
-  $('#bellSlot').innerHTML = session ? bellBtn() : '';
-  if (session) Notif.start(session.token, 'c_' + session.profile.email, () => { if (currentView === 'messages') renderMessages(); if (currentView === 'account') renderAccount(); refreshAvailability(); }); else Notif.stop();
+  $('#bellSlot').innerHTML = session ? bellBtn() : ''; if (session) refreshActive();
+  if (session) Notif.start(session.token, 'c_' + session.profile.email, () => { if (currentView === 'messages') renderMessages(); if (currentView === 'account') renderAccount(); if (currentView === 'orders') renderOrders(true); else refreshActive(); refreshAvailability(); }); else Notif.stop();
 }
-function signOut() { session = null; store('tr4_session', null); startCustomerNotif(); renderBadges(); if (currentView === 'account') renderAccount(); if (currentView === 'messages') renderMessages(); }
+function signOut() { session = null; store('tr4_session', null); window._myB = []; activeBadges(); if (currentView === 'orders') renderOrders(); startCustomerNotif(); renderBadges(); if (currentView === 'account') renderAccount(); if (currentView === 'messages') renderMessages(); }
 
 /* ================= CHECKOUT: STAYS & RENTALS ================= */
 const SET = () => Object.assign({}, DEFAULT_SETTINGS, CAT.settings || {});
@@ -661,7 +661,7 @@ function demoPay(r) {
   openSheet(`<div class="sbody confirm" style="padding-top:30px"><div class="ok">${ic('card', 34)}</div><h2>HitPay checkout (demo)</h2>
     <p class="meta" style="margin-top:6px">With HitPay connected, customers go to HitPay's secure page to pay ${peso(r.dueNow)} by GCash, Maya, other e-wallets, QR Ph or card.</p>
     <div class="ref">${esc(r.group)}</div>
-    <div style="display:grid;gap:8px;margin-top:14px"><button class="btn full" id="dpOk">Simulate successful payment</button><button class="btn ghost full" onclick="closeSheet();go('account')">Pay later</button></div></div>`);
+    <div style="display:grid;gap:8px;margin-top:14px"><button class="btn full" id="dpOk">Simulate successful payment</button><button class="btn ghost full" onclick="closeSheet();go('orders')">Pay later</button></div></div>`);
   $('#dpOk').onclick = async () => { const v = await api('verifyPayment', { group: r.group, demoPaid: true }); showConfirm({ ...r, bookings: v.bookings }); refreshAvailability(); };
 }
 function showConfirm(r) {
@@ -670,7 +670,7 @@ function showConfirm(r) {
     <h2>${paid ? 'Payment received!' : transfer ? 'Booking received' : waiting ? 'Waiting for payment' : 'Order placed!'}</h2><div class="ref">${esc(r.group)}</div>
     <div class="sum" style="text-align:left">${bs.map(b => `<div class="l"><span>${esc(b.ref)} · ${esc(bizName(b.bizId))}</span>${statusChip(b.status)}</div>`).join('')}</div>
     <p class="meta" style="max-width:400px;margin:10px auto 0">${paid ? `Thank you! We received ${peso(r.dueNow || 0)}. Updates will appear in Messages and your email.` : transfer ? 'We will confirm your booking once your transfer is verified. You will be notified in the app and by email.' : waiting ? 'Your booking is saved but not yet paid. You can finish payment from your account.' : 'We have received your order. Follow its progress in your account and Messages.'}</p>
-    <div style="display:grid;gap:8px;margin-top:18px"><button class="btn navy full" onclick="closeSheet();go('account')">View my bookings</button><button class="btn ghost full" onclick="closeSheet();go('messages')">Messages</button></div></div>`);
+    <div style="display:grid;gap:8px;margin-top:18px"><button class="btn navy full" onclick="closeSheet();go('orders')">Track my order / booking</button><button class="btn ghost full" onclick="closeSheet();go('messages')">Messages</button></div></div>`);
 }
 async function checkReturnFromPayment() {
   const u = new URL(location.href), group = u.searchParams.get('paid'); if (!group) return;
@@ -692,7 +692,7 @@ async function renderAccount() {
     <div class="acard"><h3><span class="hl">${ic('star')} Reward points</span></h3><div id="myRw"><p class="meta">Loading…</p></div></div>
     <div class="acard"><h3>Profile</h3>${profileFields(session.profile)}<div class="err" id="acErr"></div><button class="btn navy mt" id="acSave">Save profile</button></div>
     <div class="acard"><h3><span class="hl">${ic('bell')} Notifications</span></h3><p class="meta">Get alerts for order updates and messages on this device.</p><button class="btn ghost sm mt" onclick="Notif.open()">Notification settings</button></div>
-    <h2 style="font-size:22px;margin:22px 0 12px">My bookings & orders</h2><div id="myB"><div class="empty">Loading…</div></div>`;
+    <div class="acard"><h3><span class="hl">${ic('receipt')} My orders & bookings</span></h3><p class="meta" id="myBsum">Loading…</p><button class="btn sm mt" data-go="orders">View all orders & bookings</button></div>`;
   $('#acSave').onclick = async () => { if (await saveProfileFromFields('#acErr')) toast('Profile saved'); };
   try { const m = await api('me', { token: session.token }); session.profile = m.profile; store('tr4_session', session); } catch (x) { if (/sign in/i.test(x.message)) return signOut(); }
   loadRewards().then(rw => { const el2 = $('#myRw'); if (!el2) return;
@@ -705,28 +705,72 @@ async function renderAccount() {
       ${rw.map(r => `<li><b>${esc(r.name)}:</b> ${rwRule(r.program)}.${r.program.signupBonus ? ' ' + r.program.signupBonus + ' bonus points on your first completed order.' : ''}${r.program.birthdayBonus ? ' ' + r.program.birthdayBonus + ' bonus points on your birthday (add it to your profile).' : ''}</li>`).join('')}
       <li>Points are added when your order or booking is marked Completed, based on what you paid for the items after discounts (delivery fees don't earn points).</li>
       <li>Redeem at checkout. If an order is cancelled, redeemed points are returned.</li></ul></details>`); });
-  try { const r = await api('myBookings', { token: session.token }); window._myB = r.bookings; $('#myB').innerHTML = r.bookings.length ? r.bookings.map(bookingCard).join('') : '<div class="empty">No bookings yet.</div>'; wireMyBookings(); }
-  catch (x) { $('#myB').innerHTML = `<div class="err">${esc(x.message)}</div>`; if (/sign in/i.test(x.message)) signOut(); }
+  try { const r = await api('myBookings', { token: session.token }); window._myB = r.bookings; const a = r.bookings.filter(isActiveB).length; if ($('#myBsum')) $('#myBsum').textContent = r.bookings.length ? r.bookings.length + ' total · ' + (a ? a + ' in progress' : 'none in progress') : 'No orders or bookings yet.'; activeBadges(); }
+  catch (x) { if ($('#myBsum')) $('#myBsum').textContent = x.message; if (/sign in/i.test(x.message)) signOut(); }
 }
 function bookingCard(b) {
   const lines = b.lines.map(l => `<li>${l.type ? esc(l.label) + ' · ' + esc(bookingDates(l)) : l.qty + ' x ' + esc(l.name) + (l.addons && l.addons.length ? ' (' + esc(l.addons.join(', ')) + ')' : '')}</li>`).join('')
     + (b.kind === 'food' ? `<li>${b.fulfillment === 'delivery' ? 'Delivery' : 'Pick-up'} · ${esc(Rules.PAY_LABEL[b.payMethod] || b.payMethod)}</li>` : '');
   return `<div class="trip"><div class="th"><span><span class="ref">${esc(b.ref)}</span><br><span class="hint">${kindIcon(b.kind)} ${esc(bizName(b.bizId))}</span></span>${statusChip(b.status)}</div>
-    ${timeline(b)}<div class="meta">${new Date(b.created).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })} · Payment: <b>${esc(b.payStatus)}</b></div><ul style="margin-top:6px">${lines}</ul>
+    ${timeline(b)}${riderBlock(b)}<div class="meta">${new Date(b.created).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })} · Payment: <b>${esc(b.payStatus)}</b></div><ul style="margin-top:6px">${lines}</ul>
     ${Rules.reductions(b).total ? `<div class="hint">${b.code ? 'Code ' + esc(b.code.code) + ' -' + peso(b.code.amount) : ''}${b.code && b.points ? ' · ' : ''}${b.points ? b.points.points + ' points -' + peso(b.points.amount) : ''}</div>` : ''}${b.pointsAwarded ? `<div class="hint">${ic('star', 14)} You earned ${b.pointsAwarded} points</div>` : ''}
     <div class="rowbtns" style="margin:10px 0 0"><b style="margin-right:auto">Total ${peso(Rules.payable(b))}</b>
       ${b.status === 'Awaiting Payment' && b.payUrl && b.payUrl !== 'demo' ? `<a class="btn sm" href="${esc(b.payUrl)}">Pay ${peso(b.dueNow)}</a>` : ''}
       ${b.status === 'Awaiting Payment' && b.payUrl === 'demo' ? `<button class="btn sm" data-demopay="${esc(b.group)}">Pay ${peso(b.dueNow)}</button>` : ''}
       ${b.status === 'Awaiting Payment' && b.payMethod === 'transfer' ? `<button class="btn ghost sm" data-proof="${esc(b.group)}">${ic('upload')} ${b.proofFile ? 'Replace' : 'Upload'} payment proof</button>` : ''}
-      ${Rules.trackable(b) ? `<button class="btn sm track" onclick="Track.open('${esc(b.ref)}',session.token)">${ic('locate')} Track rider</button>` : ''}
-      <button class="btn ghost sm" onclick="Chat.open({ref:'${esc(b.ref)}'})">${ic('chat')} Message ${esc(bizName(b.bizId))}</button>${b.rider && !Rules.CLOSED.includes(b.status) ? `<button class="btn ghost sm" onclick="Chat.open({ref:'${esc(b.ref)}',chan:'rider'})">${ic('bike')} Message rider</button>` : ''}</div></div>`;
+      ${canTrack(b) ? `<button class="btn sm track" onclick="Track.open('${esc(b.ref)}',session.token)">${ic('locate')} ${Rules.trackable(b) ? 'Track rider live' : 'Rider & map'}</button>` : ''}
+      <button class="btn ghost sm" onclick="Chat.open({ref:'${esc(b.ref)}'})">${ic('chat')} Message ${esc(bizName(b.bizId))}</button>${b.rider && !Rules.CLOSED.includes(b.status) ? `<button class="btn ghost sm" onclick="Chat.open({ref:'${esc(b.ref)}',chan:'rider'})">${ic('bike')} Message rider</button>` : ''}</div>
+    ${activityLog(b)}</div>`;
 }
+/* ===== MY ORDERS & BOOKINGS: every order and booking, its status, activity log, rider and live map ===== */
+const isActiveB = b => !Rules.CLOSED.includes(b.status);
+const canTrack = b => b.kind === 'food' && b.fulfillment === 'delivery' && !!b.rider && !Rules.CLOSED.includes(b.status) && !Rules.DELIVERED.includes(b.status);
+function riderBlock(b) {
+  if (b.kind !== 'food' || b.fulfillment !== 'delivery' || Rules.CLOSED.includes(b.status) && b.status !== 'Completed') return '';
+  const r = b.riderInfo;
+  if (!b.rider) return Rules.DELIVERED.includes(b.status) ? '' : `<div class="rcard wait">${ic('bike', 18)}<div><b>Rider</b><span class="hint">The store will assign a rider soon.</span></div></div>`;
+  const veh = [r && r.vehicle, r && r.plate].filter(Boolean).join(' · ');
+  const st = Rules.DELIVERED.includes(b.status) ? 'Delivered your order' : !b.riderAccepted ? 'Waiting for the rider to accept' : b.status === 'Out for Delivery' ? 'On the way to you' : b.status === 'Ready for Pick-up' ? 'Picking up your order' : 'Heading to the store';
+  return `<div class="rcard">${ic('bike', 18)}<div><b>${esc(r ? r.name : 'Your rider')}</b><span class="hint">${esc(st)}${veh ? ' · ' + esc(veh) : ''}</span></div>${r && r.phone && canTrack(b) ? `<a class="btn ghost sm" href="tel:${esc(String(r.phone).replace(/\s/g, ''))}">${ic('phone', 14)} Call</a>` : ''}</div>`;
+}
+function activityLog(b) {
+  const h = (b.history || []).slice().reverse(); if (!h.length) return '';
+  const who = x => x.role === 'customer' || !x.role ? '' : x.role === 'rider' ? 'Rider' : x.role === 'system' ? '' : x.role === 'super' ? 'Tara Romblon' : bizName(b.bizId);
+  return `<details class="alog"><summary class="link">Activity (${h.length})</summary><ol>${h.map(x => `<li><b>${esc(x.status)}</b><span class="hint">${new Date(x.at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}${who(x) ? ' · ' + esc(who(x)) : ''}</span>${x.note ? `<span class="hint">${esc(x.note)}</span>` : ''}</li>`).join('')}<li><b>Placed</b><span class="hint">${new Date(b.created).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}</span></li></ol></details>`;
+}
+function activeBadges() {
+  const n = (window._myB || []).filter(isActiveB).length, el = $('#bnOrd'); if (el) { el.textContent = n; el.style.display = n ? '' : 'none'; }
+  const h = $('#homeActive'); if (!h) return;
+  const act = (window._myB || []).filter(isActiveB).slice(0, 3);
+  h.innerHTML = act.map(b => `<div class="actbar"><span class="aic">${kindIcon(b.kind)}</span><div><b>${esc(bizName(b.bizId))} · ${esc(b.status)}</b><span class="hint">${esc(b.ref)}${b.riderInfo && canTrack(b) ? ' · rider ' + esc(b.riderInfo.name) : ''}</span></div>${canTrack(b) ? `<button class="btn sm" onclick="Track.open('${esc(b.ref)}',session.token)">${ic('locate', 14)} Track</button>` : `<button class="btn ghost sm" data-go="orders">View</button>`}</div>`).join('');
+}
+const ORD = { f: 'active', timer: null };
+async function renderOrders(quiet) {
+  const el = $('#ordBody'); if (!el) return;
+  if (!session) { el.innerHTML = `<div class="empty"><div class="big">${ic('receipt', 40)}</div><h2 style="color:var(--ink)">Your orders & bookings</h2><p style="margin:8px 0 16px">Log in to see the status of your orders and bookings and track your rider.</p><button class="btn navy" onclick="openSignIn()">Log in</button></div>`; return; }
+  if (!quiet) el.innerHTML = `<div class="shead"><div><h2>My orders & bookings</h2><p>Status updates automatically</p></div></div><div class="empty">Loading…</div>`;
+  let list; try { list = (await api('myBookings', { token: session.token })).bookings; window._myB = list; activeBadges(); }
+  catch (x) { if (!quiet) el.innerHTML = `<div class="err">${esc(x.message)}</div>`; if (/sign in/i.test(x.message)) signOut(); return; }
+  if (currentView !== 'orders') return;
+  const open = [...document.querySelectorAll('#ordBody details.alog[open]')].map(d => d.dataset.ref);
+  const F = [['active', 'In progress'], ['all', 'All'], ['food', 'Food'], ['rental', 'Rentals'], ['stay', 'Stays'], ['tour', 'Things to do'], ['past', 'Past']];
+  const pick = list.filter(b => ORD.f === 'all' ? true : ORD.f === 'active' ? isActiveB(b) : ORD.f === 'past' ? !isActiveB(b) : b.kind === ORD.f);
+  const cnt = k => list.filter(b => k === 'all' ? true : k === 'active' ? isActiveB(b) : k === 'past' ? !isActiveB(b) : b.kind === k).length;
+  el.innerHTML = `<div class="shead"><div><h2>My orders & bookings</h2><p>${list.length} total · status updates automatically</p></div></div>
+    <div class="chips ordf">${F.filter(f => f[0] === 'active' || f[0] === 'all' || cnt(f[0])).map(f => `<button class="${ORD.f === f[0] ? 'on' : ''}" data-ordf="${f[0]}">${f[1]} <span>${cnt(f[0])}</span></button>`).join('')}</div>
+    <div id="myB">${pick.length ? pick.map(bookingCard).join('') : `<div class="empty">${ORD.f === 'active' ? 'Nothing in progress right now.' : 'Nothing here yet.'}${list.length ? '' : `<p class="mt"><button class="btn" data-go="food">Order food</button> <button class="btn ghost" data-go="rentals">Rent a scooter</button></p>`}</div>`}</div>`;
+  document.querySelectorAll('#ordBody details.alog').forEach((d, i) => { d.dataset.ref = pick[i] && pick[i].ref; if (open.includes(d.dataset.ref)) d.open = true; });
+  document.querySelectorAll('[data-ordf]').forEach(x => x.onclick = () => { ORD.f = x.dataset.ordf; renderOrders(true); });
+  wireMyBookings();
+  clearTimeout(ORD.timer); ORD.timer = setTimeout(() => { if (currentView === 'orders' && !$('#ov').classList.contains('show')) renderOrders(true); else if (currentView === 'orders') ORD.timer = setTimeout(() => renderOrders(true), 15000); }, 15000);
+}
+async function refreshActive() { if (!session) return; try { window._myB = (await api('myBookings', { token: session.token })).bookings; activeBadges(); } catch (x) { } }
 function wireMyBookings() {
   document.querySelectorAll('[data-demopay]').forEach(x => x.onclick = () => { const bs = window._myB.filter(b => b.group === x.dataset.demopay); demoPay({ group: x.dataset.demopay, dueNow: bs.reduce((t, b) => t + b.dueNow, 0), bookings: bs }); });
   document.querySelectorAll('[data-proof]').forEach(x => x.onclick = () => {
     openSheet(`<div class="sbody"><h2>Upload payment proof</h2><div class="warn">${esc(SET().transferInstructions)}</div>${uploadField('lateProof', 'Receipt screenshot', 'required')}<div class="err" id="lpErr"></div><button class="btn full mt" id="lpGo">Upload</button></div>`);
     wireUpload('lateProof');
-    $('#lpGo').onclick = async () => { if (!UP.lateProof) { $('#lpErr').textContent = 'Choose a photo.'; return; } loading(true); try { await api('uploadProof', { token: session.token, group: x.dataset.proof, dataUrl: UP.lateProof }); loading(false); closeSheet(); toast('Payment proof sent'); renderAccount(); } catch (e) { loading(false); $('#lpErr').textContent = e.message; } };
+    $('#lpGo').onclick = async () => { if (!UP.lateProof) { $('#lpErr').textContent = 'Choose a photo.'; return; } loading(true); try { await api('uploadProof', { token: session.token, group: x.dataset.proof, dataUrl: UP.lateProof }); loading(false); closeSheet(); toast('Payment proof sent'); currentView === 'orders' ? renderOrders(true) : renderAccount(); } catch (e) { loading(false); $('#lpErr').textContent = e.message; } };
   });
 }
 
@@ -908,7 +952,7 @@ function setupSearch() {
 }
 
 /* ================= ROUTER ================= */
-const VIEWS = ['home', 'explore', 'stays', 'rentals', 'food', 'tours', 'cart', 'messages', 'account', 'list', 'rider'];
+const VIEWS = ['home', 'explore', 'stays', 'rentals', 'food', 'tours', 'cart', 'orders', 'messages', 'account', 'list', 'rider'];
 function renderAll() { renderTours(); renderLocSlots(); renderStays(); renderRides(); renderFood(); renderBadges(); if (currentView === 'explore') renderExplore(); }
 function go(v, push = true) {
   /* /#signup opens the Create account screen (shareable link) */
@@ -918,7 +962,7 @@ function go(v, push = true) {
   document.body.classList.toggle('subview', v !== 'home');
   document.querySelectorAll('.view').forEach(el => el.classList.toggle('on', el.id === 'v-' + v));
   document.querySelectorAll('.nav [data-go],.bnav [data-go]').forEach(b => b.classList.toggle('on', b.dataset.go === v));
-  if (v === 'cart') renderCart(); if (v === 'account') renderAccount(); if (v === 'list') renderListBusiness(); if (v === 'rider') renderRiderApply(); if (v === 'tours') renderTours(); if (v === 'food') renderFood(); if (v === 'explore') renderExplore(); if (v === 'messages') renderMessages();
+  if (v === 'cart') renderCart(); if (v === 'orders') renderOrders(); if (v === 'account') renderAccount(); if (v === 'list') renderListBusiness(); if (v === 'rider') renderRiderApply(); if (v === 'tours') renderTours(); if (v === 'food') renderFood(); if (v === 'explore') renderExplore(); if (v === 'messages') renderMessages();
   renderBadges(); window.scrollTo(0, 0);
   if (push) { try { history.replaceState(null, '', '#' + v); } catch (e) { } }
 }
@@ -966,4 +1010,5 @@ function showInstall() {
   startCustomerNotif();
   checkReturnFromPayment();
   setTimeout(showInstall, 1500);
+  refreshActive(); setInterval(() => { if (currentView === 'home' && document.visibilityState === 'visible') refreshActive(); }, 30000);
 })();

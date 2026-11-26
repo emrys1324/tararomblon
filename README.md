@@ -35,6 +35,13 @@ source/                  editable source + build.py + tests
 
 There are no npm packages to install. The functions use Node's built-in `fetch` and `crypto`.
 
+## New: My orders & bookings for customers (Orders tab)
+
+- New **Orders** tab (bottom bar on phones, "My orders" in the top menu) lists every order and booking: food, rentals, stays and things to do. Filters: In progress, All, by type, Past. A badge shows how many are in progress.
+- Each card shows the status steps, payment, items, totals, points and an **Activity** log (every status change with date, time and who made it).
+- Deliveries show the **rider** (name, vehicle, plate, Call button) as soon as one is assigned, and **Track rider live** / **Rider & map** opens the live map with the rider's position and ETA until the order is delivered.
+- Orders in progress also appear at the top of the home page with a **Track** button. The list refreshes by itself every 15 seconds and when a notification arrives.
+
 ## New: website icon + "Install the app" pop-up
 
 - **Super Admin → Settings → Website icon & app**: upload a square logo (PNG/JPG, 512×512 or bigger). It's used on the browser tab, bookmarks and the phone home screen. Non-square pictures are fitted on the background colour you pick. "Use default icon" goes back to the built-in icon. Tap Save to apply.

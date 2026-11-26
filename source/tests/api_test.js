@@ -200,6 +200,8 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   await ok('rAvailable', { token: rider, value: true });
   await ok('rRespond', { token: rider, ref: fref, accept: true });
   await ok('setStatus', { token: pstaff, ref: fref, status: 'Ready for Pick-up' });
+  const myb = (await ok('myBookings', { token: cust })).bookings.find(b => b.ref === fref);
+  assert(myb.riderInfo && myb.riderInfo.name && myb.fee === undefined && myb.history.length >= 3, 'customer sees their rider (' + myb.riderInfo.name + ') and the activity log, not the platform fee');
   console.log('Live rider tracking');
   assert((await ok('getCatalog')).maps.key === 'gm-key' && (await ok('getCatalog')).maps.mapId === 'DEMO_MAP_ID', 'Google Maps browser key and map ID sent to the apps');
   let tr = await ok('track', { token: cust, ref: fref }); assert(tr.rider && !tr.live && !tr.loc, 'no location until the rider shares it');

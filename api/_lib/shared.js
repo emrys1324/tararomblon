@@ -822,7 +822,11 @@ function createCore(env) {
     }
     return {};
   };
-  A.myBookings = async function (p) { var who = await auth(p.token, 'customer'); return { bookings: (await allBookings()).filter(function (b) { return b.email === who.email; }).map(function (b) { return strip(b); }).sort(function (a, b) { return b.created.localeCompare(a.created); }) }; };
+  A.myBookings = async function (p) {
+    var who = await auth(p.token, 'customer'), mine = (await allBookings()).filter(function (b) { return b.email === who.email; }), riders = {};
+    for (var i = 0; i < mine.length; i++) { var e = mine[i].rider; if (e && !riders[e]) { var r = await env.db.get(T.staff, e) || {}; riders[e] = { name: r.name || 'Your rider', phone: r.phone || '', vehicle: r.vehicle || '', plate: r.plate || '' }; } }
+    return { bookings: mine.map(function (b) { var c = strip(b); delete c.fee; if (b.rider) c.riderInfo = riders[b.rider]; return c; }).sort(function (a, b) { return b.created.localeCompare(a.created); }) };
+  };
   /* discount codes and rewards (customer) */
   A.checkCode = async function (p) {
     var who = p.token ? await auth(p.token, 'customer') : null, cat = await catalog(true), d = await findCode(p.code, who && who.email);

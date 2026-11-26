@@ -37,7 +37,7 @@ header{position:sticky;top:0;z-index:30;background:rgba(246,243,238,.94);backdro
 .badge[data-n="0"]{display:none}
 .demobar{display:none;background:var(--sun-l);color:#8a4b12;font-size:12px;text-align:center;padding:5px 12px}
 .demo .demobar{display:block}
-.bnav{position:fixed;bottom:calc(12px + env(safe-area-inset-bottom));left:12px;right:12px;z-index:30;background:rgba(250,248,244,.97);backdrop-filter:blur(10px);border-radius:36px;box-shadow:0 8px 30px rgba(18,33,63,.16),0 0 0 1px rgba(18,33,63,.05);display:none;grid-template-columns:repeat(5,1fr);padding:7px;max-width:560px;margin:0 auto}
+.bnav{position:fixed;bottom:calc(12px + env(safe-area-inset-bottom));left:12px;right:12px;z-index:30;background:rgba(250,248,244,.97);backdrop-filter:blur(10px);border-radius:36px;box-shadow:0 8px 30px rgba(18,33,63,.16),0 0 0 1px rgba(18,33,63,.05);display:none;grid-template-columns:repeat(6,1fr);padding:7px;max-width:560px;margin:0 auto}
 .bnav button{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:12px;font-weight:600;color:var(--mute);padding:8px 0 7px;border-radius:28px}
 .bnav button.on{color:var(--marble);font-weight:800;background:var(--navy)}
 .bnav button.on svg{color:var(--sun)}
@@ -551,6 +551,18 @@ input,select,textarea,button{font-family:inherit}
 .instbox h3{margin:0;font-size:20px}.instbox ul{margin:12px 0;padding-left:18px;color:var(--ink,#223);font-size:14px;line-height:1.5}
 .instbox .ihow{background:#fbfaf7;border:1px solid var(--marble-2);border-radius:12px;padding:10px 12px;font-size:14px;margin:10px 0}
 .instbox .row2{display:flex;gap:10px}.instbox .row2 .btn{flex:1}
+/* customer: my orders & bookings */
+.ordf{margin:0 0 14px}.ordf button{border:1.5px solid var(--line);border-radius:999px;padding:6px 12px;background:#fff;font-size:14px;font-weight:600;color:var(--ink,#223)}
+.ordf button span{color:var(--mute);font-weight:400;margin-left:2px}.ordf button.on{background:var(--navy);border-color:var(--navy);color:#fff}.ordf button.on span{color:#cfe0f5}
+.rcard{display:flex;gap:10px;align-items:center;margin:10px 0 4px;padding:10px 12px;border-radius:12px;background:#f1f5fb;border:1px solid #dbe5f3}
+.rcard>svg{flex:none;color:var(--navy)}.rcard>div{flex:1;min-width:0}.rcard b{display:block}.rcard.wait{background:#fbfaf7;border-color:var(--marble-2)}
+.alog{margin-top:10px}.alog ol{list-style:none;margin:8px 0 0;padding:0 0 0 14px;border-left:2px solid var(--marble-2)}
+.alog li{position:relative;padding:0 0 10px 8px}.alog li::before{content:'';position:absolute;left:-20px;top:5px;width:10px;height:10px;border-radius:50%;background:var(--marble-2)}
+.alog li:first-child::before{background:var(--coral,#ee7a35)}.alog li b{display:block;font-size:14px}.alog li .hint{display:block}
+.actbar{display:flex;gap:10px;align-items:center;margin:0 0 10px;padding:12px 14px;border-radius:14px;background:#fff;border:1.5px solid var(--coral,#ee7a35);box-shadow:0 4px 14px rgba(0,0,0,.06)}
+.actbar>div{flex:1;min-width:0}.actbar b{display:block;font-size:15px}.actbar .aic{flex:none;color:var(--coral-d,#c4561c)}
+#homeActive:empty{display:none}#homeActive{margin:10px 0 4px}
+.bnav button{font-size:11px;min-width:0}.bnav svg{width:23px;height:23px}@media(max-width:360px){.bnav{left:6px;right:6px}.bnav button{font-size:10px}}
 
 </style>
 </head>
@@ -563,7 +575,7 @@ input,select,textarea,button{font-family:inherit}
       <span id="brandName">Tara Romblon</span>
     </button>
     <nav class="nav">
-      <button data-go="home">Home</button><button data-go="explore">Explore</button><button data-go="food">Food</button><button data-go="rentals">Rentals</button><button data-go="stays">Stays</button><button data-go="messages">Messages</button><button data-go="list" class="navlb">List Business</button>
+      <button data-go="home">Home</button><button data-go="explore">Explore</button><button data-go="food">Food</button><button data-go="rentals">Rentals</button><button data-go="stays">Stays</button><button data-go="orders">My orders</button><button data-go="messages">Messages</button><button data-go="list" class="navlb">List Business</button>
     </nav>
     <div class="hright">
       <span id="bellSlot"></span><button class="loginpill" data-go="account" id="loginPill">Log in</button>
@@ -577,6 +589,7 @@ input,select,textarea,button{font-family:inherit}
 <main>
 <div class="view" id="v-home">
   <div class="wrap">
+    <div id="homeActive"></div>
     <div class="khero">
       <div class="locslot"></div>
       <h1>Book <em>Romblon</em><br>with local hosts.</h1>
@@ -647,6 +660,7 @@ input,select,textarea,button{font-family:inherit}
   <div id="exResults"></div>
 </div></section></div>
 
+<div class="view" id="v-orders"><section><div class="wrap" style="max-width:720px" id="ordBody"></div></section></div>
 <div class="view" id="v-messages"><section><div class="wrap" style="max-width:640px" id="msgBody"></div></section></div>
 
 <div class="view" id="v-tours"><section><div class="wrap" id="toursBody"></div></section></div>
@@ -667,7 +681,7 @@ input,select,textarea,button{font-family:inherit}
     <div class="fg">
       <div><b id="footBrand">Tara Romblon</b><span id="footContact"></span></div>
       <div><b>Book</b><button data-go="food">Where to eat</button><button data-go="rentals">Scooter rentals</button><button data-go="stays">Stays (soon)</button><button data-go="tours">Tours & services (soon)</button></div>
-      <div><b>Account</b><button data-go="account">Sign in / My bookings</button><button data-go="messages">Messages</button></div>
+      <div><b>Account</b><button data-go="orders">My orders & bookings</button><button data-go="account">Sign in / Account</button><button data-go="messages">Messages</button></div>
       <div><b>For businesses</b><button data-go="list">List your business</button><button data-go="rider">Deliver with us</button><a href="merchant.html" id="merchantLink">Merchant login</a></div>
     </div>
   </div>
@@ -677,6 +691,7 @@ input,select,textarea,button{font-family:inherit}
   <button data-go="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V20H4z"/><path d="M10 20v-5h4v5"/></svg>Home</button>
   <button data-go="explore"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Explore</button>
   <button data-go="cart"><span class="bwrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6h15l-1.5 9h-12z"/><path d="M6 6 5 3H2"/><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/></svg><span class="badge" id="cartBadge2" data-n="0"></span></span>Cart</button>
+  <button data-go="orders"><span class="bwrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg><span class="badge" id="bnOrd" data-n="1" style="display:none"></span></span>Orders</button>
   <button data-go="messages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>Messages</button>
   <button data-go="account"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3"/><path d="M6.5 18.5c1.3-2 3.2-3 5.5-3s4.2 1 5.5 3"/></svg><span id="bnAcct">Log in</span></button>
 </nav>
@@ -1514,7 +1529,11 @@ function createCore(env) {
     }
     return {};
   };
-  A.myBookings = async function (p) { var who = await auth(p.token, 'customer'); return { bookings: (await allBookings()).filter(function (b) { return b.email === who.email; }).map(function (b) { return strip(b); }).sort(function (a, b) { return b.created.localeCompare(a.created); }) }; };
+  A.myBookings = async function (p) {
+    var who = await auth(p.token, 'customer'), mine = (await allBookings()).filter(function (b) { return b.email === who.email; }), riders = {};
+    for (var i = 0; i < mine.length; i++) { var e = mine[i].rider; if (e && !riders[e]) { var r = await env.db.get(T.staff, e) || {}; riders[e] = { name: r.name || 'Your rider', phone: r.phone || '', vehicle: r.vehicle || '', plate: r.plate || '' }; } }
+    return { bookings: mine.map(function (b) { var c = strip(b); delete c.fee; if (b.rider) c.riderInfo = riders[b.rider]; return c; }).sort(function (a, b) { return b.created.localeCompare(a.created); }) };
+  };
   /* discount codes and rewards (customer) */
   A.checkCode = async function (p) {
     var who = p.token ? await auth(p.token, 'customer') : null, cat = await catalog(true), d = await findCode(p.code, who && who.email);
@@ -2979,10 +2998,10 @@ function openProfileSheet(next, pre) {
 }
 function startCustomerNotif() {
   Chat.token = () => session && session.token; Chat.me = session && session.profile;
-  $('#bellSlot').innerHTML = session ? bellBtn() : '';
-  if (session) Notif.start(session.token, 'c_' + session.profile.email, () => { if (currentView === 'messages') renderMessages(); if (currentView === 'account') renderAccount(); refreshAvailability(); }); else Notif.stop();
+  $('#bellSlot').innerHTML = session ? bellBtn() : ''; if (session) refreshActive();
+  if (session) Notif.start(session.token, 'c_' + session.profile.email, () => { if (currentView === 'messages') renderMessages(); if (currentView === 'account') renderAccount(); if (currentView === 'orders') renderOrders(true); else refreshActive(); refreshAvailability(); }); else Notif.stop();
 }
-function signOut() { session = null; store('tr4_session', null); startCustomerNotif(); renderBadges(); if (currentView === 'account') renderAccount(); if (currentView === 'messages') renderMessages(); }
+function signOut() { session = null; store('tr4_session', null); window._myB = []; activeBadges(); if (currentView === 'orders') renderOrders(); startCustomerNotif(); renderBadges(); if (currentView === 'account') renderAccount(); if (currentView === 'messages') renderMessages(); }
 
 /* ================= CHECKOUT: STAYS & RENTALS ================= */
 const SET = () => Object.assign({}, DEFAULT_SETTINGS, CAT.settings || {});
@@ -3196,7 +3215,7 @@ function demoPay(r) {
   openSheet(`<div class="sbody confirm" style="padding-top:30px"><div class="ok">${ic('card', 34)}</div><h2>HitPay checkout (demo)</h2>
     <p class="meta" style="margin-top:6px">With HitPay connected, customers go to HitPay's secure page to pay ${peso(r.dueNow)} by GCash, Maya, other e-wallets, QR Ph or card.</p>
     <div class="ref">${esc(r.group)}</div>
-    <div style="display:grid;gap:8px;margin-top:14px"><button class="btn full" id="dpOk">Simulate successful payment</button><button class="btn ghost full" onclick="closeSheet();go('account')">Pay later</button></div></div>`);
+    <div style="display:grid;gap:8px;margin-top:14px"><button class="btn full" id="dpOk">Simulate successful payment</button><button class="btn ghost full" onclick="closeSheet();go('orders')">Pay later</button></div></div>`);
   $('#dpOk').onclick = async () => { const v = await api('verifyPayment', { group: r.group, demoPaid: true }); showConfirm({ ...r, bookings: v.bookings }); refreshAvailability(); };
 }
 function showConfirm(r) {
@@ -3205,7 +3224,7 @@ function showConfirm(r) {
     <h2>${paid ? 'Payment received!' : transfer ? 'Booking received' : waiting ? 'Waiting for payment' : 'Order placed!'}</h2><div class="ref">${esc(r.group)}</div>
     <div class="sum" style="text-align:left">${bs.map(b => `<div class="l"><span>${esc(b.ref)} · ${esc(bizName(b.bizId))}</span>${statusChip(b.status)}</div>`).join('')}</div>
     <p class="meta" style="max-width:400px;margin:10px auto 0">${paid ? `Thank you! We received ${peso(r.dueNow || 0)}. Updates will appear in Messages and your email.` : transfer ? 'We will confirm your booking once your transfer is verified. You will be notified in the app and by email.' : waiting ? 'Your booking is saved but not yet paid. You can finish payment from your account.' : 'We have received your order. Follow its progress in your account and Messages.'}</p>
-    <div style="display:grid;gap:8px;margin-top:18px"><button class="btn navy full" onclick="closeSheet();go('account')">View my bookings</button><button class="btn ghost full" onclick="closeSheet();go('messages')">Messages</button></div></div>`);
+    <div style="display:grid;gap:8px;margin-top:18px"><button class="btn navy full" onclick="closeSheet();go('orders')">Track my order / booking</button><button class="btn ghost full" onclick="closeSheet();go('messages')">Messages</button></div></div>`);
 }
 async function checkReturnFromPayment() {
   const u = new URL(location.href), group = u.searchParams.get('paid'); if (!group) return;
@@ -3227,7 +3246,7 @@ async function renderAccount() {
     <div class="acard"><h3><span class="hl">${ic('star')} Reward points</span></h3><div id="myRw"><p class="meta">Loading…</p></div></div>
     <div class="acard"><h3>Profile</h3>${profileFields(session.profile)}<div class="err" id="acErr"></div><button class="btn navy mt" id="acSave">Save profile</button></div>
     <div class="acard"><h3><span class="hl">${ic('bell')} Notifications</span></h3><p class="meta">Get alerts for order updates and messages on this device.</p><button class="btn ghost sm mt" onclick="Notif.open()">Notification settings</button></div>
-    <h2 style="font-size:22px;margin:22px 0 12px">My bookings & orders</h2><div id="myB"><div class="empty">Loading…</div></div>`;
+    <div class="acard"><h3><span class="hl">${ic('receipt')} My orders & bookings</span></h3><p class="meta" id="myBsum">Loading…</p><button class="btn sm mt" data-go="orders">View all orders & bookings</button></div>`;
   $('#acSave').onclick = async () => { if (await saveProfileFromFields('#acErr')) toast('Profile saved'); };
   try { const m = await api('me', { token: session.token }); session.profile = m.profile; store('tr4_session', session); } catch (x) { if (/sign in/i.test(x.message)) return signOut(); }
   loadRewards().then(rw => { const el2 = $('#myRw'); if (!el2) return;
@@ -3240,28 +3259,72 @@ async function renderAccount() {
       ${rw.map(r => `<li><b>${esc(r.name)}:</b> ${rwRule(r.program)}.${r.program.signupBonus ? ' ' + r.program.signupBonus + ' bonus points on your first completed order.' : ''}${r.program.birthdayBonus ? ' ' + r.program.birthdayBonus + ' bonus points on your birthday (add it to your profile).' : ''}</li>`).join('')}
       <li>Points are added when your order or booking is marked Completed, based on what you paid for the items after discounts (delivery fees don't earn points).</li>
       <li>Redeem at checkout. If an order is cancelled, redeemed points are returned.</li></ul></details>`); });
-  try { const r = await api('myBookings', { token: session.token }); window._myB = r.bookings; $('#myB').innerHTML = r.bookings.length ? r.bookings.map(bookingCard).join('') : '<div class="empty">No bookings yet.</div>'; wireMyBookings(); }
-  catch (x) { $('#myB').innerHTML = `<div class="err">${esc(x.message)}</div>`; if (/sign in/i.test(x.message)) signOut(); }
+  try { const r = await api('myBookings', { token: session.token }); window._myB = r.bookings; const a = r.bookings.filter(isActiveB).length; if ($('#myBsum')) $('#myBsum').textContent = r.bookings.length ? r.bookings.length + ' total · ' + (a ? a + ' in progress' : 'none in progress') : 'No orders or bookings yet.'; activeBadges(); }
+  catch (x) { if ($('#myBsum')) $('#myBsum').textContent = x.message; if (/sign in/i.test(x.message)) signOut(); }
 }
 function bookingCard(b) {
   const lines = b.lines.map(l => `<li>${l.type ? esc(l.label) + ' · ' + esc(bookingDates(l)) : l.qty + ' x ' + esc(l.name) + (l.addons && l.addons.length ? ' (' + esc(l.addons.join(', ')) + ')' : '')}</li>`).join('')
     + (b.kind === 'food' ? `<li>${b.fulfillment === 'delivery' ? 'Delivery' : 'Pick-up'} · ${esc(Rules.PAY_LABEL[b.payMethod] || b.payMethod)}</li>` : '');
   return `<div class="trip"><div class="th"><span><span class="ref">${esc(b.ref)}</span><br><span class="hint">${kindIcon(b.kind)} ${esc(bizName(b.bizId))}</span></span>${statusChip(b.status)}</div>
-    ${timeline(b)}<div class="meta">${new Date(b.created).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })} · Payment: <b>${esc(b.payStatus)}</b></div><ul style="margin-top:6px">${lines}</ul>
+    ${timeline(b)}${riderBlock(b)}<div class="meta">${new Date(b.created).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })} · Payment: <b>${esc(b.payStatus)}</b></div><ul style="margin-top:6px">${lines}</ul>
     ${Rules.reductions(b).total ? `<div class="hint">${b.code ? 'Code ' + esc(b.code.code) + ' -' + peso(b.code.amount) : ''}${b.code && b.points ? ' · ' : ''}${b.points ? b.points.points + ' points -' + peso(b.points.amount) : ''}</div>` : ''}${b.pointsAwarded ? `<div class="hint">${ic('star', 14)} You earned ${b.pointsAwarded} points</div>` : ''}
     <div class="rowbtns" style="margin:10px 0 0"><b style="margin-right:auto">Total ${peso(Rules.payable(b))}</b>
       ${b.status === 'Awaiting Payment' && b.payUrl && b.payUrl !== 'demo' ? `<a class="btn sm" href="${esc(b.payUrl)}">Pay ${peso(b.dueNow)}</a>` : ''}
       ${b.status === 'Awaiting Payment' && b.payUrl === 'demo' ? `<button class="btn sm" data-demopay="${esc(b.group)}">Pay ${peso(b.dueNow)}</button>` : ''}
       ${b.status === 'Awaiting Payment' && b.payMethod === 'transfer' ? `<button class="btn ghost sm" data-proof="${esc(b.group)}">${ic('upload')} ${b.proofFile ? 'Replace' : 'Upload'} payment proof</button>` : ''}
-      ${Rules.trackable(b) ? `<button class="btn sm track" onclick="Track.open('${esc(b.ref)}',session.token)">${ic('locate')} Track rider</button>` : ''}
-      <button class="btn ghost sm" onclick="Chat.open({ref:'${esc(b.ref)}'})">${ic('chat')} Message ${esc(bizName(b.bizId))}</button>${b.rider && !Rules.CLOSED.includes(b.status) ? `<button class="btn ghost sm" onclick="Chat.open({ref:'${esc(b.ref)}',chan:'rider'})">${ic('bike')} Message rider</button>` : ''}</div></div>`;
+      ${canTrack(b) ? `<button class="btn sm track" onclick="Track.open('${esc(b.ref)}',session.token)">${ic('locate')} ${Rules.trackable(b) ? 'Track rider live' : 'Rider & map'}</button>` : ''}
+      <button class="btn ghost sm" onclick="Chat.open({ref:'${esc(b.ref)}'})">${ic('chat')} Message ${esc(bizName(b.bizId))}</button>${b.rider && !Rules.CLOSED.includes(b.status) ? `<button class="btn ghost sm" onclick="Chat.open({ref:'${esc(b.ref)}',chan:'rider'})">${ic('bike')} Message rider</button>` : ''}</div>
+    ${activityLog(b)}</div>`;
 }
+/* ===== MY ORDERS & BOOKINGS: every order and booking, its status, activity log, rider and live map ===== */
+const isActiveB = b => !Rules.CLOSED.includes(b.status);
+const canTrack = b => b.kind === 'food' && b.fulfillment === 'delivery' && !!b.rider && !Rules.CLOSED.includes(b.status) && !Rules.DELIVERED.includes(b.status);
+function riderBlock(b) {
+  if (b.kind !== 'food' || b.fulfillment !== 'delivery' || Rules.CLOSED.includes(b.status) && b.status !== 'Completed') return '';
+  const r = b.riderInfo;
+  if (!b.rider) return Rules.DELIVERED.includes(b.status) ? '' : `<div class="rcard wait">${ic('bike', 18)}<div><b>Rider</b><span class="hint">The store will assign a rider soon.</span></div></div>`;
+  const veh = [r && r.vehicle, r && r.plate].filter(Boolean).join(' · ');
+  const st = Rules.DELIVERED.includes(b.status) ? 'Delivered your order' : !b.riderAccepted ? 'Waiting for the rider to accept' : b.status === 'Out for Delivery' ? 'On the way to you' : b.status === 'Ready for Pick-up' ? 'Picking up your order' : 'Heading to the store';
+  return `<div class="rcard">${ic('bike', 18)}<div><b>${esc(r ? r.name : 'Your rider')}</b><span class="hint">${esc(st)}${veh ? ' · ' + esc(veh) : ''}</span></div>${r && r.phone && canTrack(b) ? `<a class="btn ghost sm" href="tel:${esc(String(r.phone).replace(/\s/g, ''))}">${ic('phone', 14)} Call</a>` : ''}</div>`;
+}
+function activityLog(b) {
+  const h = (b.history || []).slice().reverse(); if (!h.length) return '';
+  const who = x => x.role === 'customer' || !x.role ? '' : x.role === 'rider' ? 'Rider' : x.role === 'system' ? '' : x.role === 'super' ? 'Tara Romblon' : bizName(b.bizId);
+  return `<details class="alog"><summary class="link">Activity (${h.length})</summary><ol>${h.map(x => `<li><b>${esc(x.status)}</b><span class="hint">${new Date(x.at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}${who(x) ? ' · ' + esc(who(x)) : ''}</span>${x.note ? `<span class="hint">${esc(x.note)}</span>` : ''}</li>`).join('')}<li><b>Placed</b><span class="hint">${new Date(b.created).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}</span></li></ol></details>`;
+}
+function activeBadges() {
+  const n = (window._myB || []).filter(isActiveB).length, el = $('#bnOrd'); if (el) { el.textContent = n; el.style.display = n ? '' : 'none'; }
+  const h = $('#homeActive'); if (!h) return;
+  const act = (window._myB || []).filter(isActiveB).slice(0, 3);
+  h.innerHTML = act.map(b => `<div class="actbar"><span class="aic">${kindIcon(b.kind)}</span><div><b>${esc(bizName(b.bizId))} · ${esc(b.status)}</b><span class="hint">${esc(b.ref)}${b.riderInfo && canTrack(b) ? ' · rider ' + esc(b.riderInfo.name) : ''}</span></div>${canTrack(b) ? `<button class="btn sm" onclick="Track.open('${esc(b.ref)}',session.token)">${ic('locate', 14)} Track</button>` : `<button class="btn ghost sm" data-go="orders">View</button>`}</div>`).join('');
+}
+const ORD = { f: 'active', timer: null };
+async function renderOrders(quiet) {
+  const el = $('#ordBody'); if (!el) return;
+  if (!session) { el.innerHTML = `<div class="empty"><div class="big">${ic('receipt', 40)}</div><h2 style="color:var(--ink)">Your orders & bookings</h2><p style="margin:8px 0 16px">Log in to see the status of your orders and bookings and track your rider.</p><button class="btn navy" onclick="openSignIn()">Log in</button></div>`; return; }
+  if (!quiet) el.innerHTML = `<div class="shead"><div><h2>My orders & bookings</h2><p>Status updates automatically</p></div></div><div class="empty">Loading…</div>`;
+  let list; try { list = (await api('myBookings', { token: session.token })).bookings; window._myB = list; activeBadges(); }
+  catch (x) { if (!quiet) el.innerHTML = `<div class="err">${esc(x.message)}</div>`; if (/sign in/i.test(x.message)) signOut(); return; }
+  if (currentView !== 'orders') return;
+  const open = [...document.querySelectorAll('#ordBody details.alog[open]')].map(d => d.dataset.ref);
+  const F = [['active', 'In progress'], ['all', 'All'], ['food', 'Food'], ['rental', 'Rentals'], ['stay', 'Stays'], ['tour', 'Things to do'], ['past', 'Past']];
+  const pick = list.filter(b => ORD.f === 'all' ? true : ORD.f === 'active' ? isActiveB(b) : ORD.f === 'past' ? !isActiveB(b) : b.kind === ORD.f);
+  const cnt = k => list.filter(b => k === 'all' ? true : k === 'active' ? isActiveB(b) : k === 'past' ? !isActiveB(b) : b.kind === k).length;
+  el.innerHTML = `<div class="shead"><div><h2>My orders & bookings</h2><p>${list.length} total · status updates automatically</p></div></div>
+    <div class="chips ordf">${F.filter(f => f[0] === 'active' || f[0] === 'all' || cnt(f[0])).map(f => `<button class="${ORD.f === f[0] ? 'on' : ''}" data-ordf="${f[0]}">${f[1]} <span>${cnt(f[0])}</span></button>`).join('')}</div>
+    <div id="myB">${pick.length ? pick.map(bookingCard).join('') : `<div class="empty">${ORD.f === 'active' ? 'Nothing in progress right now.' : 'Nothing here yet.'}${list.length ? '' : `<p class="mt"><button class="btn" data-go="food">Order food</button> <button class="btn ghost" data-go="rentals">Rent a scooter</button></p>`}</div>`}</div>`;
+  document.querySelectorAll('#ordBody details.alog').forEach((d, i) => { d.dataset.ref = pick[i] && pick[i].ref; if (open.includes(d.dataset.ref)) d.open = true; });
+  document.querySelectorAll('[data-ordf]').forEach(x => x.onclick = () => { ORD.f = x.dataset.ordf; renderOrders(true); });
+  wireMyBookings();
+  clearTimeout(ORD.timer); ORD.timer = setTimeout(() => { if (currentView === 'orders' && !$('#ov').classList.contains('show')) renderOrders(true); else if (currentView === 'orders') ORD.timer = setTimeout(() => renderOrders(true), 15000); }, 15000);
+}
+async function refreshActive() { if (!session) return; try { window._myB = (await api('myBookings', { token: session.token })).bookings; activeBadges(); } catch (x) { } }
 function wireMyBookings() {
   document.querySelectorAll('[data-demopay]').forEach(x => x.onclick = () => { const bs = window._myB.filter(b => b.group === x.dataset.demopay); demoPay({ group: x.dataset.demopay, dueNow: bs.reduce((t, b) => t + b.dueNow, 0), bookings: bs }); });
   document.querySelectorAll('[data-proof]').forEach(x => x.onclick = () => {
     openSheet(`<div class="sbody"><h2>Upload payment proof</h2><div class="warn">${esc(SET().transferInstructions)}</div>${uploadField('lateProof', 'Receipt screenshot', 'required')}<div class="err" id="lpErr"></div><button class="btn full mt" id="lpGo">Upload</button></div>`);
     wireUpload('lateProof');
-    $('#lpGo').onclick = async () => { if (!UP.lateProof) { $('#lpErr').textContent = 'Choose a photo.'; return; } loading(true); try { await api('uploadProof', { token: session.token, group: x.dataset.proof, dataUrl: UP.lateProof }); loading(false); closeSheet(); toast('Payment proof sent'); renderAccount(); } catch (e) { loading(false); $('#lpErr').textContent = e.message; } };
+    $('#lpGo').onclick = async () => { if (!UP.lateProof) { $('#lpErr').textContent = 'Choose a photo.'; return; } loading(true); try { await api('uploadProof', { token: session.token, group: x.dataset.proof, dataUrl: UP.lateProof }); loading(false); closeSheet(); toast('Payment proof sent'); currentView === 'orders' ? renderOrders(true) : renderAccount(); } catch (e) { loading(false); $('#lpErr').textContent = e.message; } };
   });
 }
 
@@ -3443,7 +3506,7 @@ function setupSearch() {
 }
 
 /* ================= ROUTER ================= */
-const VIEWS = ['home', 'explore', 'stays', 'rentals', 'food', 'tours', 'cart', 'messages', 'account', 'list', 'rider'];
+const VIEWS = ['home', 'explore', 'stays', 'rentals', 'food', 'tours', 'cart', 'orders', 'messages', 'account', 'list', 'rider'];
 function renderAll() { renderTours(); renderLocSlots(); renderStays(); renderRides(); renderFood(); renderBadges(); if (currentView === 'explore') renderExplore(); }
 function go(v, push = true) {
   /* /#signup opens the Create account screen (shareable link) */
@@ -3453,7 +3516,7 @@ function go(v, push = true) {
   document.body.classList.toggle('subview', v !== 'home');
   document.querySelectorAll('.view').forEach(el => el.classList.toggle('on', el.id === 'v-' + v));
   document.querySelectorAll('.nav [data-go],.bnav [data-go]').forEach(b => b.classList.toggle('on', b.dataset.go === v));
-  if (v === 'cart') renderCart(); if (v === 'account') renderAccount(); if (v === 'list') renderListBusiness(); if (v === 'rider') renderRiderApply(); if (v === 'tours') renderTours(); if (v === 'food') renderFood(); if (v === 'explore') renderExplore(); if (v === 'messages') renderMessages();
+  if (v === 'cart') renderCart(); if (v === 'orders') renderOrders(); if (v === 'account') renderAccount(); if (v === 'list') renderListBusiness(); if (v === 'rider') renderRiderApply(); if (v === 'tours') renderTours(); if (v === 'food') renderFood(); if (v === 'explore') renderExplore(); if (v === 'messages') renderMessages();
   renderBadges(); window.scrollTo(0, 0);
   if (push) { try { history.replaceState(null, '', '#' + v); } catch (e) { } }
 }
@@ -3501,6 +3564,7 @@ function showInstall() {
   startCustomerNotif();
   checkReturnFromPayment();
   setTimeout(showInstall, 1500);
+  refreshActive(); setInterval(() => { if (currentView === 'home' && document.visibilityState === 'visible') refreshActive(); }, 30000);
 })();
 
 </script>
