@@ -3481,7 +3481,7 @@ async function googlePicker(elId, F, setPin, fallback) {
   const pin = new AdvancedMarkerElement({ map, position: store, content: tag('dest', ic('home', 16)), title: 'Delivery location', gmpDraggable: true, zIndex: 10 }); pin.element && (pin.element.style.opacity = '.45');
   let geocoder = null; try { const { Geocoder } = await google.maps.importLibrary('geocoding'); geocoder = new Geocoder(); } catch (e) { }
   const showAddr = (lat, lng, label) => { const a = $('#pinAddr'); if (!a) return; if (label) { a.textContent = '📍 ' + label; return; } a.textContent = '📍 Pin set — drag it to adjust'; if (!geocoder) return;
-    geocoder.geocode({ location: { lat, lng } }).then(r => { const x = r.results && r.results[0]; if (x && $('#pinAddr') && st_same(lat, lng)) $('#pinAddr').textContent = '📍 ' + x.formatted_address; }).catch(() => { geocoder = null; }); };
+    geocoder.geocode({ location: { lat, lng } }).then(r => { const L = r.results || [], x = L.find(y => !(y.types || []).includes('plus_code') && !/^[23456789CFGHJMPQRVWX]{4,}\+/.test(y.formatted_address)) || L[0]; if (x && $('#pinAddr') && st_same(lat, lng)) $('#pinAddr').textContent = '📍 ' + x.formatted_address; }).catch(() => { geocoder = null; }); };
   let last = null; const st_same = (a, b) => last && last[0] === a && last[1] === b;
   window._pinMove = (lat, lng, center) => { pin.position = { lat, lng }; if (pin.element) pin.element.style.opacity = '1'; if (center) { map.panTo({ lat, lng }); if (map.getZoom() < 16) map.setZoom(17); } last = [lat, lng]; showAddr(lat, lng); };
   pin.addListener('dragend', () => { const p = pin.position, lat = typeof p.lat === 'function' ? p.lat() : p.lat, lng = typeof p.lng === 'function' ? p.lng() : p.lng; setPin(lat, lng); });
