@@ -587,6 +587,21 @@ function checkoutBooking() {
   }));
 }
 
+/* Free address suggestions (OpenStreetMap / Photon), used when Google's address search is unavailable (no key, or over its daily limit) */
+function osmSearch(F, setPin) {
+  const box = $('#mapSearch'); if (!box) return;
+  box.innerHTML = `<div class="osmsearch"><input id="osmQ" type="search" placeholder="Search your address or a landmark" autocomplete="off" aria-label="Search address"><div class="osmlist" id="osmList" role="listbox"></div></div>`;
+  const q = $('#osmQ'), list = $('#osmList'); let t = null, seq = 0;
+  const label = p => [p.name, p.street && (p.housenumber ? p.housenumber + ' ' : '') + p.street, p.district || p.locality, p.city || p.county, p.state].filter((x, i, a) => x && a.indexOf(x) === i).join(', ');
+  q.oninput = () => { clearTimeout(t); const v = q.value.trim(); if (v.length < 3) { list.innerHTML = ''; return; }
+    t = setTimeout(async () => { const my = ++seq;
+      try { const r = await fetch('https://photon.komoot.io/api/?' + new URLSearchParams({ q: v, lat: F.lat, lon: F.lng, limit: 6, lang: 'en', bbox: '116.9,4.5,126.7,21.2' })); const j = await r.json(); if (my !== seq) return;
+        const it = (j.features || []).filter(f => f.properties && f.properties.countrycode === 'PH');
+        list.innerHTML = it.length ? it.map((f, i) => `<button type="button" role="option" data-osm="${i}">${ic('pin', 14)} <span><b>${esc(f.properties.name || label(f.properties))}</b><small>${esc(label(f.properties))}</small></span></button>`).join('') : '<div class="hint" style="padding:8px">No matches. Try a barangay or landmark, or tap the map.</div>';
+        list.querySelectorAll('[data-osm]').forEach(b => b.onclick = () => { const f = it[+b.dataset.osm], [lng, lat] = f.geometry.coordinates, nm = f.properties.name || label(f.properties);
+          setPin(lat, lng, true); list.innerHTML = ''; q.value = nm; const a = $('#pinAddr'); if (a) a.textContent = '📍 ' + label(f.properties); const lm = $('#lmk'); if (lm && !lm.value.trim()) lm.value = nm; });
+      } catch (e) { if (my === seq) list.innerHTML = '<div class="hint" style="padding:8px">Address search is unavailable right now. Tap the map or use your current location.</div>'; } }, 350); };
+}
 /* Google Maps location picker for delivery: address search (Places), tap or drag the pin, store marker, address of the pin */
 async function googlePicker(elId, F, setPin, fallback) {
   window.gm_authFailure = () => { console.warn('Google Maps key rejected'); const m = $('#' + elId); if (m && fallback) { window._pinMove = null; const n = m.cloneNode(false); m.replaceWith(n); fallback(); } };
@@ -613,12 +628,14 @@ async function googlePicker(elId, F, setPin, fallback) {
     const pac = new PlaceAutocompleteElement({ includedRegionCodes: ['ph'], locationBias: { center: store, radius: Math.max(5000, max * 1000) } });
     pac.setAttribute('placeholder', 'Search your address or a landmark'); pac.className = 'gpac';
     const box = $('#mapSearch'); if (box) { box.innerHTML = ''; box.appendChild(pac); }
+    let swapped = false; const swap = () => { if (swapped) return; swapped = true; console.warn('Google address search unavailable; using OpenStreetMap suggestions'); osmSearch(F, setPin); };
+    pac.addEventListener('gmp-requesterror', swap); pac.addEventListener('gmp-error', swap);
     pac.addEventListener('gmp-select', async ev => {
       try { const place = ev.placePrediction.toPlace(); await place.fetchFields({ fields: ['location', 'formattedAddress', 'displayName'] }); if (!place.location) return;
         setPin(place.location.lat(), place.location.lng(), true); showAddr(0, 0, [place.displayName, place.formattedAddress].filter(Boolean).join(' · '));
         const lm = $('#lmk'); if (lm && !lm.value.trim()) lm.value = place.displayName || place.formattedAddress || ''; } catch (e) { toast('Could not open that place. Tap the map instead.'); }
     });
-  } catch (e) { console.warn('Places search not available', e); }
+  } catch (e) { console.warn('Places search not available', e); osmSearch(F, setPin); }
 }
 
 /* ================= CHECKOUT: FOOD ================= */
@@ -688,7 +705,8 @@ function checkoutFood() {
       window._mk.on('dragend', e => { const ll = e.target.getLatLng(); setPin(ll.lat, ll.lng); });
       map.on('click', e => setPin(e.latlng.lat, e.latlng.lng));
     });
-    if (window.MAPCFG && MAPCFG.key) googlePicker('map', F, setPin, osmMap).catch(e => { console.warn('Google Maps picker', e); if ($('#map')) { $('#map').innerHTML = ''; osmMap(); } }); else osmMap();
+    if (!(window.MAPCFG && MAPCFG.key)) osmSearch(F, setPin);
+    if (window.MAPCFG && MAPCFG.key) googlePicker('map', F, setPin, () => { osmMap(); osmSearch(F, setPin); }).catch(e => { console.warn('Google Maps picker', e); if ($('#map')) { $('#map').innerHTML = ''; osmMap(); osmSearch(F, setPin); } }); else osmMap();
     calc(); if (F.codEnabled) api('myBookings', { token: session.token }).then(r => { window._myB = r.bookings; calc(); }).catch(() => {}); wireUpload('fProof'); wirePromo(() => ({ [F.bizId]: Pricing.food(CAT, { bizId: F.bizId, lines: cart.food, fulfillment: 'quote' }).subtotal || 0 }), calc);
     $('#ckBtn').onclick = async () => {
       const q = calc(); if (!q || q.error) return;
