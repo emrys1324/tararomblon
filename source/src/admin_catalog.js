@@ -103,7 +103,7 @@ async function admSave() {
 }
 $('#root').addEventListener('input', e => {
   const p = e.target.dataset.b; if (!p) return;
-  const t = e.target.dataset.t; setP(ADM.draft, p, t === 'num' ? (e.target.value === '' ? 0 : +e.target.value) : t === 'bool' ? e.target.checked : e.target.value); admDirty();
+  const t = e.target.dataset.t; setP(ADM.draft, p, t === 'num' ? (e.target.value === '' ? (p.startsWith('settings.delivery.') ? '' : 0) : +e.target.value) : t === 'bool' ? e.target.checked : e.target.value); admDirty();
 });
 $('#root').addEventListener('change', async e => {
   const p = e.target.dataset.b;

@@ -44,7 +44,7 @@ There are no npm packages to install. The functions use Node's built-in `fetch` 
 - Photos and add-ons are still saved as soon as you change them. New items get these after their first save.
 - "Accepting orders" (open/close the store) still takes effect right away. Merchant Staff still only turn items on/off, which also takes effect right away.
 
-## New: delivery fee rule (Super Admin → Settings → Delivery fee)
+## New: delivery fee rule (Super Admin → Settings → Delivery fee, the first card: Base delivery fee + Fee per succeeding km, with a live example)
 
 | Distance from the store | Customer pays | Store pays | Rider earns |
 |---|---|---|---|
