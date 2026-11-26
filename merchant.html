@@ -1291,10 +1291,11 @@ function createCore(env) {
       d.points = { points: want, amount: Rules.r2(want * prog.pointValue) };
     }
     drafts.forEach(function (d) { if (d.code || d.points) d.dueNow = d.kind === 'food' ? (Rules.NONCASH.indexOf(d.payMethod) >= 0 ? Rules.payable(d) : 0) : Math.round(Rules.payable(d) * pct / 100); });
-    var needId = drafts[0].kind !== 'food' && st.idUploadAtCheckout !== 'off', needProof = drafts[0].payMethod === 'transfer' && st.proofUpload !== 'off';
+    var idVerified = !!(me.verify && me.verify.status === 'verified' && me.verify.file);
+    var needId = drafts[0].kind !== 'food' && st.idUploadAtCheckout !== 'off' && !idVerified, needProof = drafts[0].payMethod === 'transfer' && st.proofUpload !== 'off';
     if (needId && st.idUploadAtCheckout === 'required' && !p.idPhoto) err('Please upload a photo of your ID.');
     if (needProof && st.proofUpload === 'required' && !p.proofPhoto) err('Please upload your payment proof.');
-    var idFile = needId && p.idPhoto ? (await env.files.save(p.idPhoto, 'id-' + me.email, true)).id : '';
+    var idFile = needId && p.idPhoto ? (await env.files.save(p.idPhoto, 'id-' + me.email, true)).id : (idVerified && drafts[0].kind !== 'food' ? me.verify.file : '');
     var proofFile = needProof && p.proofPhoto ? (await env.files.save(p.proofPhoto, 'proof-' + me.email, true)).id : '';
     var group = newRef('G'), created = now(), out = [];
     drafts.forEach(function (d) {

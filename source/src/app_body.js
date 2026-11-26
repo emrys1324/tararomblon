@@ -553,7 +553,7 @@ function rentalTermsGate(next) {
 function checkoutBooking() {
   requireSignIn(() => verifyGate(() => rentalTermsGate(() => {
     const q = Pricing.booking(CAT, cart.booking); if (q.error) { toast(q.error); return; }
-    const p = session.profile, st = SET(), rentals = q.lines.some(l => l.type === 'rental');
+    const p = session.profile, st = SET(), rentals = q.lines.some(l => l.type === 'rental'), verified = ((p.verify || {}).status === 'verified' && !!(p.verify || {}).file);
     const bizs = [...new Set(q.lines.map(l => l.bizId))];
     const pays = [['online', `Pay ${peso(q.dueNow)} now via HitPay — GCash, Maya & other e-wallets, QR Ph or card`]].concat(st.transferEnabled ? [['transfer', `Bank or e-wallet transfer of ${peso(q.dueNow)} (upload proof)`]] : []);
     openSheet(`<div class="sbody"><h2>Confirm your booking</h2>${bizs.length > 1 ? `<p class="hint" style="margin-top:4px">This creates ${bizs.length} bookings, one per business (${bizs.map(bizName).map(esc).join(', ')}), paid together.</p>` : ''}
@@ -561,7 +561,7 @@ function checkoutBooking() {
         <div id="bSum"></div></div>
       ${promoHtml()}
       <h3 class="ck">Guest details</h3>${profileFields(p)}
-      ${uploadField('ckId', 'Photo of a valid ID for check-in / pick-up', st.idUploadAtCheckout)}
+      ${verified ? `<div class="okline">${ic('check', 16)} Your ID is verified. No need to upload it again; the host can see your verified ID.</div>` : uploadField('ckId', 'Photo of a valid ID for check-in / pick-up', st.idUploadAtCheckout)}
       <div class="field mt"><label>Notes (arrival time, requests)</label><textarea id="ckN" rows="2"></textarea></div>
       <h3 class="ck">Payment</h3>${payChoice('bpay', pays)}
       <div id="trBox" style="display:none"><div class="warn">${esc(st.transferInstructions)}</div>${uploadField('ckProof', 'Payment proof (receipt screenshot)', st.proofUpload)}</div>
@@ -583,7 +583,7 @@ function checkoutBooking() {
     document.querySelectorAll('input[name=bpay]').forEach(r => r.onchange = () => { $('#trBox').style.display = pm() === 'transfer' ? '' : 'none'; sum(); });
     $('#ckBtn').onclick = async () => {
       if (!$('#ckAgree').checked) { $('#ckErr').textContent = 'Please agree to the cancellation & refund policy.'; return; }
-      if (st.idUploadAtCheckout === 'required' && !UP.ckId) { $('#ckErr').textContent = 'Please add a photo of your ID.'; return; }
+      if (!verified && st.idUploadAtCheckout === 'required' && !UP.ckId) { $('#ckErr').textContent = 'Please add a photo of your ID.'; return; }
       if (pm() === 'transfer' && st.proofUpload === 'required' && !UP.ckProof) { $('#ckErr').textContent = 'Please upload your payment proof.'; return; }
       if (!await saveProfileFromFields('#ckErr')) return;
       loading(true, 'Creating your booking…');

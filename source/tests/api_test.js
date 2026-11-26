@@ -587,6 +587,7 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   const rl = { type: 'rental', itemId: 'pcx', start: ph(20) + 'T09:00', end: ph(21) + 'T09:00', helmets: 1, pickup: 'office', ret: 'office' };
   await fails('createBooking', { token: cust, kind: 'rental', agree: true, payMethod: 'online', lines: [rl] }, /accept the Rental Terms and Conditions/);
   const rb = await ok('createBooking', { token: cust, kind: 'rental', agree: true, payMethod: 'online', rentalTerms: { at: new Date().toISOString() }, lines: [rl] }).catch(e => ({ err: e.message }));
+  if (!rb.err) { const rbd = DB.bookings.find(r => r.id === rb.refs[0]).data, anaV = DB.customers.find(r => r.id === 'ana@mail.com').data.verify; assert(anaV.status === 'verified' && rbd.idFile === anaV.file, 'verified customer books without uploading an ID again; the booking uses the verified ID'); }
   if (rb.err) console.log('  (rental booking skipped: ' + rb.err + ')'); else assert(DB.bookings.find(r => r.id === rb.refs[0]).data.rentalTerms.text === CATALOG.business.rentalTerms, 'accepted terms and time saved on the rental booking');
 
   console.log('\nALL PASSED · ' + calls + ' simulated network calls · ' + MAILS.length + ' emails');
