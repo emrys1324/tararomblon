@@ -588,6 +588,8 @@ input,select,textarea,button{font-family:inherit}
 .osmlist button span{display:flex;flex-direction:column}.osmlist small{color:var(--mute);font-size:12px}
 footer .fown{margin-top:20px;padding-top:14px;border-top:1px solid rgba(255,255,255,.12);font-size:13px;color:#aeb9d3}footer .fown b{display:inline;color:#fff;margin:0}footer .fown a{display:inline;color:var(--gold);text-decoration:underline}
 footer .fown span{display:inline}
+.termsbox{max-height:46vh;overflow:auto;white-space:pre-line;margin-top:12px}
+.okline{margin-top:12px;padding:10px 12px;border-radius:10px;background:#eaf6ee;border:1px solid #bfe3cb;color:#1d5b33;font-size:14px}.okline summary{cursor:pointer;display:flex;gap:6px;align-items:center;flex-wrap:wrap;list-style:none}.okline .policy{margin-top:8px;color:var(--ink,#223)}
 
 </style>
 </head>
@@ -1374,6 +1376,8 @@ function createCore(env) {
       if (!st.staysLive && p.lines.some(function (l) { return l.type === 'stay'; })) err('Stays are coming soon. For now you can rent a scooter or order food.');
       if (!st.toursLive && p.lines.some(function (l) { return l.type === 'tour'; })) err('Things to do are coming soon. For now you can rent a scooter or order food.');
       var all = Pricing.booking(cat, p.lines); if (all.error) err(all.error);
+      var hasRental = all.lines.some(function (l) { return l.type === 'rental'; });
+      if (hasRental && cat.business.rentalTerms && !(p.rentalTerms && p.rentalTerms.at)) err('Please read and accept the Rental Terms and Conditions first.');
       var bz = await busy();
       all.lines.forEach(function (l) {
         bz.forEach(function (x) { if (x.type === l.type && x.itemId === l.itemId && l.start < x.end && l.end > x.start) err(l.label + ' is already booked for those dates. Please choose other dates.'); });
@@ -1385,7 +1389,9 @@ function createCore(env) {
       Object.keys(groups).forEach(function (id) {
         var q2 = Pricing.booking(cat, groups[id]);
         var has = function (t) { return q2.lines.some(function (l) { return l.type === t; }); };
-        drafts.push({ kind: has('stay') ? 'stay' : has('rental') ? 'rental' : 'tour', bizId: id, lines: q2.lines, quote: q2, payMethod: p.payMethod, dueNow: q2.dueNow });
+        var dr = { kind: has('stay') ? 'stay' : has('rental') ? 'rental' : 'tour', bizId: id, lines: q2.lines, quote: q2, payMethod: p.payMethod, dueNow: q2.dueNow };
+        if (has('rental') && cat.business.rentalTerms) dr.rentalTerms = { acceptedAt: now(), clientAt: str(p.rentalTerms.at, 40), text: cat.business.rentalTerms };
+        drafts.push(dr);
       });
     }
     /* discount code and reward points */
@@ -3405,8 +3411,20 @@ async function wirePromo(amounts, onChange) {
 }
 const promoPayload = () => ({ code: PROMO.code || undefined, redeem: Object.keys(PROMO.redeem).some(k => PROMO.redeem[k]) ? PROMO.redeem : undefined });
 
+/* Rentals: the customer reads and accepts the Rental Terms and Conditions before the checkout page opens */
+let RENTAL_OK = null;
+function rentalTermsGate(next) {
+  const q = Pricing.booking(CAT, cart.booking); if (q.error || !q.lines.some(l => l.type === 'rental')) return next();
+  const units = [...new Set(q.lines.filter(l => l.type === 'rental').map(l => bizName(l.bizId)))].join(', ');
+  openSheet(`<div class="sbody"><span class="brandl">${esc(units)}</span><h2>Rental Terms and Conditions</h2><p class="meta" style="margin-top:4px">Please read and accept these terms before you continue to checkout.</p>
+    <div class="policy termsbox" id="rtBox" tabindex="0">${esc(CAT.business.rentalTerms || '')}</div>
+    <label class="check"><input type="checkbox" id="rtOk"><span>I have read and accept the Rental Terms and Conditions.</span></label>
+    <div class="row2 mt"><button class="btn ghost" onclick="closeSheet()">Cancel</button><button class="btn" id="rtGo" disabled>Accept and continue</button></div></div>`);
+  $('#rtOk').onchange = () => { $('#rtGo').disabled = !$('#rtOk').checked; };
+  $('#rtGo').onclick = () => { if (!$('#rtOk').checked) return; RENTAL_OK = { at: new Date().toISOString(), text: CAT.business.rentalTerms || '' }; next(); };
+}
 function checkoutBooking() {
-  requireSignIn(() => verifyGate(() => {
+  requireSignIn(() => verifyGate(() => rentalTermsGate(() => {
     const q = Pricing.booking(CAT, cart.booking); if (q.error) { toast(q.error); return; }
     const p = session.profile, st = SET(), rentals = q.lines.some(l => l.type === 'rental');
     const bizs = [...new Set(q.lines.map(l => l.bizId))];
@@ -3421,8 +3439,8 @@ function checkoutBooking() {
       <h3 class="ck">Payment</h3>${payChoice('bpay', pays)}
       <div id="trBox" style="display:none"><div class="warn">${esc(st.transferInstructions)}</div>${uploadField('ckProof', 'Payment proof (receipt screenshot)', st.proofUpload)}</div>
       <div class="field mt"><label>Cancellation & refund policy</label></div><div class="policy">${esc(CAT.business.refundPolicy)}</div>
-      ${rentals ? `<div class="field mt"><label>Rental terms</label></div><div class="policy">${esc(CAT.business.rentalTerms)}</div>` : ''}
-      <label class="check"><input type="checkbox" id="ckAgree"><span>I have read and agree to the cancellation & refund policy${rentals ? ' and rental terms' : ''}.</span></label>
+      ${rentals ? `<details class="okline"><summary>${ic('check', 16)} You accepted the Rental Terms and Conditions <span class="link">View</span></summary><div class="policy">${esc(CAT.business.rentalTerms || '')}</div></details>` : ''}
+      <label class="check"><input type="checkbox" id="ckAgree"><span>I have read and agree to the cancellation & refund policy.</span></label>
       <div class="err" id="ckErr"></div><button class="btn full mt" id="ckBtn" style="padding:15px">Pay ${peso(q.dueNow)} downpayment</button></div>`);
     wireUpload('ckId'); wireUpload('ckProof');
     const pm = () => document.querySelector('input[name=bpay]:checked').value;
@@ -3443,7 +3461,7 @@ function checkoutBooking() {
       if (!await saveProfileFromFields('#ckErr')) return;
       loading(true, 'Creating your booking…');
       try {
-        const r = await api('createBooking', { token: session.token, kind: 'booking', lines: cart.booking, notes: $('#ckN').value.trim(), agree: true, payMethod: pm(), idPhoto: UP.ckId || '', proofPhoto: pm() === 'transfer' ? UP.ckProof || '' : '', ...promoPayload() });
+        const r = await api('createBooking', { token: session.token, kind: 'booking', lines: cart.booking, notes: $('#ckN').value.trim(), agree: true, rentalTerms: rentals ? RENTAL_OK : null, payMethod: pm(), idPhoto: UP.ckId || '', proofPhoto: pm() === 'transfer' ? UP.ckProof || '' : '', ...promoPayload() });
         cart.booking = []; saveCart(); loading(false); afterCreate(r);
       } catch (x) {
         loading(false);
@@ -3451,7 +3469,7 @@ function checkoutBooking() {
         $('#ckErr').textContent = x.message; refreshAvailability();
       }
     };
-  }));
+  })));
 }
 
 /* Free address suggestions (OpenStreetMap / Photon), used when Google's address search is unavailable (no key, or over its daily limit) */

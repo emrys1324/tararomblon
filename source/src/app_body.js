@@ -538,8 +538,20 @@ async function wirePromo(amounts, onChange) {
 }
 const promoPayload = () => ({ code: PROMO.code || undefined, redeem: Object.keys(PROMO.redeem).some(k => PROMO.redeem[k]) ? PROMO.redeem : undefined });
 
+/* Rentals: the customer reads and accepts the Rental Terms and Conditions before the checkout page opens */
+let RENTAL_OK = null;
+function rentalTermsGate(next) {
+  const q = Pricing.booking(CAT, cart.booking); if (q.error || !q.lines.some(l => l.type === 'rental')) return next();
+  const units = [...new Set(q.lines.filter(l => l.type === 'rental').map(l => bizName(l.bizId)))].join(', ');
+  openSheet(`<div class="sbody"><span class="brandl">${esc(units)}</span><h2>Rental Terms and Conditions</h2><p class="meta" style="margin-top:4px">Please read and accept these terms before you continue to checkout.</p>
+    <div class="policy termsbox" id="rtBox" tabindex="0">${esc(CAT.business.rentalTerms || '')}</div>
+    <label class="check"><input type="checkbox" id="rtOk"><span>I have read and accept the Rental Terms and Conditions.</span></label>
+    <div class="row2 mt"><button class="btn ghost" onclick="closeSheet()">Cancel</button><button class="btn" id="rtGo" disabled>Accept and continue</button></div></div>`);
+  $('#rtOk').onchange = () => { $('#rtGo').disabled = !$('#rtOk').checked; };
+  $('#rtGo').onclick = () => { if (!$('#rtOk').checked) return; RENTAL_OK = { at: new Date().toISOString(), text: CAT.business.rentalTerms || '' }; next(); };
+}
 function checkoutBooking() {
-  requireSignIn(() => verifyGate(() => {
+  requireSignIn(() => verifyGate(() => rentalTermsGate(() => {
     const q = Pricing.booking(CAT, cart.booking); if (q.error) { toast(q.error); return; }
     const p = session.profile, st = SET(), rentals = q.lines.some(l => l.type === 'rental');
     const bizs = [...new Set(q.lines.map(l => l.bizId))];
@@ -554,8 +566,8 @@ function checkoutBooking() {
       <h3 class="ck">Payment</h3>${payChoice('bpay', pays)}
       <div id="trBox" style="display:none"><div class="warn">${esc(st.transferInstructions)}</div>${uploadField('ckProof', 'Payment proof (receipt screenshot)', st.proofUpload)}</div>
       <div class="field mt"><label>Cancellation & refund policy</label></div><div class="policy">${esc(CAT.business.refundPolicy)}</div>
-      ${rentals ? `<div class="field mt"><label>Rental terms</label></div><div class="policy">${esc(CAT.business.rentalTerms)}</div>` : ''}
-      <label class="check"><input type="checkbox" id="ckAgree"><span>I have read and agree to the cancellation & refund policy${rentals ? ' and rental terms' : ''}.</span></label>
+      ${rentals ? `<details class="okline"><summary>${ic('check', 16)} You accepted the Rental Terms and Conditions <span class="link">View</span></summary><div class="policy">${esc(CAT.business.rentalTerms || '')}</div></details>` : ''}
+      <label class="check"><input type="checkbox" id="ckAgree"><span>I have read and agree to the cancellation & refund policy.</span></label>
       <div class="err" id="ckErr"></div><button class="btn full mt" id="ckBtn" style="padding:15px">Pay ${peso(q.dueNow)} downpayment</button></div>`);
     wireUpload('ckId'); wireUpload('ckProof');
     const pm = () => document.querySelector('input[name=bpay]:checked').value;
@@ -576,7 +588,7 @@ function checkoutBooking() {
       if (!await saveProfileFromFields('#ckErr')) return;
       loading(true, 'Creating your booking…');
       try {
-        const r = await api('createBooking', { token: session.token, kind: 'booking', lines: cart.booking, notes: $('#ckN').value.trim(), agree: true, payMethod: pm(), idPhoto: UP.ckId || '', proofPhoto: pm() === 'transfer' ? UP.ckProof || '' : '', ...promoPayload() });
+        const r = await api('createBooking', { token: session.token, kind: 'booking', lines: cart.booking, notes: $('#ckN').value.trim(), agree: true, rentalTerms: rentals ? RENTAL_OK : null, payMethod: pm(), idPhoto: UP.ckId || '', proofPhoto: pm() === 'transfer' ? UP.ckProof || '' : '', ...promoPayload() });
         cart.booking = []; saveCart(); loading(false); afterCreate(r);
       } catch (x) {
         loading(false);
@@ -584,7 +596,7 @@ function checkoutBooking() {
         $('#ckErr').textContent = x.message; refreshAvailability();
       }
     };
-  }));
+  })));
 }
 
 /* Free address suggestions (OpenStreetMap / Photon), used when Google's address search is unavailable (no key, or over its daily limit) */

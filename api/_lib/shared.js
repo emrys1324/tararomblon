@@ -641,6 +641,8 @@ function createCore(env) {
       if (!st.staysLive && p.lines.some(function (l) { return l.type === 'stay'; })) err('Stays are coming soon. For now you can rent a scooter or order food.');
       if (!st.toursLive && p.lines.some(function (l) { return l.type === 'tour'; })) err('Things to do are coming soon. For now you can rent a scooter or order food.');
       var all = Pricing.booking(cat, p.lines); if (all.error) err(all.error);
+      var hasRental = all.lines.some(function (l) { return l.type === 'rental'; });
+      if (hasRental && cat.business.rentalTerms && !(p.rentalTerms && p.rentalTerms.at)) err('Please read and accept the Rental Terms and Conditions first.');
       var bz = await busy();
       all.lines.forEach(function (l) {
         bz.forEach(function (x) { if (x.type === l.type && x.itemId === l.itemId && l.start < x.end && l.end > x.start) err(l.label + ' is already booked for those dates. Please choose other dates.'); });
@@ -652,7 +654,9 @@ function createCore(env) {
       Object.keys(groups).forEach(function (id) {
         var q2 = Pricing.booking(cat, groups[id]);
         var has = function (t) { return q2.lines.some(function (l) { return l.type === t; }); };
-        drafts.push({ kind: has('stay') ? 'stay' : has('rental') ? 'rental' : 'tour', bizId: id, lines: q2.lines, quote: q2, payMethod: p.payMethod, dueNow: q2.dueNow });
+        var dr = { kind: has('stay') ? 'stay' : has('rental') ? 'rental' : 'tour', bizId: id, lines: q2.lines, quote: q2, payMethod: p.payMethod, dueNow: q2.dueNow };
+        if (has('rental') && cat.business.rentalTerms) dr.rentalTerms = { acceptedAt: now(), clientAt: str(p.rentalTerms.at, 40), text: cat.business.rentalTerms };
+        drafts.push(dr);
       });
     }
     /* discount code and reward points */

@@ -576,3 +576,5 @@ input,select,textarea,button{font-family:inherit}
 .osmlist button span{display:flex;flex-direction:column}.osmlist small{color:var(--mute);font-size:12px}
 footer .fown{margin-top:20px;padding-top:14px;border-top:1px solid rgba(255,255,255,.12);font-size:13px;color:#aeb9d3}footer .fown b{display:inline;color:#fff;margin:0}footer .fown a{display:inline;color:var(--gold);text-decoration:underline}
 footer .fown span{display:inline}
+.termsbox{max-height:46vh;overflow:auto;white-space:pre-line;margin-top:12px}
+.okline{margin-top:12px;padding:10px 12px;border-radius:10px;background:#eaf6ee;border:1px solid #bfe3cb;color:#1d5b33;font-size:14px}.okline summary{cursor:pointer;display:flex;gap:6px;align-items:center;flex-wrap:wrap;list-style:none}.okline .policy{margin-top:8px;color:var(--ink,#223)}

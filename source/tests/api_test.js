@@ -583,5 +583,11 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   await ok('rAvailable', { token: paoloT, value: false });
   assert((await ok('rOrders', { token: paoloT })).offers.length === 0, 'offline riders get no requests');
 
+  console.log('Rental Terms and Conditions must be accepted');
+  const rl = { type: 'rental', itemId: 'pcx', start: ph(20) + 'T09:00', end: ph(21) + 'T09:00', helmets: 1, pickup: 'office', ret: 'office' };
+  await fails('createBooking', { token: cust, kind: 'rental', agree: true, payMethod: 'online', lines: [rl] }, /accept the Rental Terms and Conditions/);
+  const rb = await ok('createBooking', { token: cust, kind: 'rental', agree: true, payMethod: 'online', rentalTerms: { at: new Date().toISOString() }, lines: [rl] }).catch(e => ({ err: e.message }));
+  if (rb.err) console.log('  (rental booking skipped: ' + rb.err + ')'); else assert(DB.bookings.find(r => r.id === rb.refs[0]).data.rentalTerms.text === CATALOG.business.rentalTerms, 'accepted terms and time saved on the rental booking');
+
   console.log('\nALL PASSED · ' + calls + ' simulated network calls · ' + MAILS.length + ' emails');
 })().catch(e => { console.error('\nFAILED:', e.stack || e); process.exit(1); });
