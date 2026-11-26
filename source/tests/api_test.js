@@ -170,6 +170,7 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
 
   console.log('Food COD with rider');
   const item = CATALOG.foods[0].items.find(i => i.available !== false);
+  await fails('createBooking', { token: cust, kind: 'food', bizId: 'pahuway', fulfillment: 'delivery', payMethod: 'online', band: 0, landmark: 'x', lines: [{ itemId: item.id, qty: 1, addons: [] }] }, /Pin your delivery location on the map/);
   const codP = { token: cust, kind: 'food', bizId: 'pahuway', fulfillment: 'delivery', payMethod: 'cod', lat: 12.5720, lng: 122.1330, landmark: 'Near plaza', lines: [{ itemId: item.id, qty: 2, addons: [] }] };
   const anaRec = DB.customers.find(r => r.id === 'ana@mail.com').data, anaWas = anaRec.created; anaRec.created = '2030-01-01T00:00:00.000Z'; // a new sign-up after the cutoff
   await fails('createBooking', codP, /unlocks after 3 completed orders or bookings \(you have 0\)/);

@@ -147,12 +147,12 @@ function staffLogin(portal, onDone) {
   };
 }
 function loadMap(elId, lat, lng, ready, failMsg) {
-  const fail = () => { const m = document.getElementById(elId); if (m) m.outerHTML = '<div class="warn">' + (failMsg || 'The map could not load here. Choose your distance below instead.') + '</div>'; };
+  const fail = () => { const m = document.getElementById(elId); if (m) m.outerHTML = '<div class="warn">' + (failMsg || 'The map could not load here. Tap <b>Use my current location</b> below to set your delivery location.') + '</div>'; };
   const init = () => {
     if (!window.L || !document.getElementById(elId)) return fail();
     const map = L.map(elId).setView([lat, lng], 14); window._map = map;
     let tileErr = 0;
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).on('tileerror', () => { if (++tileErr === 4) toast('Map tiles are not loading — you can choose your distance instead.'); }).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).on('tileerror', () => { if (++tileErr === 4) toast('Map tiles are not loading — you can tap Use my current location instead.'); }).addTo(map);
     ready(map); setTimeout(() => map.invalidateSize(), 100);
   };
   if (window.L) return init();

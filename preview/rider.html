@@ -1111,7 +1111,8 @@ function createCore(env) {
       if (['delivery', 'pickup'].indexOf(p.fulfillment) < 0) err('Choose delivery or pick-up.');
       var ok = (pm === 'cod' && p.fulfillment === 'delivery' && F.codEnabled) || (pm === 'pickup' && p.fulfillment === 'pickup') || (pm === 'online' && F.onlineEnabled) || (pm === 'transfer' && st.transferEnabled);
       if (!ok) err('That payment option is not available.');
-      var q = Pricing.food(cat, p); if (q.error) err(q.error);
+      if (p.fulfillment === 'delivery' && (p.lat == null || p.lng == null || !isFinite(+p.lat) || !isFinite(+p.lng))) err('Pin your delivery location on the map.');
+      var q = Pricing.food(cat, { bizId: p.bizId, lines: p.lines, fulfillment: p.fulfillment, lat: p.lat, lng: p.lng }); if (q.error) err(q.error);
       if (pm === 'cod') { var cb = Rules.codBlock(st, Rules.completedCount(await allBookings(), who.email), q.total, me.created); if (cb) err(cb); }
       drafts.push({ kind: 'food', bizId: F.bizId || 'pahuway', lines: q.lines, quote: q, payMethod: pm, fulfillment: p.fulfillment, landmark: String(p.landmark || '').slice(0, 200), lat: p.lat, lng: p.lng, dueNow: Rules.NONCASH.indexOf(pm) >= 0 ? q.total : 0 });
     } else {
@@ -2181,12 +2182,12 @@ function staffLogin(portal, onDone) {
   };
 }
 function loadMap(elId, lat, lng, ready, failMsg) {
-  const fail = () => { const m = document.getElementById(elId); if (m) m.outerHTML = '<div class="warn">' + (failMsg || 'The map could not load here. Choose your distance below instead.') + '</div>'; };
+  const fail = () => { const m = document.getElementById(elId); if (m) m.outerHTML = '<div class="warn">' + (failMsg || 'The map could not load here. Tap <b>Use my current location</b> below to set your delivery location.') + '</div>'; };
   const init = () => {
     if (!window.L || !document.getElementById(elId)) return fail();
     const map = L.map(elId).setView([lat, lng], 14); window._map = map;
     let tileErr = 0;
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).on('tileerror', () => { if (++tileErr === 4) toast('Map tiles are not loading — you can choose your distance instead.'); }).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).on('tileerror', () => { if (++tileErr === 4) toast('Map tiles are not loading — you can tap Use my current location instead.'); }).addTo(map);
     ready(map); setTimeout(() => map.invalidateSize(), 100);
   };
   if (window.L) return init();

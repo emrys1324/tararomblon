@@ -161,7 +161,8 @@ function createCore(env) {
       if (['delivery', 'pickup'].indexOf(p.fulfillment) < 0) err('Choose delivery or pick-up.');
       var ok = (pm === 'cod' && p.fulfillment === 'delivery' && F.codEnabled) || (pm === 'pickup' && p.fulfillment === 'pickup') || (pm === 'online' && F.onlineEnabled) || (pm === 'transfer' && st.transferEnabled);
       if (!ok) err('That payment option is not available.');
-      var q = Pricing.food(cat, p); if (q.error) err(q.error);
+      if (p.fulfillment === 'delivery' && (p.lat == null || p.lng == null || !isFinite(+p.lat) || !isFinite(+p.lng))) err('Pin your delivery location on the map.');
+      var q = Pricing.food(cat, { bizId: p.bizId, lines: p.lines, fulfillment: p.fulfillment, lat: p.lat, lng: p.lng }); if (q.error) err(q.error);
       if (pm === 'cod') { var cb = Rules.codBlock(st, Rules.completedCount(await allBookings(), who.email), q.total, me.created); if (cb) err(cb); }
       drafts.push({ kind: 'food', bizId: F.bizId || 'pahuway', lines: q.lines, quote: q, payMethod: pm, fulfillment: p.fulfillment, landmark: String(p.landmark || '').slice(0, 200), lat: p.lat, lng: p.lng, dueNow: Rules.NONCASH.indexOf(pm) >= 0 ? q.total : 0 });
     } else {

@@ -571,15 +571,13 @@ function checkoutBooking() {
 function checkoutFood() {
   requireSignIn(() => {
     const F = cartStore(), p = session.profile;
-    const st = { ful: F.deliveryEnabled ? 'delivery' : 'pickup', lat: null, lng: null, band: null };
-    const bands = Pricing.bands(F);
+    const st = { ful: F.deliveryEnabled ? 'delivery' : 'pickup', lat: null, lng: null };
     openSheet(`<div class="sbody"><h2>Checkout — ${esc(F.storeName)}</h2>
       <div class="opts" style="margin-top:12px">${F.deliveryEnabled ? `<label><input type="radio" name="ful" value="delivery" ${st.ful === 'delivery' ? 'checked' : ''}> ${ic('scooter')} Delivery</label>` : ''}${F.pickupEnabled ? `<label><input type="radio" name="ful" value="pickup" ${st.ful === 'pickup' ? 'checked' : ''}> ${ic('store')} Pick-up</label>` : ''}</div>
       <div id="delBox">
         <div class="field mt"><label>Pin your delivery location</label><span class="hint">Tap the map or drag the pin. Fee is based on distance from ${esc(F.storeName)}.</span></div>
         <div class="map" id="map"></div>
         <button class="btn ghost sm mt" id="geoBtn" type="button">${ic('nav')} Use my current location</button>
-        <div class="field mt"><label>Or choose your distance from the restaurant</label><select id="band"><option value="">— select if you can't use the map —</option>${bands.map((b, i) => `<option value="${i}">Within ${b.upToKm} km — ${peso(b.fee)}</option>`).join('')}</select></div>
         <div class="field mt"><label>House / landmark for the rider</label><input id="lmk" value="${esc(p.address)}"></div>
       </div>
       <div id="pickBox" class="warn" style="display:none">Pick up at ${esc(F.storeName)}, ${esc(F.address)}. We'll text you when your order is ready.</div>
@@ -603,7 +601,7 @@ function checkoutFood() {
       $('#ftrBox').style.display = (document.querySelector('input[name=pay]:checked') || {}).value === 'transfer' ? '' : 'none';
       $('#codWhy').innerHTML = codWhy ? `<div class="hint" data-codwhy>${ic('cash', 14)} ${esc(codWhy)}</div>` : '';
     };
-    const quote = () => Pricing.food(CAT, { bizId: F.bizId, lines: cart.food, fulfillment: st.ful, lat: st.lat, lng: st.lng, band: st.lat == null ? (st.band === '' ? null : st.band) : null });
+    const quote = () => Pricing.food(CAT, { bizId: F.bizId, lines: cart.food, fulfillment: st.ful, lat: st.lat, lng: st.lng });
     const calc = () => {
       $('#delBox').style.display = st.ful === 'delivery' ? '' : 'none'; $('#pickBox').style.display = st.ful === 'pickup' ? '' : 'none';
       payOpts();
@@ -621,8 +619,7 @@ function checkoutFood() {
     };
     document.querySelectorAll('input[name=ful]').forEach(r => r.addEventListener('change', () => { st.ful = r.value; calc(); if (st.ful === 'delivery') setTimeout(() => window._map && window._map.invalidateSize(), 50); }));
     $('#payOpts').addEventListener('change', calc);
-    $('#band').addEventListener('change', () => { st.band = $('#band').value; if (st.band !== '') { st.lat = st.lng = null; if (window._mk) window._mk.setOpacity(.4); } calc(); });
-    const setPin = (lat, lng) => { st.lat = +lat.toFixed(6); st.lng = +lng.toFixed(6); $('#band').value = ''; st.band = null; if (window._mk) { window._mk.setLatLng([lat, lng]).setOpacity(1); } calc(); };
+    const setPin = (lat, lng) => { st.lat = +lat.toFixed(6); st.lng = +lng.toFixed(6); if (window._mk) { window._mk.setLatLng([lat, lng]).setOpacity(1); } calc(); };
     $('#geoBtn').onclick = () => {
       if (!navigator.geolocation) { toast('Location is not available on this device. Tap the map instead.'); return; }
       $('#geoBtn').disabled = true; $('#geoBtn').textContent = 'Finding your location…';
@@ -644,7 +641,7 @@ function checkoutFood() {
       if (!pay) { $('#ckErr').textContent = 'Choose a payment option.'; return; }
       loading(true, 'Placing your order…');
       try {
-        const r = await api('createBooking', { token: session.token, kind: 'food', bizId: F.bizId, lines: cart.food, fulfillment: st.ful, lat: st.lat, lng: st.lng, band: st.lat == null && st.band !== '' ? st.band : null, landmark: st.ful === 'delivery' ? $('#lmk').value.trim() : '', payMethod: pay, notes: $('#ckN').value.trim(), proofPhoto: pay === 'transfer' ? UP.fProof || '' : '', ...promoPayload() });
+        const r = await api('createBooking', { token: session.token, kind: 'food', bizId: F.bizId, lines: cart.food, fulfillment: st.ful, lat: st.lat, lng: st.lng, landmark: st.ful === 'delivery' ? $('#lmk').value.trim() : '', payMethod: pay, notes: $('#ckN').value.trim(), proofPhoto: pay === 'transfer' ? UP.fProof || '' : '', ...promoPayload() });
         cart.food = []; cart.foodBiz = null; saveCart(); loading(false); afterCreate(r);
       } catch (x) { loading(false); $('#ckErr').textContent = x.message; }
     };

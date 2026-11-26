@@ -1231,7 +1231,8 @@ function createCore(env) {
       if (['delivery', 'pickup'].indexOf(p.fulfillment) < 0) err('Choose delivery or pick-up.');
       var ok = (pm === 'cod' && p.fulfillment === 'delivery' && F.codEnabled) || (pm === 'pickup' && p.fulfillment === 'pickup') || (pm === 'online' && F.onlineEnabled) || (pm === 'transfer' && st.transferEnabled);
       if (!ok) err('That payment option is not available.');
-      var q = Pricing.food(cat, p); if (q.error) err(q.error);
+      if (p.fulfillment === 'delivery' && (p.lat == null || p.lng == null || !isFinite(+p.lat) || !isFinite(+p.lng))) err('Pin your delivery location on the map.');
+      var q = Pricing.food(cat, { bizId: p.bizId, lines: p.lines, fulfillment: p.fulfillment, lat: p.lat, lng: p.lng }); if (q.error) err(q.error);
       if (pm === 'cod') { var cb = Rules.codBlock(st, Rules.completedCount(await allBookings(), who.email), q.total, me.created); if (cb) err(cb); }
       drafts.push({ kind: 'food', bizId: F.bizId || 'pahuway', lines: q.lines, quote: q, payMethod: pm, fulfillment: p.fulfillment, landmark: String(p.landmark || '').slice(0, 200), lat: p.lat, lng: p.lng, dueNow: Rules.NONCASH.indexOf(pm) >= 0 ? q.total : 0 });
     } else {
@@ -2301,12 +2302,12 @@ function staffLogin(portal, onDone) {
   };
 }
 function loadMap(elId, lat, lng, ready, failMsg) {
-  const fail = () => { const m = document.getElementById(elId); if (m) m.outerHTML = '<div class="warn">' + (failMsg || 'The map could not load here. Choose your distance below instead.') + '</div>'; };
+  const fail = () => { const m = document.getElementById(elId); if (m) m.outerHTML = '<div class="warn">' + (failMsg || 'The map could not load here. Tap <b>Use my current location</b> below to set your delivery location.') + '</div>'; };
   const init = () => {
     if (!window.L || !document.getElementById(elId)) return fail();
     const map = L.map(elId).setView([lat, lng], 14); window._map = map;
     let tileErr = 0;
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).on('tileerror', () => { if (++tileErr === 4) toast('Map tiles are not loading — you can choose your distance instead.'); }).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).on('tileerror', () => { if (++tileErr === 4) toast('Map tiles are not loading — you can tap Use my current location instead.'); }).addTo(map);
     ready(map); setTimeout(() => map.invalidateSize(), 100);
   };
   if (window.L) return init();
@@ -3125,15 +3126,13 @@ function checkoutBooking() {
 function checkoutFood() {
   requireSignIn(() => {
     const F = cartStore(), p = session.profile;
-    const st = { ful: F.deliveryEnabled ? 'delivery' : 'pickup', lat: null, lng: null, band: null };
-    const bands = Pricing.bands(F);
+    const st = { ful: F.deliveryEnabled ? 'delivery' : 'pickup', lat: null, lng: null };
     openSheet(`<div class="sbody"><h2>Checkout — ${esc(F.storeName)}</h2>
       <div class="opts" style="margin-top:12px">${F.deliveryEnabled ? `<label><input type="radio" name="ful" value="delivery" ${st.ful === 'delivery' ? 'checked' : ''}> ${ic('scooter')} Delivery</label>` : ''}${F.pickupEnabled ? `<label><input type="radio" name="ful" value="pickup" ${st.ful === 'pickup' ? 'checked' : ''}> ${ic('store')} Pick-up</label>` : ''}</div>
       <div id="delBox">
         <div class="field mt"><label>Pin your delivery location</label><span class="hint">Tap the map or drag the pin. Fee is based on distance from ${esc(F.storeName)}.</span></div>
         <div class="map" id="map"></div>
         <button class="btn ghost sm mt" id="geoBtn" type="button">${ic('nav')} Use my current location</button>
-        <div class="field mt"><label>Or choose your distance from the restaurant</label><select id="band"><option value="">— select if you can't use the map —</option>${bands.map((b, i) => `<option value="${i}">Within ${b.upToKm} km — ${peso(b.fee)}</option>`).join('')}</select></div>
         <div class="field mt"><label>House / landmark for the rider</label><input id="lmk" value="${esc(p.address)}"></div>
       </div>
       <div id="pickBox" class="warn" style="display:none">Pick up at ${esc(F.storeName)}, ${esc(F.address)}. We'll text you when your order is ready.</div>
@@ -3157,7 +3156,7 @@ function checkoutFood() {
       $('#ftrBox').style.display = (document.querySelector('input[name=pay]:checked') || {}).value === 'transfer' ? '' : 'none';
       $('#codWhy').innerHTML = codWhy ? `<div class="hint" data-codwhy>${ic('cash', 14)} ${esc(codWhy)}</div>` : '';
     };
-    const quote = () => Pricing.food(CAT, { bizId: F.bizId, lines: cart.food, fulfillment: st.ful, lat: st.lat, lng: st.lng, band: st.lat == null ? (st.band === '' ? null : st.band) : null });
+    const quote = () => Pricing.food(CAT, { bizId: F.bizId, lines: cart.food, fulfillment: st.ful, lat: st.lat, lng: st.lng });
     const calc = () => {
       $('#delBox').style.display = st.ful === 'delivery' ? '' : 'none'; $('#pickBox').style.display = st.ful === 'pickup' ? '' : 'none';
       payOpts();
@@ -3175,8 +3174,7 @@ function checkoutFood() {
     };
     document.querySelectorAll('input[name=ful]').forEach(r => r.addEventListener('change', () => { st.ful = r.value; calc(); if (st.ful === 'delivery') setTimeout(() => window._map && window._map.invalidateSize(), 50); }));
     $('#payOpts').addEventListener('change', calc);
-    $('#band').addEventListener('change', () => { st.band = $('#band').value; if (st.band !== '') { st.lat = st.lng = null; if (window._mk) window._mk.setOpacity(.4); } calc(); });
-    const setPin = (lat, lng) => { st.lat = +lat.toFixed(6); st.lng = +lng.toFixed(6); $('#band').value = ''; st.band = null; if (window._mk) { window._mk.setLatLng([lat, lng]).setOpacity(1); } calc(); };
+    const setPin = (lat, lng) => { st.lat = +lat.toFixed(6); st.lng = +lng.toFixed(6); if (window._mk) { window._mk.setLatLng([lat, lng]).setOpacity(1); } calc(); };
     $('#geoBtn').onclick = () => {
       if (!navigator.geolocation) { toast('Location is not available on this device. Tap the map instead.'); return; }
       $('#geoBtn').disabled = true; $('#geoBtn').textContent = 'Finding your location…';
@@ -3198,7 +3196,7 @@ function checkoutFood() {
       if (!pay) { $('#ckErr').textContent = 'Choose a payment option.'; return; }
       loading(true, 'Placing your order…');
       try {
-        const r = await api('createBooking', { token: session.token, kind: 'food', bizId: F.bizId, lines: cart.food, fulfillment: st.ful, lat: st.lat, lng: st.lng, band: st.lat == null && st.band !== '' ? st.band : null, landmark: st.ful === 'delivery' ? $('#lmk').value.trim() : '', payMethod: pay, notes: $('#ckN').value.trim(), proofPhoto: pay === 'transfer' ? UP.fProof || '' : '', ...promoPayload() });
+        const r = await api('createBooking', { token: session.token, kind: 'food', bizId: F.bizId, lines: cart.food, fulfillment: st.ful, lat: st.lat, lng: st.lng, landmark: st.ful === 'delivery' ? $('#lmk').value.trim() : '', payMethod: pay, notes: $('#ckN').value.trim(), proofPhoto: pay === 'transfer' ? UP.fProof || '' : '', ...promoPayload() });
         cart.food = []; cart.foodBiz = null; saveCart(); loading(false); afterCreate(r);
       } catch (x) { loading(false); $('#ckErr').textContent = x.message; }
     };
