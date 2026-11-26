@@ -594,6 +594,7 @@ footer .fown span{display:inline}
 .icalst{margin-top:10px;padding:10px 12px;border-radius:10px;background:#eaf6ee;border:1px solid #bfe3cb;color:#1d5b33;font-size:13px}.icalst.bad{background:#fdecea;border-color:#f3c3bc;color:#9b2c1f}
 .copyrow{display:flex;gap:8px}.copyrow input{flex:1;min-width:0;border:1.5px solid var(--line);border-radius:10px;padding:9px 12px;background:#f8f7f3;font-size:13px}
 .soonwarn{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.dangerbtn2{color:var(--coral-d,#c4561c)!important;border-color:#f3c3bc!important}
 
 </style>
 </head>
@@ -969,6 +970,15 @@ var Rules = {
     var t = Date.parse(created); return isNaN(t) ? true : new Date(t + 8 * 3600e3).toISOString().slice(0, 10) < cut;
   },
   completedCount: function (list, email) { return (list || []).filter(function (b) { return (!email || b.email === email) && b.status === 'Completed'; }).length; },
+  /* Customers can cancel an order or booking that is not paid yet and not being prepared / in progress (or while still finding a rider) */
+  CUST_CANCEL: ['Awaiting Payment', 'Finding Rider', 'New', 'Accepted'],
+  custCanCancel: function (b) {
+    if (!b || Rules.CUST_CANCEL.indexOf(b.status) < 0) return false;
+    if (b.status === 'Finding Rider') return true;
+    if (b.payStatus === 'Paid' || b.payStatus === 'Refunded') return false;
+    if (b.payMethod === 'transfer' && b.proofFile) return false;   // payment proof sent: the store checks it first
+    return true;
+  },
   next: function (b) { var f = Rules.flow(b), i = f.indexOf(b.status); return i >= 0 && i < f.length - 1 ? f[i + 1] : null; },
   /* Which status changes each role may make */
   allowed: function (b, actor) {
@@ -981,7 +991,7 @@ var Rules = {
       if (['New', 'Payment Confirmed'].indexOf(b.status) >= 0) out.push('Rejected');
       return out;
     }
-    if (actor.role === 'customer' && b.email === actor.email && b.status === 'Finding Rider') return ['Cancelled'];   // before a rider accepts
+    if (actor.role === 'customer' && b.email === actor.email) return Rules.custCanCancel(b) ? ['Cancelled'] : [];
     if (actor.role === 'rider' && b.rider === actor.email && b.riderAccepted) {
       if (['Ready for Pick-up', 'Preparing'].indexOf(b.status) >= 0) out.push('Out for Delivery');
       if (b.status === 'Out for Delivery') out.push('Delivered');
@@ -2055,7 +2065,18 @@ function createCore(env) {
     var others = b.offer.riders.filter(function (e) { return e !== who.email; }); if (others.length) await event('unassigned', 'Delivery request ' + b.ref + ' was taken by another rider', others.map(function (e) { return 'rider:' + e; }), b.ref, b.bizId, [], '', '', who.email);
     return { booking: strip(b) };
   };
-  A.custCancel = async function (p) { var who = await auth(p.token, 'customer'), b = await getB(p.ref); if (b.email !== who.email) err('Booking not found.'); if (b.status !== 'Finding Rider') err('This order can no longer be cancelled here. Message the store.'); return { booking: strip(await setStatus(who, p.ref, 'Cancelled', 'Cancelled by the customer while finding a rider' + (b.payStatus === 'Paid' ? '. Refund due.' : ''))) }; };
+  A.custCancel = async function (p) {
+    var who = await auth(p.token, 'customer'), b = await getB(p.ref); if (b.email !== who.email) err('Booking not found.');
+    if (b.payMethod === 'online' && b.status === 'Awaiting Payment' && b.hitpayId && await checkHitpay(b.group)) err('We already received your payment for ' + b.ref + ', so it can no longer be cancelled here. Message the store.');
+    b = await getB(p.ref);
+    if (!Rules.custCanCancel(b)) err(b.payStatus === 'Paid' ? 'This is already paid, so it can no longer be cancelled here. Message the store about a refund.' : b.payMethod === 'transfer' && b.proofFile ? 'Your payment proof is being checked. Message the store to cancel.' : 'This can no longer be cancelled here (it is already being prepared or in progress). Message the store.');
+    /* an unpaid online payment link covers the whole group, so the whole group is cancelled */
+    var group = b.payMethod === 'online' && b.status === 'Awaiting Payment' ? (await allBookings()).filter(function (x) { return x.group === b.group && x.status === 'Awaiting Payment'; }) : [b];
+    if (b.hitpayId && b.status === 'Awaiting Payment' && env.hitpay.cancel) await env.hitpay.cancel(b.hitpayId);
+    var out = [];
+    for (var i = 0; i < group.length; i++) out.push(strip(await setStatus(who, group[i].ref, 'Cancelled', 'Cancelled by the customer' + (group[i].payStatus === 'Paid' ? '. Refund due.' : ''))));
+    return { booking: out.filter(function (x) { return x.ref === p.ref; })[0] || out[0], bookings: out };
+  };
   A.rRespond = async function (p) {
     var who = await auth(p.token, 'rider'), b = await getB(p.ref); if (b.rider !== who.email) err('This delivery is not assigned to you.');
     if (p.accept) { b.riderAccepted = true; } else { b.rider = ''; b.riderAccepted = false; }
@@ -3734,7 +3755,7 @@ function bookingCard(b) {
       ${b.status === 'Awaiting Payment' && b.payUrl === 'demo' ? `<button class="btn sm" data-demopay="${esc(b.group)}">Pay ${peso(b.dueNow)}</button>` : ''}
       ${b.status === 'Awaiting Payment' && b.payMethod === 'transfer' ? `<button class="btn ghost sm" data-proof="${esc(b.group)}">${ic('upload')} ${b.proofFile ? 'Replace' : 'Upload'} payment proof</button>` : ''}
       ${canTrack(b) ? `<button class="btn sm track" onclick="Track.open('${esc(b.ref)}',session.token)">${ic('locate')} ${Rules.trackable(b) ? 'Track rider live' : 'Rider & map'}</button>` : ''}
-      <button class="btn ghost sm" onclick="Chat.open({ref:'${esc(b.ref)}'})">${ic('chat')} Message ${esc(bizName(b.bizId))}</button>${b.rider && !Rules.CLOSED.includes(b.status) ? `<button class="btn ghost sm" onclick="Chat.open({ref:'${esc(b.ref)}',chan:'rider'})">${ic('bike')} Message rider</button>` : ''}</div>
+      ${Rules.custCanCancel(b) ? `<button class="btn ghost sm dangerbtn2" onclick="custCancel('${esc(b.ref)}')">${ic('x', 14)} Cancel ${b.kind === 'food' ? 'order' : 'booking'}</button>` : ''}<button class="btn ghost sm" onclick="Chat.open({ref:'${esc(b.ref)}'})">${ic('chat')} Message ${esc(bizName(b.bizId))}</button>${b.rider && !Rules.CLOSED.includes(b.status) ? `<button class="btn ghost sm" onclick="Chat.open({ref:'${esc(b.ref)}',chan:'rider'})">${ic('bike')} Message rider</button>` : ''}</div>
     ${activityLog(b)}</div>`;
 }
 /* ===== MY ORDERS & BOOKINGS: every order and booking, its status, activity log, rider and live map ===== */
@@ -3743,12 +3764,13 @@ const canTrack = b => b.kind === 'food' && b.fulfillment === 'delivery' && !!b.r
 function riderBlock(b) {
   if (b.kind !== 'food' || b.fulfillment !== 'delivery' || Rules.CLOSED.includes(b.status) && b.status !== 'Completed') return '';
   const r = b.riderInfo;
-  if (!b.rider) return Rules.DELIVERED.includes(b.status) ? '' : b.status === 'Finding Rider' ? `<div class="rcard wait finding"><span class="spin"></span><div><b>Finding a nearby rider…</b><span class="hint">Your order goes to ${esc(bizName(b.bizId))} as soon as a rider accepts.</span></div><button class="btn ghost sm" onclick="custCancel('${esc(b.ref)}')">Cancel order</button></div>` : b.status === 'Awaiting Payment' ? '' : `<div class="rcard wait">${ic('bike', 18)}<div><b>Rider</b><span class="hint">Finding a rider…</span></div></div>`;
+  if (!b.rider) return Rules.DELIVERED.includes(b.status) ? '' : b.status === 'Finding Rider' ? `<div class="rcard wait finding"><span class="spin"></span><div><b>Finding a nearby rider…</b><span class="hint">Your order goes to ${esc(bizName(b.bizId))} as soon as a rider accepts.</span></div></div>` : b.status === 'Awaiting Payment' ? '' : `<div class="rcard wait">${ic('bike', 18)}<div><b>Rider</b><span class="hint">Finding a rider…</span></div></div>`;
   const veh = [r && r.vehicle, r && r.plate].filter(Boolean).join(' · ');
   const st = Rules.DELIVERED.includes(b.status) ? 'Delivered your order' : !b.riderAccepted ? 'Waiting for the rider to accept' : b.status === 'Out for Delivery' ? 'On the way to you' : b.status === 'Ready for Pick-up' ? 'Picking up your order' : 'Heading to the store';
   return `<div class="rcard">${ic('bike', 18)}<div><b>${esc(r ? r.name : 'Your rider')}</b><span class="hint">${esc(st)}${veh ? ' · ' + esc(veh) : ''}</span></div>${r && r.phone && canTrack(b) ? `<a class="btn ghost sm" href="tel:${esc(String(r.phone).replace(/\s/g, ''))}">${ic('phone', 14)} Call</a>` : ''}</div>`;
 }
-async function custCancel(ref) { if (!confirm('Cancel order ' + ref + '?')) return; loading(true, 'Cancelling…'); try { await api('custCancel', { token: session.token, ref }); loading(false); toast('Order cancelled'); currentView === 'orders' ? renderOrders(true) : refreshActive(); } catch (x) { loading(false); toast(x.message); } }
+async function custCancel(ref) { const b = (window._myB || []).find(x => x.ref === ref) || {}, grp = b.payMethod === 'online' && b.status === 'Awaiting Payment' ? (window._myB || []).filter(x => x.group === b.group && x.status === 'Awaiting Payment' && x.ref !== ref) : [];
+  if (!confirm('Cancel ' + (b.kind === 'food' ? 'order ' : 'booking ') + ref + '?' + (grp.length ? '\n\nThis also cancels ' + grp.map(x => x.ref).join(', ') + ' (same payment).' : '') + (b.payStatus === 'Paid' ? '\n\nYou already paid; the store will process your refund.' : ''))) return; loading(true, 'Cancelling…'); try { await api('custCancel', { token: session.token, ref }); loading(false); toast('Order cancelled'); currentView === 'orders' ? renderOrders(true) : refreshActive(); } catch (x) { loading(false); toast(x.message); } }
 function activityLog(b) {
   const h = (b.history || []).slice().reverse(); if (!h.length) return '';
   const who = x => x.role === 'customer' || !x.role ? '' : x.role === 'rider' ? 'Rider' : x.role === 'system' ? '' : x.role === 'super' ? 'Tara Romblon' : bizName(b.bizId);

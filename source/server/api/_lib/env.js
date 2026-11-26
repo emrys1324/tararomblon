@@ -125,6 +125,10 @@ function createEnv() {
       if (!r.ok || !j.url) throw new Error('Payment link could not be created. Please try again or contact us. (' + (j.message || r.status) + ')');
       return { id: j.id, url: j.url };
     },
+    async cancel(id) {
+      const key = E('HITPAY_API_KEY'); if (!key || !id) return;
+      await fetch(hitpay.base() + 'payment-requests/' + enc(id), { method: 'DELETE', headers: { 'X-BUSINESS-API-KEY': key, 'X-Requested-With': 'XMLHttpRequest' } }).catch(() => {});
+    },
     async status(id) {
       const key = E('HITPAY_API_KEY'); if (!key || !id) return '';
       const r = await fetch(hitpay.base() + 'payment-requests/' + enc(id), { headers: { 'X-BUSINESS-API-KEY': key, 'X-Requested-With': 'XMLHttpRequest' } });

@@ -232,6 +232,15 @@ var Rules = {
     var t = Date.parse(created); return isNaN(t) ? true : new Date(t + 8 * 3600e3).toISOString().slice(0, 10) < cut;
   },
   completedCount: function (list, email) { return (list || []).filter(function (b) { return (!email || b.email === email) && b.status === 'Completed'; }).length; },
+  /* Customers can cancel an order or booking that is not paid yet and not being prepared / in progress (or while still finding a rider) */
+  CUST_CANCEL: ['Awaiting Payment', 'Finding Rider', 'New', 'Accepted'],
+  custCanCancel: function (b) {
+    if (!b || Rules.CUST_CANCEL.indexOf(b.status) < 0) return false;
+    if (b.status === 'Finding Rider') return true;
+    if (b.payStatus === 'Paid' || b.payStatus === 'Refunded') return false;
+    if (b.payMethod === 'transfer' && b.proofFile) return false;   // payment proof sent: the store checks it first
+    return true;
+  },
   next: function (b) { var f = Rules.flow(b), i = f.indexOf(b.status); return i >= 0 && i < f.length - 1 ? f[i + 1] : null; },
   /* Which status changes each role may make */
   allowed: function (b, actor) {
@@ -244,7 +253,7 @@ var Rules = {
       if (['New', 'Payment Confirmed'].indexOf(b.status) >= 0) out.push('Rejected');
       return out;
     }
-    if (actor.role === 'customer' && b.email === actor.email && b.status === 'Finding Rider') return ['Cancelled'];   // before a rider accepts
+    if (actor.role === 'customer' && b.email === actor.email) return Rules.custCanCancel(b) ? ['Cancelled'] : [];
     if (actor.role === 'rider' && b.rider === actor.email && b.riderAccepted) {
       if (['Ready for Pick-up', 'Preparing'].indexOf(b.status) >= 0) out.push('Out for Delivery');
       if (b.status === 'Out for Delivery') out.push('Delivered');
@@ -1316,7 +1325,18 @@ function createCore(env) {
     var others = b.offer.riders.filter(function (e) { return e !== who.email; }); if (others.length) await event('unassigned', 'Delivery request ' + b.ref + ' was taken by another rider', others.map(function (e) { return 'rider:' + e; }), b.ref, b.bizId, [], '', '', who.email);
     return { booking: strip(b) };
   };
-  A.custCancel = async function (p) { var who = await auth(p.token, 'customer'), b = await getB(p.ref); if (b.email !== who.email) err('Booking not found.'); if (b.status !== 'Finding Rider') err('This order can no longer be cancelled here. Message the store.'); return { booking: strip(await setStatus(who, p.ref, 'Cancelled', 'Cancelled by the customer while finding a rider' + (b.payStatus === 'Paid' ? '. Refund due.' : ''))) }; };
+  A.custCancel = async function (p) {
+    var who = await auth(p.token, 'customer'), b = await getB(p.ref); if (b.email !== who.email) err('Booking not found.');
+    if (b.payMethod === 'online' && b.status === 'Awaiting Payment' && b.hitpayId && await checkHitpay(b.group)) err('We already received your payment for ' + b.ref + ', so it can no longer be cancelled here. Message the store.');
+    b = await getB(p.ref);
+    if (!Rules.custCanCancel(b)) err(b.payStatus === 'Paid' ? 'This is already paid, so it can no longer be cancelled here. Message the store about a refund.' : b.payMethod === 'transfer' && b.proofFile ? 'Your payment proof is being checked. Message the store to cancel.' : 'This can no longer be cancelled here (it is already being prepared or in progress). Message the store.');
+    /* an unpaid online payment link covers the whole group, so the whole group is cancelled */
+    var group = b.payMethod === 'online' && b.status === 'Awaiting Payment' ? (await allBookings()).filter(function (x) { return x.group === b.group && x.status === 'Awaiting Payment'; }) : [b];
+    if (b.hitpayId && b.status === 'Awaiting Payment' && env.hitpay.cancel) await env.hitpay.cancel(b.hitpayId);
+    var out = [];
+    for (var i = 0; i < group.length; i++) out.push(strip(await setStatus(who, group[i].ref, 'Cancelled', 'Cancelled by the customer' + (group[i].payStatus === 'Paid' ? '. Refund due.' : ''))));
+    return { booking: out.filter(function (x) { return x.ref === p.ref; })[0] || out[0], bookings: out };
+  };
   A.rRespond = async function (p) {
     var who = await auth(p.token, 'rider'), b = await getB(p.ref); if (b.rider !== who.email) err('This delivery is not assigned to you.');
     if (p.accept) { b.riderAccepted = true; } else { b.rider = ''; b.riderAccepted = false; }

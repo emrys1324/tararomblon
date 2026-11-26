@@ -608,5 +608,19 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   await ok('setStatus', { token: admin, ref: sb2.refs[0], status: 'Cancelled' }).catch(() => {});
   await ok('adminSaveIcal', { token: admin, stayId: sid, urls: [] });
 
+  console.log('Customers cancel unpaid orders and bookings');
+  const pu1 = await ok('createBooking', { token: cust, kind: 'food', bizId: 'pahuway', fulfillment: 'pickup', payMethod: 'pickup', lines: [{ itemId: item.id, qty: 1, addons: [] }] });
+  const c1 = await ok('custCancel', { token: cust, ref: pu1.refs[0] }); assert(c1.booking.status === 'Cancelled' && DB.events.some(r => r.data.ref === pu1.refs[0] && r.data.aud.includes('biz:pahuway') && /Cancelled/.test(r.data.text)), 'unpaid pick-up order cancelled by the customer; store notified');
+  const pu2 = await ok('createBooking', { token: cust, kind: 'food', bizId: 'pahuway', fulfillment: 'pickup', payMethod: 'pickup', lines: [{ itemId: item.id, qty: 1, addons: [] }] });
+  await ok('setStatus', { token: pm2, ref: pu2.refs[0], status: 'Accepted' }); await ok('setStatus', { token: pm2, ref: pu2.refs[0], status: 'Preparing' });
+  await fails('custCancel', { token: cust, ref: pu2.refs[0] }, /already being prepared/);
+  const on1 = await ok('createBooking', { token: cust, kind: 'food', bizId: 'pahuway', fulfillment: 'pickup', payMethod: 'online', lines: [{ itemId: item.id, qty: 1, addons: [] }] });
+  const c3 = await ok('custCancel', { token: cust, ref: on1.refs[0] }); assert(c3.booking.status === 'Cancelled', 'unpaid online order cancelled (payment link closed)');
+  const on2 = await ok('createBooking', { token: cust, kind: 'food', bizId: 'pahuway', fulfillment: 'pickup', payMethod: 'online', lines: [{ itemId: item.id, qty: 1, addons: [] }] });
+  await ok('setStatus', { token: admin, ref: on2.refs[0], status: 'Payment Confirmed' });
+  await fails('custCancel', { token: cust, ref: on2.refs[0] }, /already paid|no longer be cancelled/);
+  await fails('custCancel', { token: cTok, ref: pu2.refs[0] }, /not found/);
+  assert(!Rules.custCanCancel({ status: 'Awaiting Payment', payStatus: 'Pending', payMethod: 'transfer', proofFile: 'x' }) && Rules.custCanCancel({ status: 'Awaiting Payment', payStatus: 'Pending', payMethod: 'transfer' }) && !Rules.custCanCancel({ status: 'Out for Delivery', payStatus: 'Unpaid' }), 'transfer with proof sent, or orders on the way, cannot be cancelled by the customer');
+
   console.log('\nALL PASSED · ' + calls + ' simulated network calls · ' + MAILS.length + ' emails');
 })().catch(e => { console.error('\nFAILED:', e.stack || e); process.exit(1); });

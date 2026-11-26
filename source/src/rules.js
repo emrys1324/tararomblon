@@ -40,6 +40,15 @@ var Rules = {
     var t = Date.parse(created); return isNaN(t) ? true : new Date(t + 8 * 3600e3).toISOString().slice(0, 10) < cut;
   },
   completedCount: function (list, email) { return (list || []).filter(function (b) { return (!email || b.email === email) && b.status === 'Completed'; }).length; },
+  /* Customers can cancel an order or booking that is not paid yet and not being prepared / in progress (or while still finding a rider) */
+  CUST_CANCEL: ['Awaiting Payment', 'Finding Rider', 'New', 'Accepted'],
+  custCanCancel: function (b) {
+    if (!b || Rules.CUST_CANCEL.indexOf(b.status) < 0) return false;
+    if (b.status === 'Finding Rider') return true;
+    if (b.payStatus === 'Paid' || b.payStatus === 'Refunded') return false;
+    if (b.payMethod === 'transfer' && b.proofFile) return false;   // payment proof sent: the store checks it first
+    return true;
+  },
   next: function (b) { var f = Rules.flow(b), i = f.indexOf(b.status); return i >= 0 && i < f.length - 1 ? f[i + 1] : null; },
   /* Which status changes each role may make */
   allowed: function (b, actor) {
@@ -52,7 +61,7 @@ var Rules = {
       if (['New', 'Payment Confirmed'].indexOf(b.status) >= 0) out.push('Rejected');
       return out;
     }
-    if (actor.role === 'customer' && b.email === actor.email && b.status === 'Finding Rider') return ['Cancelled'];   // before a rider accepts
+    if (actor.role === 'customer' && b.email === actor.email) return Rules.custCanCancel(b) ? ['Cancelled'] : [];
     if (actor.role === 'rider' && b.rider === actor.email && b.riderAccepted) {
       if (['Ready for Pick-up', 'Preparing'].indexOf(b.status) >= 0) out.push('Out for Delivery');
       if (b.status === 'Out for Delivery') out.push('Delivered');
