@@ -23,7 +23,7 @@ const DEFAULT_CATALOG = {
 • The security deposit is paid at pick-up and returned in full when the scooter is returned in good condition.
 • Fuel is not included. Return the scooter with the same fuel level.
 • The renter is responsible for damage, loss and traffic violations during the rental.
-• Rental agreement is with MJV Services OPC.`
+• Rental agreement is with Beyond Tech Solutions.`
   },
   settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
   businesses: [

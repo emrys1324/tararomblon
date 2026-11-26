@@ -5,7 +5,7 @@ Four web apps share one backend:
 | App | File | Who uses it |
 |---|---|---|
 | Customer | `index.html` | Tourists: stays, scooter rentals, food, messages |
-| Super Admin | `admin.html` | MJV Services OPC (2 users) |
+| Super Admin | `admin.html` | Beyond Tech Solutions (2 users) |
 | Merchant | `merchant.html` | Merchant Admin and Merchant Staff of each business |
 | Rider | `rider.html` | Delivery riders |
 

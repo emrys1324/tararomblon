@@ -1,7 +1,7 @@
 /* ===== CORE BACKEND — one implementation, used by demo mode (browser) and by the Vercel + Supabase API ===== */
 var DEFAULT_SETTINGS = {
   requireIdVerification: true, idUploadAtCheckout: 'optional', proofUpload: 'required', transferEnabled: true,
-  transferInstructions: 'Send your payment to GCash 0917 000 0000 (MJV Services OPC) or BPI 0000-0000-00 (MJV Services OPC), then upload a screenshot of your receipt.',
+  transferInstructions: 'Send your payment to GCash 0917 000 0000 (Beyond Tech Solutions) or BPI 0000-0000-00 (Beyond Tech Solutions), then upload a screenshot of your receipt.',
   riderSharePct: 100, codCashTo: 'merchant', codMinCompleted: 3, codMax: 500, riderDispatch: true, dispatchKm: 5, dispatchWidenMin: 3, dispatchAlertMin: 15, codExemptBefore: '2026-11-21', email: { customers: true, merchants: true, admins: true, riders: true },
   /* Stays and Things to do show "Coming soon" until a Super Admin opens them in Settings */
   staysLive: false, toursLive: false
@@ -491,7 +491,7 @@ function createCore(env) {
       a.licenseFile = (await env.files.save(f.licensePhoto, 'license-' + a.email, true)).id;
       await env.db.put(T.app, a);
       await event('application', 'New rider application: ' + a.name + ' (' + a.town + ')', ['super'], '', '', ['super'], 'New rider application: ' + a.name, a.name + ' - ' + a.vehicle + ' ' + a.plate + ' - ' + a.town + '\n' + a.phone + ' ' + a.email + "\nDriver's license " + a.licenseNo + '\n\nReview it in the Super Admin app > Rider applications.');
-      try { await env.mail(a.email, 'We received your rider application', 'Hi ' + a.name + ',\n\nThanks for applying to deliver with us. We will review your details and driver\'s license and contact you within 3 working days.\n\nMJV Services OPC'); } catch (x) { }
+      try { await env.mail(a.email, 'We received your rider application', 'Hi ' + a.name + ',\n\nThanks for applying to deliver with us. We will review your details and driver\'s license and contact you within 3 working days.\n\nBeyond Tech Solutions'); } catch (x) { }
       return {};
     }
     a.platformFee = { type: 'percent', value: 10 };
@@ -499,7 +499,7 @@ function createCore(env) {
     for (var i = 0; i < ph.length; i++) { try { a.photos.push((await env.files.save(ph[i], 'app-' + a.businessName, false)).url); } catch (x) { } }
     await env.db.put(T.app, a);
     await event('application', 'New business application: ' + a.businessName + ' (' + a.town + ')', ['super'], '', '', ['super'], 'New business application: ' + a.businessName, a.businessName + ' - ' + a.type + ' - ' + a.town + '\n' + a.contactName + ' ' + a.phone + ' ' + a.email + '\n\n' + a.description);
-    try { await env.mail(a.email, 'We received your application - ' + a.businessName, 'Hi ' + a.contactName + ',\n\nThanks for applying to list ' + a.businessName + '. Our team will contact you within 3 working days.\n\nMJV Services OPC'); } catch (x) { }
+    try { await env.mail(a.email, 'We received your application - ' + a.businessName, 'Hi ' + a.contactName + ',\n\nThanks for applying to list ' + a.businessName + '. Our team will contact you within 3 working days.\n\nBeyond Tech Solutions'); } catch (x) { }
     return {};
   };
   /* customer sign-in & profile */
@@ -562,7 +562,7 @@ function createCore(env) {
     var e = low(p.email); if (!validEmail(e)) err('Enter a valid email address.');
     var n = await pwGate('rider:' + e), s = await env.db.get(T.staff, e);
     if (!s || s.role !== 'rider') { await env.cache.put('lgn_rider:' + e, String(n + 1), 900); err('This email is not registered as a rider. Tap "Create rider account" to apply.'); }
-    if (s.active === false) err('Your rider account is not active. Contact MJV Services OPC.');
+    if (s.active === false) err('Your rider account is not active. Contact Beyond Tech Solutions.');
     if (!s.pw) err('NO_PASSWORD: Your rider account has no password yet. Tap "Forgot password?" to set one.');
     if (!(await pwMatches(s, p.password))) await pwFail('rider:' + e, n);
     await env.cache.remove('lgn_rider:' + e);
@@ -666,7 +666,7 @@ function createCore(env) {
     return (same ? fmt(h[open[0]].open) + ' – ' + fmt(h[open[0]].close) : 'Hours vary by day') + (open.length < 7 ? ' (closed ' + DAYS.filter(function (d) { return open.indexOf(d) < 0; }).map(function (d) { return d.charAt(0).toUpperCase() + d.slice(1); }).join(', ') + ')' : ''); }
   A.mSaveLoyverse = async function (p) {
     var who = await auth(p.token, 'manager'), cat = await catalog(true), z = biz(cat, who.bizId);
-    if (!z || !(z.loyverseAllowed || z.id === 'pahuway')) err('Loyverse is not enabled for this business. Ask MJV Services OPC.');
+    if (!z || !(z.loyverseAllowed || z.id === 'pahuway')) err('Loyverse is not enabled for this business. Ask Beyond Tech Solutions.');
     var tok = str(p.loyverseToken, 200), sec = await secrets();
     if (tok && env.loyverse && env.loyverse.test) { try { await env.loyverse.test(tok); } catch (x) { err('Loyverse did not accept that token: ' + x.message); } }
     if (tok) sec['loyverse:' + z.id] = tok; else delete sec['loyverse:' + z.id];
@@ -717,7 +717,7 @@ function createCore(env) {
   /* staff sign-in */
   A.staffSendOtp = async function (p) {
     var e = low(p.email), s = await env.db.get(T.staff, e), roles = { admin: ['super'], merchant: ['manager', 'staff'], rider: ['rider'] }[p.portal] || [];
-    if (!s || roles.indexOf(s.role) < 0) err(p.portal === 'admin' ? 'This email is not a Super Admin.' : p.portal === 'rider' ? 'This email is not registered as a rider. Ask MJV Services OPC to add you.' : 'This email is not registered to a business. Ask your Merchant Admin or MJV Services OPC to add you.');
+    if (!s || roles.indexOf(s.role) < 0) err(p.portal === 'admin' ? 'This email is not a Super Admin.' : p.portal === 'rider' ? 'This email is not registered as a rider. Ask Beyond Tech Solutions to add you.' : 'This email is not registered to a business. Ask your Merchant Admin or Beyond Tech Solutions to add you.');
     return await code('staff:' + e, e, await catalog());
   };
   A.staffVerifyOtp = async function (p) {
@@ -743,11 +743,11 @@ function createCore(env) {
   };
   A.assignRider = async function (p) {
     var who = await auth(p.token), b = await getB(p.ref);
-    if (!(who.role === 'super' || ((who.role === 'manager' || who.role === 'staff') && b.bizId === who.bizId && !b.dispatch))) err(b.dispatch ? 'Riders accept delivery orders themselves. Ask MJV Services OPC if you need help.' : 'Not allowed.');
+    if (!(who.role === 'super' || ((who.role === 'manager' || who.role === 'staff') && b.bizId === who.bizId && !b.dispatch))) err(b.dispatch ? 'Riders accept delivery orders themselves. Ask Beyond Tech Solutions if you need help.' : 'Not allowed.');
     if (b.kind !== 'food' || b.fulfillment !== 'delivery') err('Only delivery orders can have a rider.');
     var r = p.rider ? await env.db.get(T.staff, low(p.rider)) : null; if (p.rider && (!r || r.role !== 'rider')) err('Rider not found.');
     var old = b.rider; b.rider = r ? r.email : ''; b.riderAccepted = false; b.updated = now(); await env.db.put(T.book, b);
-    if (r && b.dispatch && !old && b.status === 'Finding Rider') { b.offer = b.offer || { at: now(), round: 2, riders: [], declined: [] }; b.rider = ''; b.offer.riders = b.offer.riders.filter(function (e) { return e !== r.email; }).concat([r.email]); b.offer.closed = null; b.offer.declined = (b.offer.declined || []).filter(function (e) { return e !== r.email; }); await env.db.put(T.book, b); await event('offer', 'Delivery request ' + b.ref + ' sent to you by MJV Services OPC. Open the Rider app to accept.', ['rider:' + r.email], b.ref, b.bizId, ['rider:' + r.email], 'Delivery request ' + b.ref, summary(b), who.email); return { booking: strip(b) }; }
+    if (r && b.dispatch && !old && b.status === 'Finding Rider') { b.offer = b.offer || { at: now(), round: 2, riders: [], declined: [] }; b.rider = ''; b.offer.riders = b.offer.riders.filter(function (e) { return e !== r.email; }).concat([r.email]); b.offer.closed = null; b.offer.declined = (b.offer.declined || []).filter(function (e) { return e !== r.email; }); await env.db.put(T.book, b); await event('offer', 'Delivery request ' + b.ref + ' sent to you by Beyond Tech Solutions. Open the Rider app to accept.', ['rider:' + r.email], b.ref, b.bizId, ['rider:' + r.email], 'Delivery request ' + b.ref, summary(b), who.email); return { booking: strip(b) }; }
     if (r) await event('assigned', 'Delivery ' + b.ref + ' assigned to you - ' + (b.landmark || b.customer.address), ['rider:' + r.email, 'biz:' + b.bizId, 'super'], b.ref, b.bizId, ['rider:' + r.email], 'New delivery assigned: ' + b.ref, summary(b), who.email);
     if (old && old !== b.rider) await event('unassigned', 'Delivery ' + b.ref + ' was reassigned', ['rider:' + old], b.ref, b.bizId, [], '', '', who.email);
     return { booking: strip(b) };
