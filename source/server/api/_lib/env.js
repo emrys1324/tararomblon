@@ -48,6 +48,7 @@ function createEnv() {
       const rows = await rest(t + '?select=data&id=eq.' + enc(id) + '&limit=1');
       return rows[0] ? rows[0].data : null;
     },
+    async fresh(t, id) { const rows = await rest(tbl(t) + '?select=data&id=eq.' + enc(id) + '&limit=1'); const o = rows[0] ? rows[0].data : null; if (o) touch(t, o); return o; },
     async byToken(t, token) {
       if (!/^[A-Za-z0-9-]{20,80}$/.test(token)) return null;
       const rows = await rest(tbl(t) + '?select=data&data->tokens=cs.' + enc(JSON.stringify([token])) + '&limit=1');

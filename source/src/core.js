@@ -45,13 +45,28 @@ function createCore(env) {
   function strip(b, keep) { var c = clone(b); delete c.hitpayId; if (!keep) { delete c.adminNotes; } return c; }
 
   /* ---------- auth ---------- */
+  /* change a few fields on the latest copy of a record (never write back an older copy: it could drop a session created meanwhile on another device) */
+  async function patch(t, id, fn) { var g = env.db.fresh || env.db.get; var r = await g.call(env.db, t, id); if (!r) return null; fn(r); await env.db.put(t, r); return r; }
   function addToken(rec) { var t = env.uuid() + env.uuid().slice(0, 8); rec.tokens = [t].concat(rec.tokens || []).slice(0, 10); return t; }
+  /* every session is also kept on its own (cache table, 180 days), so a background save of the account can never sign someone out.
+     sessEpoch goes up on password reset / deactivation / role change, which ends all older sessions on purpose. */
+  var SESS_DAYS = 180;
+  async function remember(table, rec, t) { await env.cache.put('sess:' + t, table + '|' + (rec.id || rec.email) + '|' + (rec.sessEpoch || 0), SESS_DAYS * 86400); return t; }
+  async function fromSession(table, token) {
+    if (!/^[A-Za-z0-9-]{20,80}$/.test(String(token || ''))) return null;
+    var v = await env.cache.get('sess:' + token); if (!v) return null; var p = String(v).split('|'); if (p[0] !== table) return null;
+    var g = env.db.fresh || env.db.get, r = await g.call(env.db, table, p[1]); if (!r || String(r.sessEpoch || 0) !== p[2]) return null;
+    if ((r.tokens || []).indexOf(token) < 0) r = await patch(table, r.id || p[1], function (x) { x.tokens = [token].concat(x.tokens || []).slice(0, 10); });   /* heal */
+    return r;
+  }
   var reqBiz = ''; /* the business a merchant user is working on (sent by the Merchant app as "biz") */
   async function auth(token, need) {
     if (!token) err('Please sign in again.');
     var c = env.db.byToken ? await env.db.byToken(T.cust, token) : (await env.db.all(T.cust)).filter(function (x) { return (x.tokens || []).indexOf(token) >= 0; })[0];
+    if (!c) c = await fromSession(T.cust, token);
     if (c) { if (need && need !== 'customer') err('Not allowed.'); return { kind: 'customer', role: 'customer', email: c.email, name: c.name, rec: c }; }
     var s = env.db.byToken ? await env.db.byToken(T.staff, token) : (await staffAll()).filter(function (x) { return (x.tokens || []).indexOf(token) >= 0; })[0];
+    if (!s) s = await fromSession(T.staff, token);
     if (!s) err('Please sign in again.');
     var who = { kind: 'staff', role: s.role, bizId: s.bizId || '', email: s.email, name: s.name || s.email, rec: s };
     if (isMerchantRole(s.role)) {
@@ -567,12 +582,12 @@ function createCore(env) {
     var c = await env.db.get(T.cust, e), created = !c;
     if (!c) c = { id: e, email: e, name: g.name || '', phone: '', address: '', created: now(), verify: { status: 'unverified' }, signup: 'google' };
     else if (!c.name && g.name) c.name = g.name;
-    var t = addToken(c); await env.db.put(T.cust, c); return { token: t, profile: pubCust(c), created: created };
+    var t = addToken(c); await env.db.put(T.cust, c); await remember(T.cust, c, t); return { token: t, profile: pubCust(c), created: created };
   };
   A.verifyOtp = async function (p) {
     var e = low(p.email); await check('cust:' + e, p.code);
     var c = (await env.db.get(T.cust, e)) || { id: e, email: e, name: '', phone: '', address: '', created: now(), verify: { status: 'unverified' } };
-    var t = addToken(c); await env.db.put(T.cust, c); return { token: t, profile: pubCust(c) };
+    var t = addToken(c); await env.db.put(T.cust, c); await remember(T.cust, c, t); return { token: t, profile: pubCust(c) };
   };
   /* Customers: create an account with email + password, log in, reset a forgotten password */
   A.signUp = async function (p) {
@@ -582,7 +597,7 @@ function createCore(env) {
     if (c && c.pw) err('An account with this email already exists. Log in instead.');
     if (c) err('NO_PASSWORD: This email already has an account without a password. Tap "Forgot password?" to set one.');
     c = { id: e, email: e, name: str(p.name, 120), phone: '', address: '', created: now(), verify: { status: 'unverified' }, signup: 'password', pw: await makePw(p.password) };
-    var t = addToken(c); await env.db.put(T.cust, c); return { token: t, profile: pubCust(c), created: true };
+    var t = addToken(c); await env.db.put(T.cust, c); await remember(T.cust, c, t); return { token: t, profile: pubCust(c), created: true };
   };
   A.login = async function (p) {
     var e = low(p.email); if (!validEmail(e)) err('Enter a valid email address.');
@@ -591,7 +606,7 @@ function createCore(env) {
     if (!c.pw) err('NO_PASSWORD: This account has no password yet' + (c.signup === 'google' ? ' (you signed up with Google; you can keep using Continue with Google)' : '') + '. Tap "Forgot password?" to set one.');
     if (!(await pwMatches(c, p.password))) await pwFail('cust:' + e, n);
     await env.cache.remove('lgn_cust:' + e);
-    var t = addToken(c); await env.db.put(T.cust, c); return { token: t, profile: pubCust(c) };
+    var t = addToken(c); await env.db.put(T.cust, c); await remember(T.cust, c, t); return { token: t, profile: pubCust(c) };
   };
   /* Forgot password (customers and riders): a one-time code by email, then a new password */
   A.pwResetSend = async function (p) {
@@ -604,13 +619,13 @@ function createCore(env) {
     var e = low(p.email), kind = p.kind === 'rider' ? 'rider' : 'cust', tb = kind === 'rider' ? T.staff : T.cust;
     var pw = await makePw(p.password); await check('reset:' + kind + ':' + e, p.code);
     var rec = await env.db.get(tb, e); if (!rec || (kind === 'rider' && rec.role !== 'rider')) err('Account not found.');
-    rec.pw = pw; rec.tokens = []; var t = addToken(rec); await env.db.put(tb, rec); await env.cache.remove('lgn_' + kind + ':' + e);
+    rec.pw = pw; rec.tokens = []; rec.sessEpoch = (rec.sessEpoch || 0) + 1; var t = addToken(rec); await env.db.put(tb, rec); await remember(tb, rec, t); await env.cache.remove('lgn_' + kind + ':' + e);
     return kind === 'rider' ? { token: t, me: pubStaff(rec) } : { token: t, profile: pubCust(rec) };
   };
   A.changePassword = async function (p) {
     var who = await auth(p.token); if (who.kind !== 'customer' && who.role !== 'rider') err('Not allowed.');
     var rec = who.rec; if (rec.pw && !(await pwMatches(rec, p.current))) err('Your current password is incorrect.');
-    rec.pw = await makePw(p.password); rec.tokens = [p.token]; await env.db.put(who.kind === 'customer' ? T.cust : T.staff, rec); return {};
+    rec.pw = await makePw(p.password); rec.tokens = [p.token]; rec.sessEpoch = (rec.sessEpoch || 0) + 1; await env.db.put(who.kind === 'customer' ? T.cust : T.staff, rec); await remember(who.kind === 'customer' ? T.cust : T.staff, rec, p.token); return {};
   };
   /* Riders: sign in with email + password */
   A.riderLogin = async function (p) {
@@ -621,18 +636,17 @@ function createCore(env) {
     if (!s.pw) err('NO_PASSWORD: Your rider account has no password yet. Tap "Forgot password?" to set one.');
     if (!(await pwMatches(s, p.password))) await pwFail('rider:' + e, n);
     await env.cache.remove('lgn_rider:' + e);
-    var t = addToken(s); await env.db.put(T.staff, s); return { token: t, me: pubStaff(s) };
+    var t = null; s = await patch(T.staff, s.id || e, function (r) { t = addToken(r); }); await remember(T.staff, s, t); return { token: t, me: pubStaff(s) };
   };
   /* Phone notifications: public key, subscribe and unsubscribe this device */
   A.pushKey = async function () { return { key: env.pushKey ? await env.pushKey() : '' }; };
   A.pushSubscribe = async function (p) {
     var who = await auth(p.token), s = p.sub || {}; if (!s.endpoint || !/^https:\/\//.test(s.endpoint) || !s.keys || !s.keys.p256dh || !s.keys.auth) err('Notifications are not supported on this device.');
-    var rec = who.rec, sub = { endpoint: String(s.endpoint).slice(0, 800), keys: { p256dh: String(s.keys.p256dh).slice(0, 200), auth: String(s.keys.auth).slice(0, 100) }, at: now() };
-    rec.push = [sub].concat((rec.push || []).filter(function (x) { return x.endpoint !== sub.endpoint; })).slice(0, 6);
-    await env.db.put(who.kind === 'customer' ? T.cust : T.staff, rec); return { ok: true };
+    var sub = { endpoint: String(s.endpoint).slice(0, 800), keys: { p256dh: String(s.keys.p256dh).slice(0, 200), auth: String(s.keys.auth).slice(0, 100) }, at: now() };
+    await patch(who.kind === 'customer' ? T.cust : T.staff, who.rec.id || who.email, function (r) { r.push = [sub].concat((r.push || []).filter(function (x) { return x.endpoint !== sub.endpoint; })).slice(0, 6); }); return { ok: true };
   };
-  A.pushUnsubscribe = async function (p) { var who = await auth(p.token), rec = who.rec; rec.push = (rec.push || []).filter(function (x) { return x.endpoint !== p.endpoint; }); await env.db.put(who.kind === 'customer' ? T.cust : T.staff, rec); return {}; };
-  A.me = async function (p) { return { profile: pubCust((await auth(p.token, 'customer')).rec) }; };
+  A.pushUnsubscribe = async function (p) { var who = await auth(p.token); await patch(who.kind === 'customer' ? T.cust : T.staff, who.rec.id || who.email, function (r) { r.push = (r.push || []).filter(function (x) { return x.endpoint !== p.endpoint; }); }); return {}; };
+  A.me = async function (p) { var who = await auth(p.token, 'customer'); if (!(await env.cache.get('sess:' + p.token))) await remember(T.cust, who.rec, p.token); return { profile: pubCust(who.rec) }; };
   A.saveProfile = async function (p) {
     var who = await auth(p.token, 'customer'), c = who.rec, pr = p.profile || {};
     if (!pr.name || !pr.phone || !pr.address) err('Name, contact number and address are required.');
@@ -742,7 +756,7 @@ function createCore(env) {
       if (mine) { keep = keep.concat([{ bizId: bid, role: mine.role }]); if (mine.name) s.name = mine.name; if (mine.phone) s.phone = mine.phone; if (!roleIn(s, bid)) added.push(mine); }
       if (keep.length) out.push(setAccess(s, keep));
     });
-    team.forEach(function (u) { if (!byEmail[u.email]) { out.push(setAccess({ id: u.email, email: u.email, name: u.name, phone: u.phone, tokens: [] }, [{ bizId: bid, role: u.role }])); added.push(u); } });
+    team.forEach(function (u) { if (!byEmail[u.email]) { out.push(setAccess({ id: u.email, email: u.email, name: u.name, phone: u.phone, tokens: [], sessEpoch: Date.parse(now()) }, [{ bizId: bid, role: u.role }])); added.push(u); } });
     await env.db.replaceAll(T.staff, out);
     for (var i = 0; i < added.length; i++) { try { await env.mail(added[i].email, 'You have been added to ' + bizName(await catalog(), bid), 'Hi ' + (added[i].name || '') + ',\n\n' + who.name + ' added you as ' + Rules.ROLE_LABEL[added[i].role] + ' of ' + bizName(await catalog(), bid) + '. Sign in to the Merchant app with this email' + (byEmail[added[i].email] ? ' and pick the business at the top.' : '.') + (env.siteUrl ? '\n\n' + env.siteUrl.replace(/\/+$/, '') + '/merchant' : '')); } catch (x) { } }
     return { team: teamOf(out, bid) };
@@ -766,7 +780,7 @@ function createCore(env) {
   A.send = async function (p) { return await sendMsg(await auth(p.token), p); };
   A.feed = async function (p) {
     var who = await auth(p.token), aud = myAud(who), since = p.since || '';
-    if (who.role === 'rider') { who.rec.lastSeen = now(); await env.db.put(T.staff, who.rec); }
+    if (who.role === 'rider') await patch(T.staff, who.rec.id || who.email, function (r) { r.lastSeen = now(); });
     return { now: now(), events: (await env.db.tail(T.ev, 400)).filter(function (e) { return e.at > since && e.aud.some(function (a) { return aud.indexOf(a) >= 0; }); }).slice(-60) };
   };
   /* staff sign-in */
@@ -778,9 +792,9 @@ function createCore(env) {
   A.staffVerifyOtp = async function (p) {
     var e = low(p.email); await check('staff:' + e, p.code);
     var s = await env.db.get(T.staff, e); if (!s) err('Access removed.');
-    var t = addToken(s); await env.db.put(T.staff, s); return { token: t, me: pubStaff(s) };
+    var t = addToken(s); await env.db.put(T.staff, s); await remember(T.staff, s, t); return { token: t, me: pubStaff(s) };
   };
-  A.staffMe = async function (p) { return { me: pubStaff((await auth(p.token)).rec) }; };
+  A.staffMe = async function (p) { var who = await auth(p.token); if (!(await env.cache.get('sess:' + p.token))) await remember(T.staff, who.rec, p.token); return { me: pubStaff(who.rec) }; };
   A.riders = async function (p) { var who = await auth(p.token); if (['super', 'manager', 'staff'].indexOf(who.role) < 0) err('Not allowed.'); return { riders: (await staffAll()).filter(function (s) { return s.role === 'rider' && (!s.bizId || s.bizId === who.bizId || who.role === 'super'); }).map(pubStaff) }; };
   /* merchant */
   A.mBookings = async function (p) {
@@ -926,7 +940,7 @@ function createCore(env) {
   };
   /* rider */
   A.rOrders = async function (p) { var who = await auth(p.token, 'rider'); await sweepOffers(); var cat = await catalog(), all = await allBookings(); return { me: pubStaff(who.rec), offers: who.rec.available ? all.filter(function (b) { return b.dispatch && !b.rider && b.offer && !b.offer.closed && b.offer.riders.indexOf(who.email) >= 0 && (b.offer.declined || []).indexOf(who.email) < 0 && Rules.CLOSED.indexOf(b.status) < 0; }).map(function (b) { return offerView(b, cat, who.rec); }) : [], orders: (await allBookings()).filter(function (b) { return b.rider === who.email; }).map(function (b) { var c = strip(b); delete c.fee; delete c.discount; delete c.idFile; delete c.proofFile; return c; }) }; };
-  A.rAvailable = async function (p) { var who = await auth(p.token, 'rider'); who.rec.available = !!p.value; who.rec.lastSeen = now(); if (!p.value) { var still = (await allBookings()).some(function (b) { return b.rider === who.email && liveFor(b); }); if (!still) delete who.rec.loc; } await env.db.put(T.staff, who.rec); await event('rider', who.name + ' is now ' + (p.value ? 'available' : 'offline'), ['super'], '', '', []); return { me: pubStaff(who.rec) }; };
+  A.rAvailable = async function (p) { var who = await auth(p.token, 'rider'), still = !p.value && (await allBookings()).some(function (b) { return b.rider === who.email && liveFor(b); }); who.rec = await patch(T.staff, who.rec.id || who.email, function (r) { r.available = !!p.value; r.lastSeen = now(); if (!p.value && !still) delete r.loc; }) || who.rec; await event('rider', who.name + ' is now ' + (p.value ? 'available' : 'offline'), ['super'], '', '', []); return { me: pubStaff(who.rec) }; };
   A.rOffer = async function (p) {
     var who = await auth(p.token, 'rider'), b = await getB(p.ref), cat = await catalog();
     if (b.rider && b.dispatch) err(b.rider === who.email ? 'You already accepted this delivery.' : 'Another rider already accepted this delivery.');
@@ -975,9 +989,9 @@ function createCore(env) {
     var who = await auth(p.token, 'rider'), lat = +p.lat, lng = +p.lng;
     if (!isFinite(lat) || !isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) err('Invalid location.');
     var active = (await allBookings()).filter(function (b) { return b.rider === who.email && liveFor(b); });
-    if (!active.length && !who.rec.available) { if (who.rec.loc) { delete who.rec.loc; await env.db.put(T.staff, who.rec); } return { sharing: false, refs: [] }; }
-    who.rec.loc = { lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6, acc: Math.round(+p.acc || 0), heading: isFinite(+p.heading) ? Math.round(+p.heading) : null, at: now() };
-    who.rec.lastSeen = now(); await env.db.put(T.staff, who.rec);
+    if (!active.length && !who.rec.available) { if (who.rec.loc) await patch(T.staff, who.rec.id || who.email, function (r) { delete r.loc; }); return { sharing: false, refs: [] }; }
+    var loc = { lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6, acc: Math.round(+p.acc || 0), heading: isFinite(+p.heading) ? Math.round(+p.heading) : null, at: now() };
+    await patch(T.staff, who.rec.id || who.email, function (r) { r.loc = loc; r.lastSeen = now(); });
     return { sharing: true, area: !active.length, refs: active.map(function (b) { return b.ref; }) };
   };
   A.track = async function (p) {
@@ -1057,7 +1071,7 @@ function createCore(env) {
       var s = merged[k], o = old[k];
       if (isMerchantRole(s.role)) setAccess(s, s.access); else delete s.access;
       var sameKind = o && (isMerchantRole(o.role) ? isMerchantRole(s.role) : o.role === s.role);
-      s.tokens = sameKind ? o.tokens || [] : []; if (o && sameKind) ['pw', 'push', 'loc', 'vehicle', 'plate'].forEach(function (f) { if (o[f] != null && s[f] == null) s[f] = o[f]; }); s.available = o ? !!o.available : false; s.lastSeen = o ? o.lastSeen || '' : '';
+      s.tokens = sameKind ? o.tokens || [] : []; s.sessEpoch = o ? (o.sessEpoch || 0) + (sameKind ? 0 : 1) : Date.parse(now()); if (o && sameKind) ['pw', 'push', 'loc', 'vehicle', 'plate'].forEach(function (f) { if (o[f] != null && s[f] == null) s[f] = o[f]; }); s.available = o ? !!o.available : false; s.lastSeen = o ? o.lastSeen || '' : '';
       if (o && s.role === 'rider') RIDER_FIELDS.forEach(function (f) { if (o[f] != null) s[f] = o[f]; });
       return s;
     }));
@@ -1072,7 +1086,7 @@ function createCore(env) {
   }
   A.adminRiderActive = async function (p) {
     var who = await auth(p.token, 'super'), e = low(p.email), r = await env.db.get(T.staff, e); if (!r || r.role !== 'rider') err('Rider not found.');
-    r.active = !!p.active; if (!r.active) { r.available = false; r.tokens = []; delete r.loc; }
+    r.active = !!p.active; if (!r.active) { r.available = false; r.tokens = []; r.sessEpoch = (r.sessEpoch || 0) + 1; delete r.loc; }
     await env.db.put(T.staff, r);
     await event('rider', (r.name || e) + ' was ' + (r.active ? 'reactivated' : 'deactivated') + ' by ' + who.name, ['super', 'rider:' + e], '', '', r.active ? ['rider:' + e] : [], 'Your rider account is active again', 'Hi ' + (r.name || '') + ',\n\nYour rider account is active again. Sign in to the Rider app to receive deliveries.', who.email);
     return { rider: adminStaff(r) };
@@ -1097,7 +1111,7 @@ function createCore(env) {
     if (!str(r.name)) err('Enter the rider\'s name.');
     var all = await staffAll(), old = all.filter(function (s) { return s.email === e; })[0];
     if (old && old.role !== 'rider') err(e + ' already has a ' + (Rules.ROLE_LABEL[old.role] || old.role) + ' account.');
-    var rec = old || { id: e, email: e, role: 'rider', bizId: '', tokens: [], available: false, lastSeen: '', joined: now(), licenseStatus: 'pending' };
+    var rec = old || { id: e, email: e, role: 'rider', bizId: '', tokens: [], sessEpoch: Date.parse(now()), available: false, lastSeen: '', joined: now(), licenseStatus: 'pending' };
     rec.name = str(r.name, 80); rec.phone = str(r.phone, 30);
     ['address', 'town', 'vehicle', 'plate', 'licenseNo', 'licenseExpiry'].forEach(function (k) { if (r[k] != null) rec[k] = str(r[k], 120); });
     if (r.active != null) rec.active = !!r.active; else if (rec.active == null) rec.active = true;
@@ -1136,7 +1150,7 @@ function createCore(env) {
     if (a.appType === 'rider') {
       var e = a.email, all = await staffAll(), ex = all.filter(function (s) { return s.email === e; })[0];
       if (ex && ex.role !== 'rider') err(e + ' already has a ' + (Rules.ROLE_LABEL[ex.role] || ex.role) + ' account.');
-      var rec = ex || { id: e, email: e, role: 'rider', bizId: '', tokens: [], available: false, lastSeen: '' };
+      var rec = ex || { id: e, email: e, role: 'rider', bizId: '', tokens: [], sessEpoch: Date.parse(now()), available: false, lastSeen: '' };
       Object.assign(rec, { name: a.name, phone: a.phone, address: a.address, town: a.town, vehicle: a.vehicle, plate: a.plate, licenseNo: a.licenseNo, licenseExpiry: a.licenseExpiry || '', licenseFile: a.licenseFile, licenseStatus: p.licenseVerified === false ? 'pending' : 'verified', licenseBy: who.email, licenseAt: now(), active: true, joined: now(), appId: a.id });
       if (a.pw) rec.pw = a.pw;
       await env.db.put(T.staff, rec);
@@ -1162,7 +1176,7 @@ function createCore(env) {
     if (type === 'Tour' || type === 'Service') cat.tours.push(Object.assign({ id: bid, category: type === 'Service' ? 'service' : 'tour', name: a.businessName, location: a.address || town + ', Romblon', desc: a.description, rate: 0, rateUnit: 'person', maxPax: cap > 1 ? cap : 10, durationHours: type === 'Service' ? 1 : 4, times: '08:00', deposit: 0, active: false }, base));
     await env.db.kvPut('catalog', cat);
     if (existing) await env.db.put(T.staff, setAccess(existing, accessOf(existing).concat([{ bizId: bid, role: 'manager' }])));
-    else await env.db.put(T.staff, setAccess({ id: mgrEmail, email: mgrEmail, name: str(p.managerName || a.contactName, 80), phone: a.phone || '', tokens: [] }, [{ bizId: bid, role: 'manager' }]));
+    else await env.db.put(T.staff, setAccess({ id: mgrEmail, email: mgrEmail, name: str(p.managerName || a.contactName, 80), phone: a.phone || '', tokens: [], sessEpoch: Date.parse(now()) }, [{ bizId: bid, role: 'manager' }]));
     if (a.bank) await savePayee('biz:' + bid, a.bank);
     a.status = 'Approved'; a.platformFee = pf; a.bizId = bid; a.decided = now(); a.adminNotes = (a.adminNotes ? a.adminNotes + '\n' : '') + 'Approved as ' + bid; await env.db.put(T.app, a);
     await event('application', 'Business approved: ' + a.businessName + ' (' + type + ')', ['super', 'biz:' + bid], '', bid, ['biz:' + bid], 'Welcome to ' + ((cat.business && cat.business.name) || 'Tara Romblon'),
@@ -1240,7 +1254,7 @@ function createCore(env) {
     },
     seedStaff: async function (supers) {
       var list = await staffAll(); if (list.some(function (s) { return s.role === 'super'; })) return;
-      for (var i = 0; i < supers.length; i++) { var e = low(supers[i]); if (e) await env.db.put(T.staff, { id: e, email: e, name: '', role: 'super', bizId: '', tokens: [] }); }
+      for (var i = 0; i < supers.length; i++) { var e = low(supers[i]); if (e) await env.db.put(T.staff, { id: e, email: e, name: '', role: 'super', bizId: '', tokens: [], sessEpoch: Date.parse(now()) }); }
     }
   };
 }

@@ -672,5 +672,20 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   await fails('mGallery', { token: cust, id: gal_gs.id, add: IMG }, /Merchant Admin access|Not allowed/);
   assert(Pricing.stayPhotos({ photo: 'a.jpg' })[0] === 'a.jpg' && Pricing.stayPhotos({ photos: ['b.jpg'], photo: 'a.jpg' })[0] === 'b.jpg', 'older single photo still shows');
 
+  console.log('Riders stay signed in across devices (background saves never drop a session)');
+  const tA = (await ok('riderLogin', { email: 'paolo@r.ph', password: 'paolo-pass-1' })).token; await ok('rAvailable', { token: tA, value: true });
+  const newToks = [];
+  for (let k = 0; k < 5; k++) { const [, , lg] = await Promise.all([ok('rLocation', { token: tA, lat: 12.57, lng: 122.13 }), ok('feed', { token: tA, since: '' }), ok('riderLogin', { email: 'paolo@r.ph', password: 'paolo-pass-1' })]); newToks.push(lg.token); }
+  for (const t of [tA].concat(newToks)) await ok('staffMe', { token: t });
+  assert(true, 'all ' + (newToks.length + 1) + ' sessions still valid after logging in on other devices while the first device keeps saving its location');
+  await ok('rAvailable', { token: tA, value: false });
+  await ok('pwResetSend', { email: 'paolo@r.ph', kind: 'rider' }); const pr2 = await ok('pwReset', { email: 'paolo@r.ph', kind: 'rider', code: /code: (\d{6})/.exec(MAILS[MAILS.length - 1].subject)[1], password: 'paolo-pass-2' });
+  await fails('staffMe', { token: tA }, /sign in again/i); await ok('staffMe', { token: pr2.token });
+  assert(true, 'a password reset still signs out all older sessions on purpose');
+  await ok('adminSaveRider', { token: admin, rider: { email: 'back@r.ph', name: 'Back Rider', phone: '0913', vehicle: 'Mio', plate: 'B1', licenseNo: 'L8' } });
+  await ok('pwResetSend', { email: 'back@r.ph', kind: 'rider' }); const bT = (await ok('pwReset', { email: 'back@r.ph', kind: 'rider', code: /code: (\d{6})/.exec(MAILS[MAILS.length - 1].subject)[1], password: 'back-pass-1' })).token;
+  await ok('adminRemoveRider', { token: admin, email: 'back@r.ph' }); await ok('adminSaveRider', { token: admin, rider: { email: 'back@r.ph', name: 'Back Rider', phone: '0913' } });
+  await fails('staffMe', { token: bT }, /sign in again/i); assert(true, 'a removed rider who is added again does not get their old session back');
+
   console.log('\nALL PASSED · ' + calls + ' simulated network calls · ' + MAILS.length + ' emails');
 })().catch(e => { console.error('\nFAILED:', e.stack || e); process.exit(1); });
