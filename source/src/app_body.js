@@ -899,7 +899,7 @@ function renderExplore() {
   const q = $('#exQ').value, r = searchAll(q);
   const n = r.stays.length + r.rides.length + r.food.length + r.tours.length;
   let h = '';
-  if (!q) h += `<div class="kpills" style="margin:0 0 6px"><button data-go="food">${ic('cup')} Food</button><button data-go="rentals">${ic('scooter')} Rentals</button><button data-go="stays">${ic('home')} Stays${isLive('stays') ? '' : '<span class="soonb on">Soon</span>'}</button><button data-go="tours">${ic('palm')} Things to do${isLive('tours') ? '' : '<span class="soonb on">Soon</span>'}</button></div>`;
+  if (!q) h += `<div class="kpills xcats"><button data-go="food">${ic('cup')} Food</button><button data-go="rentals">${ic('scooter')} Rentals</button><button data-go="stays">${ic('home')} Stays${isLive('stays') ? '' : '<span class="soonb on">Soon</span>'}</button><button data-go="tours">${ic('palm')} Things to do${isLive('tours') ? '' : '<span class="soonb on">Soon</span>'}</button></div>`;
   if (q) h += `<p class="meta" style="margin-top:14px">${n} result${n === 1 ? '' : 's'} for “${esc(q)}”</p>`;
   if (r.stays.length) h += `<div class="xsec">Stays</div>` + r.stays.map(s => xrow(s.photo, 'bed', s.name, s.location + ' · up to ' + s.maxGuests + ' guests', peso(s.rate) + '/night', `openStay('${s.id}')`)).join('');
   if (r.rides.length) h += `<div class="xsec">Scooter rentals</div>` + r.rides.map(u => xrow(u.photo, 'scooter', u.name, u.desc, peso(u.dailyRate) + '/day', `openRide('${u.id}')`)).join('');

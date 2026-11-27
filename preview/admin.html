@@ -598,6 +598,13 @@ footer .fown span{display:inline}
 .delcalc{margin:2px 0 8px;padding:8px 10px;border-radius:10px;background:#f6f3ec;border:1px dashed var(--line);font-size:13px;color:var(--mute)}
 .delcalc .dl{display:flex;justify-content:space-between;margin-top:3px}.delcalc .dl.ok span:last-child{color:#1d7a3e}.delcalc .dl.t{color:var(--ink,#223);font-weight:600;border-top:1px solid var(--line);padding-top:3px}
 .duecard{border-left:4px solid var(--coral,#ee7a35)}.duecard h3{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+/* Explore: Food / Rentals / Stays / Things to do category cards */
+.kpills.xcats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:22px 0 8px;padding:10px 0 0;overflow:visible}
+.kpills.xcats button{flex:none;min-width:0;flex-direction:column;gap:6px;padding:16px 8px 14px;border-radius:18px;background:#fff;border:1.5px solid var(--line);box-shadow:0 4px 14px rgba(19,48,90,.06);font-size:15px;white-space:normal;text-align:center;line-height:1.2;transition:transform .15s,box-shadow .15s}
+.kpills.xcats button:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(19,48,90,.1)}
+.kpills.xcats button svg{width:28px;height:28px;padding:9px;box-sizing:content-box;border-radius:14px;background:#fff1e6}
+.kpills.xcats .soonb{top:-9px;right:50%;transform:translateX(50%)}
+@media(max-width:640px){.kpills.xcats{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 10px}.kpills.xcats button{flex-direction:row;justify-content:flex-start;padding:12px 12px;font-size:15px;text-align:left}.kpills.xcats button svg{width:22px;height:22px;padding:7px;border-radius:12px}.kpills.xcats .soonb{right:10px;transform:none}}
 
 </style>
 </head>
