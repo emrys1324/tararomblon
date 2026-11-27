@@ -127,7 +127,7 @@ var Rules = {
     st = st || {};
     var m = Rules.money(b), o = { counted: m.counted, gross: m.gross, discount: m.discount, fee: m.fee, delivery: m.delivery, taraBiz: 0, cashBiz: 0, bizNet: 0, riderShare: 0, riderCash: 0, riderNet: 0 };
     if (!m.counted) return o;
-    var cod = b.payMethod === 'cod', codTara = cod && (b.codToRider || (st.codCashTo === 'tara' && !b.platformPaysRider)), due = m.gross - m.discount;
+    var cod = b.payMethod === 'cod', codTara = cod && !!b.codToRider, due = m.gross - m.discount;
     var taraBiz = (cod && codTara ? Rules.payable(b) - m.delivery : Math.max(0, m.collectedOnline - m.delivery)) + m.codeTara;
     o.taraBiz = Rules.r2(Math.min(taraBiz, Math.max(due, 0)));
     /* cash the merchant actually recorded at Payment Collected, else what they should have received */
