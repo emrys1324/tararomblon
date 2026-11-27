@@ -223,6 +223,18 @@ function approveRider(a) {
 }
 
 /* ---- Riders: profiles, driver's license verification, payout accounts ---- */
+async function riderActive(email, on) {
+  const r = riderList().find(x => x.email === email) || {};
+  if (!on && !confirm('Deactivate ' + (r.name || email) + '?\n\nThey are signed out, go offline and get no new delivery requests until you reactivate them.')) return;
+  loading(true); try { await api('adminRiderActive', { token: ADM.token, email, active: on }); await reload(true); loading(false); toast(on ? 'Rider reactivated' : 'Rider deactivated'); vRiders(); } catch (x) { loading(false); toast(x.message); }
+}
+async function removeRider(email, force) {
+  const r = riderList().find(x => x.email === email) || {};
+  if (!force && !confirm('Remove ' + (r.name || email) + ' as a rider?\n\nTheir account is deleted and they can no longer sign in. Past deliveries stay in the records. This cannot be undone (they would need to apply again).')) return;
+  loading(true, 'Removing rider…');
+  try { await api('adminRemoveRider', { token: ADM.token, email, force: !!force }); await reload(true); loading(false); toast((r.name || email) + ' removed'); vRiders(); }
+  catch (x) { loading(false); if (/^UNSETTLED/.test(x.message)) { if (confirm(x.message.replace(/^UNSETTLED: /, '') + '\n\nTap OK to remove anyway (the balance stays in the delivery records), or Cancel to settle it first.')) removeRider(email, true); } else toast(x.message); }
+}
 function vRiders() {
   const q = AD.rq.toLowerCase(), st = ST(), B = AD.data.bookings, pay = AD.data.payees || {};
   const list = riderList().filter(r => !q || [r.name, r.email, r.phone, r.town, r.plate, r.licenseNo].join(' ').toLowerCase().includes(q)).sort((a, b) => (b.licenseStatus === 'pending') - (a.licenseStatus === 'pending') || (b.available - a.available) || String(a.name).localeCompare(String(b.name)));
@@ -237,7 +249,7 @@ function vRiders() {
         <div class="licbox">${ic('id')} <b>Driver's license photo</b>${r.licenseFile ? `<button class="btn ghost sm" onclick="viewUpload('${esc(r.licenseFile)}','Driver\\'s license - ${esc(r.name)}')">View</button>` : '<span class="hint">Not uploaded</span>'}
           ${r.licenseFile && r.licenseStatus !== 'verified' ? `<button class="btn sm" onclick="setLicense('${esc(r.email)}','verified')">Verify</button>` : ''}${r.licenseFile && r.licenseStatus !== 'rejected' ? `<button class="btn ghost sm danger" onclick="setLicense('${esc(r.email)}','rejected')">Reject</button>` : ''}${r.licenseNote ? `<span class="hint">${esc(r.licenseNote)}</span>` : ''}</div>
         <div class="bankbox"><span class="lbl">Payout account</span>${bankText(pay['rider:' + r.email])}</div>
-        <div class="rowbtns mt"><button class="btn ghost sm" onclick="AD.po.party='rider:${esc(r.email)}';AD.po.sel={};setTab('payouts')">${ic('wallet')} Payout</button></div></div>`; }).join('') || `<div class="empty">No riders yet. Add one, or approve a rider application.</div>`}`);
+        <div class="rowbtns mt"><button class="btn ghost sm" onclick="AD.po.party='rider:${esc(r.email)}';AD.po.sel={};setTab('payouts')">${ic('wallet')} Payout</button><button class="btn ghost sm" onclick="riderActive('${esc(r.email)}',${r.active === false})">${r.active === false ? 'Reactivate' : 'Deactivate'}</button><button class="btn ghost sm dangerbtn2" onclick="removeRider('${esc(r.email)}')">${ic('x', 14)} Remove rider</button></div></div>`; }).join('') || `<div class="empty">No riders yet. Add one, or approve a rider application.</div>`}`);
   $('#rq').oninput = e => { AD.rq = e.target.value; const p = e.target.selectionStart; vRiders(); $('#rq').focus(); $('#rq').setSelectionRange(p, p); };
   $('#rDl').onclick = () => downloadCSV('riders-' + today + '.csv', [['Name', 'Email', 'Mobile', 'Town', 'Address', 'Vehicle', 'Plate', 'License no.', 'License expiry', 'License status', 'Available', 'Account name', 'Bank', 'Account no.'], ...riderList().map(r => { const b = pay['rider:' + r.email] || {}; return [r.name, r.email, r.phone, r.town || '', r.address || '', r.vehicle || '', r.plate || '', r.licenseNo || '', r.licenseExpiry || '', r.licenseStatus || '', r.available ? 'yes' : 'no', b.accountName || '', b.bank || '', b.accountNo || '']; })]);
 }

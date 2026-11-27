@@ -1452,6 +1452,33 @@ function createCore(env) {
     }));
     return {};
   };
+  /* Super Admin: deactivate / reactivate a rider (signs them out, no new requests) or remove them for good */
+  async function riderChecks(e) {
+    var all = await allBookings(), st = settings(await catalog());
+    var active = all.filter(function (b) { return b.rider === e && b.kind === 'food' && Rules.DELIVERED.indexOf(b.status) < 0 && Rules.CLOSED.indexOf(b.status) < 0; });
+    var net = Rules.r2(all.filter(function (b) { return b.rider === e && Rules.riderPayable(b); }).reduce(function (t, b) { return t + Rules.ledger(b, st).riderNet; }, 0));
+    return { active: active, net: net, all: all };
+  }
+  A.adminRiderActive = async function (p) {
+    var who = await auth(p.token, 'super'), e = low(p.email), r = await env.db.get(T.staff, e); if (!r || r.role !== 'rider') err('Rider not found.');
+    r.active = !!p.active; if (!r.active) { r.available = false; r.tokens = []; delete r.loc; }
+    await env.db.put(T.staff, r);
+    await event('rider', (r.name || e) + ' was ' + (r.active ? 'reactivated' : 'deactivated') + ' by ' + who.name, ['super', 'rider:' + e], '', '', r.active ? ['rider:' + e] : [], 'Your rider account is active again', 'Hi ' + (r.name || '') + ',\n\nYour rider account is active again. Sign in to the Rider app to receive deliveries.', who.email);
+    return { rider: adminStaff(r) };
+  };
+  A.adminRemoveRider = async function (p) {
+    var who = await auth(p.token, 'super'), e = low(p.email), staff = await staffAll(), r = staff.filter(function (s) { return s.email === e; })[0];
+    if (!r || r.role !== 'rider') err('Rider not found.');
+    var c = await riderChecks(e);
+    if (c.active.length) err((r.name || e) + ' still has ' + c.active.length + ' active deliver' + (c.active.length === 1 ? 'y' : 'ies') + ' (' + c.active.map(function (b) { return b.ref; }).join(', ') + '). Reassign or finish them first.');
+    if (c.net && !p.force) err('UNSETTLED: ' + (r.name || e) + ' has an unsettled balance of P' + Math.abs(c.net) + (c.net > 0 ? ' to pay them' : ' to collect from them') + '. Settle it in Payouts first, or remove anyway.');
+    /* take them off any open delivery requests */
+    for (var i = 0; i < c.all.length; i++) { var b = c.all[i]; if (b.offer && (b.offer.riders || []).indexOf(e) >= 0 && !b.offer.closed) { b.offer.riders = b.offer.riders.filter(function (x) { return x !== e; }); await env.db.put(T.book, b); } }
+    await env.db.replaceAll(T.staff, staff.filter(function (s) { return s.email !== e; }));
+    await event('rider', 'Rider ' + (r.name || e) + ' was removed by ' + who.name + (c.net ? ' (unsettled P' + c.net + ')' : ''), ['super'], '', '', [], '', '', who.email);
+    try { await env.mail(e, 'Your rider account was removed', 'Hi ' + (r.name || '') + ',\n\nYour Tara Romblon rider account has been removed. Your past deliveries stay on record. If you think this is a mistake, contact Beyond Tech Solutions.'); } catch (x) { }
+    return { removed: e, net: c.net };
+  };
   /* Riders: profile, driver's license and payout account */
   A.adminSaveRider = async function (p) {
     var who = await auth(p.token, 'super'), r = p.rider || {}, e = low(r.email);

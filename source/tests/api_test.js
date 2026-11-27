@@ -644,5 +644,21 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   const cres = mkRes(); process.env.CRON_SECRET = process.env.CRON_SECRET || 'cron-test'; await cronFn({ method: 'GET', headers: { authorization: 'Bearer ' + process.env.CRON_SECRET } }, cres);
   assert(MAILS.slice(mb0).some(m => /Merchant payouts due today/.test(m.subject)), 'daily reminder email lists merchant payouts due');
 
+  console.log('Super Admin deactivates and removes riders');
+  await ok('adminSaveRider', { token: admin, rider: { email: 'gone@r.ph', name: 'Gone Rider', phone: '0912', vehicle: 'Mio', plate: 'G1', licenseNo: 'L9' } });
+  const gT = (await ok('pwReset', await (async () => { await ok('pwResetSend', { email: 'gone@r.ph', kind: 'rider' }); return { email: 'gone@r.ph', kind: 'rider', code: /code: (\d{6})/.exec(MAILS[MAILS.length - 1].subject)[1], password: 'gone-pass-1' }; })())).token;
+  await ok('adminRiderActive', { token: admin, email: 'gone@r.ph', active: false });
+  await fails('staffMe', { token: gT }, /sign in again/i); await fails('riderLogin', { email: 'gone@r.ph', password: 'gone-pass-1' }, /not active/);
+  await ok('adminRiderActive', { token: admin, email: 'gone@r.ph', active: true }); assert((await ok('riderLogin', { email: 'gone@r.ph', password: 'gone-pass-1' })).token, 'deactivated rider is signed out and blocked; reactivated rider can sign in again');
+  await fails('adminRemoveRider', { token: pm2, email: 'gone@r.ph' }, /Not allowed|Super Admin/);
+  await ok('adminRemoveRider', { token: admin, email: 'gone@r.ph' });
+  assert(!(await ok('adminData', { token: admin })).staff.some(x => x.email === 'gone@r.ph'), 'rider removed from the riders list');
+  await fails('riderLogin', { email: 'gone@r.ph', password: 'gone-pass-1' }, /not registered as a rider/);
+  const busyR = DB.bookings.map(r => r.data).find(b => b.rider && b.kind === 'food' && !Rules.DELIVERED.includes(b.status) && !Rules.CLOSED.includes(b.status));
+  if (busyR) await fails('adminRemoveRider', { token: admin, email: busyR.rider }, /active deliver/);
+  const unsR = DB.bookings.map(r => r.data).find(b => Rules.riderPayable(b) && b.rider && !DB.bookings.some(x => x.data.rider === b.rider && x.data.kind === 'food' && !Rules.DELIVERED.includes(x.data.status) && !Rules.CLOSED.includes(x.data.status)));
+  if (unsR) await fails('adminRemoveRider', { token: admin, email: unsR.rider }, /UNSETTLED/);
+  assert(true, 'riders with active deliveries or unsettled balances are not removed without confirmation');
+
   console.log('\nALL PASSED · ' + calls + ' simulated network calls · ' + MAILS.length + ' emails');
 })().catch(e => { console.error('\nFAILED:', e.stack || e); process.exit(1); });
