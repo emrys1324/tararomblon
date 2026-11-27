@@ -2,7 +2,7 @@
 var DEFAULT_SETTINGS = {
   requireIdVerification: true, idUploadAtCheckout: 'optional', proofUpload: 'required', transferEnabled: true,
   transferInstructions: 'Send your payment to GCash 0917 000 0000 (Beyond Tech Solutions) or BPI 0000-0000-00 (Beyond Tech Solutions), then upload a screenshot of your receipt.',
-  riderSharePct: 100, codCashTo: 'merchant', codMinCompleted: 3, codMax: 500, riderDispatch: true, dispatchKm: 5, dispatchWidenMin: 3, dispatchAlertMin: 15, codExemptBefore: '2026-11-21', email: { customers: true, merchants: true, admins: true, riders: true },
+  riderSharePct: 100, codCashTo: 'merchant', codMinCompleted: 3, codMax: 500, riderPayoutDays: 3, riderDispatch: true, dispatchKm: 5, dispatchWidenMin: 3, dispatchAlertMin: 15, codExemptBefore: '2026-11-21', email: { customers: true, merchants: true, admins: true, riders: true },
   /* Stays and Things to do show "Coming soon" until a Super Admin opens them in Settings */
   staysLive: false, toursLive: false
 };
@@ -344,6 +344,7 @@ function createCore(env) {
         status: Rules.CASH.indexOf(d.payMethod) >= 0 ? 'New' : 'Awaiting Payment', payStatus: Rules.CASH.indexOf(d.payMethod) >= 0 ? 'Unpaid' : 'Pending',
         fee: Rules.feeFor(biz(cat, d.bizId), Rules.gross(d)), discount: 0, idFile: idFile, proofFile: proofFile, rider: '', riderAccepted: false, history: [] });
       if (b.kind === 'food' && b.fulfillment === 'delivery' && st.riderDispatch !== false) { b.dispatch = true; if (b.status === 'New') b.status = 'Finding Rider'; }
+      if (b.kind === 'food' && b.fulfillment === 'delivery' && st.codCashTo !== 'tara') b.platformPaysRider = true;   /* riders hand all COD cash to the store; the platform pays their earnings */
       b.id = b.ref; b.history.push({ at: created, status: b.status, by: me.name, role: 'customer' }); out.push(b);
     });
     var due = out.reduce(function (t, b) { return t + (+b.dueNow || 0); }, 0);
@@ -1155,12 +1156,26 @@ function createCore(env) {
     return { payout: po };
   };
 
+  /* riders are paid by the platform every N days (Settings → riderPayoutDays): list who is due */
+  async function ridersDue() {
+    var cat = await catalog(), st = settings(cat), days = +st.riderPayoutDays || 3, t = Date.parse(now()), all = await allBookings(), pays = await env.db.all(T.pay), out = [];
+    (await staffAll()).filter(function (r) { return r.role === 'rider'; }).forEach(function (r) {
+      var un = all.filter(function (b) { return b.rider === r.email && Rules.riderPayable(b); }); if (!un.length) return;
+      var net = Rules.r2(un.reduce(function (s, b) { return s + Rules.ledger(b, st).riderNet; }, 0)); if (net <= 0) return;
+      var last = pays.filter(function (p) { return p.party === 'rider:' + r.email; }).map(function (p) { return p.at || p.created || ''; }).sort().pop();
+      var from = last || un.map(function (b) { return b.updated || b.created; }).sort()[0];
+      if (t - Date.parse(from) >= days * 864e5) out.push({ email: r.email, name: r.name || r.email, net: net, n: un.length });
+    });
+    return out;
+  }
+  A.ridersDue = async function (p) { await auth(p.token, 'super'); return { due: await ridersDue() }; };
   return {
     icsFeed: icsFeed,
     handle: async function (action, p) { var h = A[action]; if (!h) err('Unknown action: ' + action); reqBiz = String((p && p.biz) || ''); return await h(p || {}); },
     /* Confirms HitPay payments found by the webhook or the daily check, and expires unpaid online bookings after 60 minutes */
     paymentWebhook: async function (ref) { var bs = (await allBookings()).filter(function (b) { return b.group === ref || b.ref === ref; }); if (bs.length) return await checkHitpay(bs[0].group); return false; },
     reconcile: async function () {
+      try { var due = await ridersDue(), dk = 'ridersdue_' + env.today(); if (due.length && !(await env.cache.get(dk))) { await env.cache.put(dk, '1', 86400); await event('payout', 'Rider payouts due: ' + due.map(function (r) { return r.name + ' P' + r.net; }).join(', ') + '. Pay them in Super Admin → Payouts.', ['super'], '', '', ['super'], 'Rider payouts due (' + due.length + ')', due.map(function (r) { return r.name + ': P' + r.net + ' (' + r.n + ' deliveries)'; }).join('\n') + '\n\nRiders are paid every ' + (+settings(await catalog()).riderPayoutDays || 3) + ' days. Open Super Admin → Payouts.', ''); } } catch (x) { }
       var seen = {}, list = (await allBookings()).filter(function (b) { return b.status === 'Awaiting Payment' && b.payMethod === 'online'; });
       for (var i = 0; i < list.length; i++) {
         var b = list[i]; if (seen[b.group]) continue; seen[b.group] = 1;

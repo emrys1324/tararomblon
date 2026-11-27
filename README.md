@@ -35,6 +35,13 @@ source/                  editable source + build.py + tests
 
 There are no npm packages to install. The functions use Node's built-in `fetch` and `crypto`.
 
+## New: platform pays riders every 3 days
+
+- Customers only see the delivery fee they pay. Rider earnings show only in the Rider app (merchants see what the store pays).
+- Cash on delivery: the rider hands **all** the cash (food + the customer's delivery fee) to the store. The store's payout then deducts the platform fee, the customer's delivery fee and the store's delivery share; the platform pays the rider their full earning.
+- Riders are paid every 3 days (Settings → Riders → "Pay riders their earnings every (days)"). The Rider app shows "Due to you" and the next payout date. Super Admin → Payouts shows "Rider payouts due", and a daily reminder is sent when riders are due.
+- Orders placed before this change keep the old split (rider kept the customer's fee in cash).
+
 ## New: Airbnb calendar sync for stays (Super Admin → Listings & rates → Stays → Calendar sync)
 
 - **Import** (Airbnb → Tara Romblon): in Airbnb open the listing → Availability → Connect calendars → **Export calendar**, copy the link and paste it in the stay's Calendar sync box, then **Save and sync now**. Nights booked on Airbnb are blocked here (customer calendar and checkout). It refreshes about every 15 minutes. Booking.com, Vrbo and Google Calendar links work too (up to 5 per stay).

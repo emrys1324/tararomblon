@@ -625,5 +625,11 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   await fails('custCancel', { token: cTok, ref: pu2.refs[0] }, /not found/);
   assert(!Rules.custCanCancel({ status: 'Awaiting Payment', payStatus: 'Pending', payMethod: 'transfer', proofFile: 'x' }) && Rules.custCanCancel({ status: 'Awaiting Payment', payStatus: 'Pending', payMethod: 'transfer' }) && !Rules.custCanCancel({ status: 'Out for Delivery', payStatus: 'Unpaid' }), 'transfer with proof sent, or orders on the way, cannot be cancelled by the customer');
 
+  console.log('Platform pays riders; COD cash all goes to the store');
+  const pb2 = { kind: 'food', fulfillment: 'delivery', payMethod: 'cod', status: 'Completed', payStatus: 'Paid', rider: 'r@x', platformPaysRider: true, fee: 15, discount: 0, lines: [{ total: 150 }], quote: { subtotal: 150, total: 180, deliveryFee: 30, storeDeliveryShare: 20, riderFee: 50 }, cashCollected: { amount: 180 } };
+  const lp = Rules.ledger(pb2, {}); assert(Rules.cashExpected(pb2) === 180 && lp.riderCash === 0 && lp.riderNet === 50 && lp.bizNet === Rules.r2(150 - 15 - 180 - 20), 'COD: rider hands all P180 to the store; store owes fee 15 + delivery 30 + its share 20; platform pays the rider P50');
+  const old2 = Object.assign({}, pb2, { platformPaysRider: false, cashCollected: { amount: 150 } }), lo = Rules.ledger(old2, {}); assert(Rules.cashExpected(old2) === 150 && lo.riderCash === 30 && lo.riderNet === 20, 'older orders keep the old split (rider kept the customer fee)');
+  const due = await ok('ridersDue', { token: admin }); assert(Array.isArray(due.due), 'Super Admin sees riders due for payout');
+
   console.log('\nALL PASSED · ' + calls + ' simulated network calls · ' + MAILS.length + ' emails');
 })().catch(e => { console.error('\nFAILED:', e.stack || e); process.exit(1); });

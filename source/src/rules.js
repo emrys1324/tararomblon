@@ -97,7 +97,7 @@ var Rules = {
   payable: function (b) { return Rules.r2((+b.quote.total || 0) - Rules.reductions(b).total); },
   /* Cash the merchant should receive when tagging Payment Collected */
   cashExpected: function (b) {
-    if (b.payMethod === 'cod') return Rules.r2(Rules.payable(b) - (+b.quote.deliveryFee || 0));
+    if (b.payMethod === 'cod') return b.platformPaysRider ? Rules.payable(b) : Rules.r2(Rules.payable(b) - (+b.quote.deliveryFee || 0));
     if (b.payMethod === 'pickup') return Rules.payable(b);
     return Rules.r2(Math.max(0, Rules.payable(b) - (+b.dueNow || 0) - (+b.discount || 0)));
   },
@@ -131,13 +131,14 @@ var Rules = {
     o.taraBiz = Rules.r2(Math.min(taraBiz, Math.max(due, 0)));
     /* cash the merchant actually recorded at Payment Collected, else what they should have received */
     var recorded = b.cashCollected && !(cod && codTara) ? +b.cashCollected.amount : null;
-    o.cashBiz = Rules.r2(recorded != null && recorded >= 0 ? recorded : Math.max(0, due - taraBiz));
-    o.cashRecorded = recorded != null; o.cashExpected = Rules.r2(Math.max(0, due - taraBiz));
+    var extra = cod && !codTara && b.platformPaysRider ? m.delivery : 0;   /* the store also holds the customer's delivery fee, which goes to the platform */
+    o.cashBiz = Rules.r2(recorded != null && recorded >= 0 ? recorded : Math.max(0, due - taraBiz) + extra);
+    o.cashRecorded = recorded != null; o.cashExpected = Rules.r2(Math.max(0, due - taraBiz) + extra);
     o.storeDelivery = m.storeDelivery;
     o.bizNet = Rules.r2(due - m.fee - o.cashBiz - o.storeDelivery);
     if (b.rider && b.kind === 'food' && Rules.DELIVERED.indexOf(b.status) >= 0) {
       o.riderShare = Rules.riderEarning(b, st);
-      o.riderCash = cod ? (codTara ? Rules.payable(b) : m.delivery) : 0;
+      o.riderCash = cod ? (codTara ? Rules.payable(b) : b.platformPaysRider ? 0 : m.delivery) : 0;
       o.riderNet = Rules.r2(o.riderShare - o.riderCash);
     }
     return o;
