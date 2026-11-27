@@ -600,6 +600,15 @@ function checkoutBooking() {
   })));
 }
 
+/* the delivery address comes from the map: search pick, or the address of the pinned spot */
+function setPinAddr(t) { window._pinAddr = String(t || ''); window._pinSeq = (window._pinSeq || 0) + 1; const a = $('#pinAddr'); if (a) a.textContent = t ? '📍 Deliver to: ' + t : '📍 Pin set — finding the address…'; }
+async function revGeocode(lat, lng) {
+  const my = window._pinSeq;
+  try { const r = await fetch('https://photon.komoot.io/reverse?' + new URLSearchParams({ lat, lon: lng, lang: 'en' })); const j = await r.json(), p = ((j.features || [])[0] || {}).properties || {};
+    const t = [p.name, p.street && (p.housenumber ? p.housenumber + ' ' : '') + p.street, p.district || p.locality, p.city || p.county, p.state].filter((x, i, a) => x && a.indexOf(x) === i).join(', ');
+    if (window._pinSeq === my) { if (t) setPinAddr(t); else { const a = $('#pinAddr'); if (a) a.textContent = '📍 Pin set (' + lat.toFixed(5) + ', ' + lng.toFixed(5) + '). Add directions in Notes if needed.'; } }
+  } catch (e) { if (window._pinSeq === my) { const a = $('#pinAddr'); if (a) a.textContent = '📍 Pin set. Add directions for the rider in Notes if needed.'; } }
+}
 /* Free address suggestions (OpenStreetMap / Photon), used when Google's address search is unavailable (no key, or over its daily limit) */
 function osmSearch(F, setPin) {
   const box = $('#mapSearch'); if (!box) return;
@@ -612,7 +621,7 @@ function osmSearch(F, setPin) {
         const it = (j.features || []).filter(f => f.properties && f.properties.countrycode === 'PH');
         list.innerHTML = it.length ? it.map((f, i) => `<button type="button" role="option" data-osm="${i}">${ic('pin', 14)} <span><b>${esc(f.properties.name || label(f.properties))}</b><small>${esc(label(f.properties))}</small></span></button>`).join('') : '<div class="hint" style="padding:8px">No matches. Try a barangay or landmark, or tap the map.</div>';
         list.querySelectorAll('[data-osm]').forEach(b => b.onclick = () => { const f = it[+b.dataset.osm], [lng, lat] = f.geometry.coordinates, nm = f.properties.name || label(f.properties);
-          setPin(lat, lng, true); list.innerHTML = ''; q.value = nm; const a = $('#pinAddr'); if (a) a.textContent = '📍 ' + label(f.properties); const lm = $('#lmk'); if (lm && !lm.value.trim()) lm.value = nm; });
+          setPin(lat, lng, true); list.innerHTML = ''; q.value = nm; setPinAddr(label(f.properties) || nm); });
       } catch (e) { if (my === seq) list.innerHTML = '<div class="hint" style="padding:8px">Address search is unavailable right now. Tap the map or use your current location.</div>'; } }, 350); };
 }
 /* Google Maps location picker for delivery: address search (Places), tap or drag the pin, store marker, address of the pin */
@@ -629,8 +638,8 @@ async function googlePicker(elId, F, setPin, fallback) {
   try { new Circle({ map, center: store, radius: max * 1000, strokeColor: '#13305a', strokeOpacity: .35, strokeWeight: 1, fillColor: '#13305a', fillOpacity: .04, clickable: false }); } catch (e) { }
   const pin = new AdvancedMarkerElement({ map, position: store, content: tag('dest', ic('home', 16)), title: 'Delivery location', gmpDraggable: true, zIndex: 10 }); pin.element && (pin.element.style.opacity = '.45');
   let geocoder = null; try { const { Geocoder } = await google.maps.importLibrary('geocoding'); geocoder = new Geocoder(); } catch (e) { }
-  const showAddr = (lat, lng, label) => { const a = $('#pinAddr'); if (!a) return; if (label) { a.textContent = '📍 ' + label; return; } a.textContent = '📍 Pin set — drag it to adjust'; if (!geocoder) return;
-    geocoder.geocode({ location: { lat, lng } }).then(r => { const L = r.results || [], x = L.find(y => !(y.types || []).includes('plus_code') && !/^[23456789CFGHJMPQRVWX]{4,}\+/.test(y.formatted_address)) || L[0]; if (x && $('#pinAddr') && st_same(lat, lng)) $('#pinAddr').textContent = '📍 ' + x.formatted_address; }).catch(() => { geocoder = null; }); };
+  const showAddr = (lat, lng, label) => { if (label) { setPinAddr(label); return; } setPinAddr(''); if (!geocoder) { revGeocode(lat, lng); return; }
+    geocoder.geocode({ location: { lat, lng } }).then(r => { const L = r.results || [], x = L.find(y => !(y.types || []).includes('plus_code') && !/^[23456789CFGHJMPQRVWX]{4,}\+/.test(y.formatted_address)) || L[0]; if (x && st_same(lat, lng)) setPinAddr(x.formatted_address); else if (st_same(lat, lng)) revGeocode(lat, lng); }).catch(() => { geocoder = null; revGeocode(lat, lng); }); };
   let last = null; const st_same = (a, b) => last && last[0] === a && last[1] === b;
   window._pinMove = (lat, lng, center) => { pin.position = { lat, lng }; if (pin.element) pin.element.style.opacity = '1'; if (center) { map.panTo({ lat, lng }); if (map.getZoom() < 16) map.setZoom(17); } last = [lat, lng]; showAddr(lat, lng); };
   pin.addListener('dragend', () => { const p = pin.position, lat = typeof p.lat === 'function' ? p.lat() : p.lat, lng = typeof p.lng === 'function' ? p.lng() : p.lng; setPin(lat, lng); });
@@ -646,7 +655,7 @@ async function googlePicker(elId, F, setPin, fallback) {
     pac.addEventListener('gmp-select', async ev => {
       try { const place = ev.placePrediction.toPlace(); await place.fetchFields({ fields: ['location', 'formattedAddress', 'displayName'] }); if (!place.location) return;
         setPin(place.location.lat(), place.location.lng(), true); showAddr(0, 0, [place.displayName, place.formattedAddress].filter(Boolean).join(' · '));
-        const lm = $('#lmk'); if (lm && !lm.value.trim()) lm.value = place.displayName || place.formattedAddress || ''; } catch (e) { toast('Could not open that place. Tap the map instead.'); }
+        } catch (e) { toast('Could not open that place. Tap the map instead.'); }
     });
   } catch (e) { console.warn('Places search not available', e); osmSearch(F, setPin); }
 }
@@ -662,11 +671,10 @@ function checkoutFood() {
         <div class="field mt"><label>Pin your delivery location</label><span class="hint">Search your address, tap the map or drag the pin. Fee is based on distance from ${esc(F.storeName)}.</span></div><div id="mapSearch"></div><div class="hint" id="pinAddr"></div>
         <div class="map" id="map"></div>
         <button class="btn ghost sm mt" id="geoBtn" type="button">${ic('nav')} Use my current location</button>
-        <div class="field mt"><label>House / landmark for the rider</label><input id="lmk" value="${esc(p.address)}"></div>
       </div>
       <div id="pickBox" class="warn" style="display:none">Pick up at ${esc(F.storeName)}, ${esc(F.address)}. We'll text you when your order is ready.</div>
       <h3 style="margin:18px 0 0;font-size:18px">Your details</h3>${profileFields(p)}
-      <div class="field mt"><label>Notes</label><input id="ckN"></div>
+      <div class="field mt"><label>Notes for the store and rider (optional)</label><input id="ckN" placeholder="e.g. blue gate, call when near"></div>
       ${promoHtml()}
       <h3 style="margin:18px 0 0;font-size:18px">Payment</h3><div class="opts one" id="payOpts"></div><div id="codWhy"></div>
       <div id="ftrBox" style="display:none"><div class="warn">${esc(SET().transferInstructions)}</div>${uploadField('fProof', 'Payment proof (receipt screenshot)', SET().proofUpload)}</div>
@@ -703,18 +711,18 @@ function checkoutFood() {
     };
     document.querySelectorAll('input[name=ful]').forEach(r => r.addEventListener('change', () => { st.ful = r.value; calc(); if (st.ful === 'delivery') setTimeout(() => window._map && window._map.invalidateSize(), 50); }));
     $('#payOpts').addEventListener('change', calc);
-    const setPin = (lat, lng, center) => { st.lat = +lat.toFixed(6); st.lng = +lng.toFixed(6); if (window._pinMove) window._pinMove(st.lat, st.lng, center); calc(); };
+    const setPin = (lat, lng, center) => { st.lat = +lat.toFixed(6); st.lng = +lng.toFixed(6); if (window._pinMove) window._pinMove(st.lat, st.lng, center); else { setPinAddr(''); revGeocode(st.lat, st.lng); } calc(); };
     $('#geoBtn').onclick = () => {
       if (!navigator.geolocation) { toast('Location is not available on this device. Tap the map instead.'); return; }
       $('#geoBtn').disabled = true; $('#geoBtn').textContent = 'Finding your location…';
       navigator.geolocation.getCurrentPosition(pos => { $('#geoBtn').disabled = false; $('#geoBtn').innerHTML = ic('locate') + ' Use my current location'; setPin(pos.coords.latitude, pos.coords.longitude, true); },
         e => { $('#geoBtn').disabled = false; $('#geoBtn').innerHTML = ic('locate') + ' Use my current location'; $('#ckErr').textContent = e && e.code === 1 ? 'Location is blocked. Turn on location services and allow this site, or tap the map to pin your location.' : 'Could not detect your location. Turn on Location / GPS and try again, or tap the map.'; }, { enableHighAccuracy: true, timeout: 12000 });
     };
-    window._pinMove = null;
+    window._pinMove = null; window._pinAddr = '';
     const osmMap = () => loadMap('map', F.lat, F.lng, (map) => {
       L.marker([F.lat, F.lng], { icon: L.divIcon({ html: ic('cup', 16), className: 'storepin', iconSize: [28, 28] }) }).addTo(map).bindTooltip(F.storeName);
       window._mk = L.marker([F.lat, F.lng], { draggable: true, opacity: .4 }).addTo(map);
-      window._pinMove = (a, b, center) => { window._mk.setLatLng([a, b]).setOpacity(1); if (center) map.setView([a, b], 16); };
+      window._pinMove = (a, b, center) => { window._mk.setLatLng([a, b]).setOpacity(1); if (center) map.setView([a, b], 16); setPinAddr(''); revGeocode(a, b); };
       window._mk.on('dragend', e => { const ll = e.target.getLatLng(); setPin(ll.lat, ll.lng); });
       map.on('click', e => setPin(e.latlng.lat, e.latlng.lng));
     });
@@ -729,7 +737,7 @@ function checkoutFood() {
       if (!pay) { $('#ckErr').textContent = 'Choose a payment option.'; return; }
       loading(true, 'Placing your order…');
       try {
-        const r = await api('createBooking', { token: session.token, kind: 'food', bizId: F.bizId, lines: cart.food, fulfillment: st.ful, lat: st.lat, lng: st.lng, landmark: st.ful === 'delivery' ? $('#lmk').value.trim() : '', payMethod: pay, notes: $('#ckN').value.trim(), proofPhoto: pay === 'transfer' ? UP.fProof || '' : '', ...promoPayload() });
+        const r = await api('createBooking', { token: session.token, kind: 'food', bizId: F.bizId, lines: cart.food, fulfillment: st.ful, lat: st.lat, lng: st.lng, landmark: st.ful === 'delivery' ? (window._pinAddr || '').trim() : '', payMethod: pay, notes: $('#ckN').value.trim(), proofPhoto: pay === 'transfer' ? UP.fProof || '' : '', ...promoPayload() });
         cart.food = []; cart.foodBiz = null; saveCart(); loading(false); afterCreate(r);
       } catch (x) { loading(false); $('#ckErr').textContent = x.message; }
     };

@@ -131,6 +131,7 @@ var Pricing = {
     if (food.matrixFees && b.length) {
       for (var i = 0; i < b.length; i++) if (km <= +b[i].upToKm + 1e-9) {
         var m = b[i], c = +(m.customerFee != null && m.customerFee !== '' ? m.customerFee : m.fee) || 0, s = +m.storeFee || 0, r = m.riderFee == null || m.riderFee === '' ? c + s : +m.riderFee;
+        if (food.simpleFees) { r = Math.max(c, R.minRider); s = Pricing.round(r - c); }   /* simple: the merchant sets only what the customer pays; riders get at least the minimum, the store covers any difference */
         return { km: km, fee: Pricing.round(c), riderFee: Pricing.round(r), storeShare: Pricing.round(s), extraKm: 0, band: i, fromKm: i ? +b[i - 1].upToKm : 0, toKm: +m.upToKm };
       }
       return null;

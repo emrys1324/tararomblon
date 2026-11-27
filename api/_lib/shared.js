@@ -132,6 +132,7 @@ var Pricing = {
     if (food.matrixFees && b.length) {
       for (var i = 0; i < b.length; i++) if (km <= +b[i].upToKm + 1e-9) {
         var m = b[i], c = +(m.customerFee != null && m.customerFee !== '' ? m.customerFee : m.fee) || 0, s = +m.storeFee || 0, r = m.riderFee == null || m.riderFee === '' ? c + s : +m.riderFee;
+        if (food.simpleFees) { r = Math.max(c, R.minRider); s = Pricing.round(r - c); }   /* simple: the merchant sets only what the customer pays; riders get at least the minimum, the store covers any difference */
         return { km: km, fee: Pricing.round(c), riderFee: Pricing.round(r), storeShare: Pricing.round(s), extraKm: 0, band: i, fromKm: i ? +b[i - 1].upToKm : 0, toKm: +m.upToKm };
       }
       return null;
@@ -1314,6 +1315,17 @@ function createCore(env) {
     F.items = out; F.categories = newCats; await env.db.kvPut('catalog', cat);
     await event('listing', who.name + ' saved the menu of ' + F.storeName + ' (' + out.length + ' items' + (added ? ', ' + added + ' added' : '') + (removed.length ? ', removed: ' + removed.join(', ') : '') + ')', ['super', 'biz:' + who.bizId], '', who.bizId, [], '', '', who.email);
     return { items: out, added: added, removed: removed.length };
+  };
+  /* Merchant Admin: simple delivery fees per distance (what the customer pays). Riders get at least the minimum rider earning; the store covers the difference. */
+  A.mSaveDelivery = async function (p) {
+    var who = await auth(p.token, 'manager'), cat = await catalog(true), F = Pricing.store(cat, who.bizId); if (!F) err('This business has no food store.');
+    var bands = (p.bands || []).map(function (b) { return { upToKm: Pricing.round(+b.upToKm), fee: Pricing.round(+b.fee) }; });
+    if (!bands.length) err('Add at least one distance.'); if (bands.length > 12) err('Up to 12 distances.');
+    bands.forEach(function (b, i) { if (!(b.upToKm > 0) || b.upToKm > 30) err('Distance ' + (i + 1) + ': enter "up to" km between 0.1 and 30.'); if (!(b.fee >= 0)) err('Distance ' + (i + 1) + ': the fee must be ₱0 or more.'); if (i && b.upToKm <= bands[i - 1].upToKm) err('Each distance must be farther than the one before it.'); });
+    F.matrix = bands.map(function (b) { return { upToKm: b.upToKm, customerFee: b.fee }; }); F.matrixFees = true; F.simpleFees = true; delete F.maxKm;
+    await env.db.kvPut('catalog', cat);
+    await event('listing', who.name + ' updated delivery fees for ' + F.storeName + ': ' + bands.map(function (b, i) { return (i ? bands[i - 1].upToKm : 0) + '-' + b.upToKm + ' km P' + b.fee; }).join(', '), ['super', 'biz:' + who.bizId], '', who.bizId, [], '', '', who.email);
+    return { matrix: F.matrix };
   };
   /* Merchant Admin: prices, promo discount and security deposit of their own listings */
   var EDITABLE = { stay: ['rate', 'deposit', 'promoPct'], unit: ['dailyRate', 'hourlyRate', 'deposit', 'promoPct'], tour: ['rate', 'deposit', 'promoPct'], item: ['price', 'promoPct'] };

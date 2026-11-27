@@ -687,5 +687,17 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   await ok('adminRemoveRider', { token: admin, email: 'back@r.ph' }); await ok('adminSaveRider', { token: admin, rider: { email: 'back@r.ph', name: 'Back Rider', phone: '0913' } });
   await fails('staffMe', { token: bT }, /sign in again/i); assert(true, 'a removed rider who is added again does not get their old session back');
 
+  console.log('Merchants set simple delivery fees per distance');
+  await fails('mSaveDelivery', { token: pm2, bands: [{ upToKm: 3, fee: 30 }, { upToKm: 2, fee: 40 }] }, /farther than the one before/);
+  await fails('mSaveDelivery', { token: cust, bands: [{ upToKm: 1, fee: 0 }] }, /Merchant Admin access|Not allowed/);
+  await ok('mSaveDelivery', { token: pm2, bands: [{ upToKm: 1, fee: 0 }, { upToKm: 3, fee: 30 }, { upToKm: 5, fee: 50 }] });
+  const sd_sF = Pricing.store((await ok('getCatalog')).catalog, 'pahuway'), sd_scat = (await ok('getCatalog')).catalog;
+  const sd_s1 = Pricing.deliverySplit(sd_scat, sd_sF, 0.8), sd_s2 = Pricing.deliverySplit(sd_scat, sd_sF, 2.2), sd_s3 = Pricing.deliverySplit(sd_scat, sd_sF, 4.9);
+  assert(sd_s1.fee === 0 && sd_s1.riderFee === 20 && sd_s1.storeShare === 20, '0-1 km free: rider still earns P20, the store covers it');
+  assert(sd_s2.fee === 30 && sd_s2.riderFee === 30 && sd_s2.storeShare === 0 && sd_s3.fee === 50 && sd_s3.riderFee === 50, 'other distances: customer pays the fee, rider earns it');
+  assert(Pricing.deliverySplit(sd_scat, sd_sF, 5.2) === null, 'beyond the last distance: no delivery');
+  const sd_dlv = await ok('createBooking', { token: cust, kind: 'food', bizId: 'pahuway', fulfillment: 'delivery', payMethod: 'online', lat: 12.5720, lng: 122.1330, landmark: 'Cagbo-aya Rd, San Agustin, Romblon', lines: [{ itemId: item.id, qty: 1, addons: [] }] });
+  assert(DB.bookings.find(r => r.id === sd_dlv.refs[0]).data.landmark === 'Cagbo-aya Rd, San Agustin, Romblon', 'delivery address from the map is saved on the order');
+
   console.log('\nALL PASSED · ' + calls + ' simulated network calls · ' + MAILS.length + ' emails');
 })().catch(e => { console.error('\nFAILED:', e.stack || e); process.exit(1); });

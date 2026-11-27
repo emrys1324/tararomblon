@@ -376,6 +376,22 @@ function vTeam() {
 const DAYS = [['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['fri', 'Fri'], ['sat', 'Sat'], ['sun', 'Sun']];
 const PAYS = ['Cash', 'GCash', 'Maya', 'Credit / debit card', 'Bank transfer', 'HitPay online'];
 const HALF = (() => { const a = []; for (let h = 0; h < 24; h++) { a.push(pad(h) + ':00'); a.push(pad(h) + ':30'); } return a; })();
+/* simple delivery fees per distance, set by the Merchant Admin */
+function delFeeRows(F) { const b = Pricing.bands(F); return MP.dfee || (MP.dfee = b.length ? b.map(x => ({ upToKm: x.upToKm, fee: +(x.customerFee != null && x.customerFee !== '' ? x.customerFee : x.fee) || 0 })) : [{ upToKm: 1, fee: 0 }, { upToKm: 3, fee: 30 }, { upToKm: 5, fee: 50 }]); }
+function delFeeCard(F) {
+  const rows = delFeeRows(F), min = Pricing.deliveryRule(CAT).minRider;
+  return `<div class="acard" id="dfCard"><h3><span class="hl">${ic('bike')} Delivery fees</span></h3><p class="hint" style="margin:0 0 8px">Set what customers pay for delivery, by distance from your store. Set ₱0 for free delivery. Customers farther than the last distance can't order delivery.</p>
+    ${rows.map((r, i) => `<div class="dfrow"><span class="dffrom">${i ? rows[i - 1].upToKm : 0} km to</span><div class="field"><label>Up to (km)</label><input type="number" min="0.1" step="0.1" data-df="${i}|upToKm" value="${esc(r.upToKm)}"></div><div class="field"><label>Delivery fee (₱)</label><input type="number" min="0" step="1" data-df="${i}|fee" value="${esc(r.fee)}"></div><button class="xbtn" data-dfx="${i}" title="Remove">${ic('x')}</button></div>`).join('')}
+    <div class="rowbtns mt"><button class="btn ghost sm" id="dfAdd">${ic('plus', 14)} Add distance</button><button class="btn sm" id="dfSave">Save delivery fees</button></div>
+    <p class="hint mt">Riders always earn at least ${peso(min)} per delivery. If the fee is lower (or free), your store pays the rider the difference. Customers see: <b>${esc(rows.map((r, i) => (i ? rows[i - 1].upToKm : 0) + '–' + r.upToKm + ' km: ' + (+r.fee ? '₱' + r.fee : 'Free')).join(' · '))}</b></p><div class="err" id="dfErr"></div></div>`;
+}
+function wireDelFees(F) {
+  const rows = delFeeRows(F), redraw = () => { $('#dfCard').outerHTML = delFeeCard(F); wireDelFees(F); };
+  document.querySelectorAll('[data-df]').forEach(x => { x.oninput = () => { const [i, k] = x.dataset.df.split('|'); rows[+i][k] = x.value === '' ? '' : +x.value; }; x.onchange = redraw; });
+  document.querySelectorAll('[data-dfx]').forEach(x => x.onclick = () => { rows.splice(+x.dataset.dfx, 1); redraw(); });
+  $('#dfAdd').onclick = () => { const l = rows[rows.length - 1]; rows.push({ upToKm: l ? Pricing.round(+l.upToKm + 2) : 1, fee: l ? +l.fee + 20 : 0 }); redraw(); };
+  $('#dfSave').onclick = async () => { loading(true, 'Saving…'); try { await api('mSaveDelivery', { token: MP.token, bands: rows }); const c = await api('getCatalog'); if (c.catalog) CAT = Pricing.norm(c.catalog); MP.dfee = null; loading(false); toast('Delivery fees saved'); const F2 = Pricing.store(CAT, F.bizId) || F; $('#dfCard').outerHTML = delFeeCard(F2); wireDelFees(F2); } catch (x) { loading(false); $('#dfErr').textContent = x.message; } };
+}
 async function vStore() {
   if (!isAdm()) { $('#pbody').innerHTML = '<div class="empty">Store settings are for the Merchant Admin.</div>'; return; }
   $('#pbody').innerHTML = '<div class="empty">Loading…</div>';
@@ -384,7 +400,7 @@ async function vStore() {
   const fld = (id, label, v, type, ph) => `<div class="field"><label>${label}</label><input id="${id}" ${type ? 'type="' + type + '"' : ''} value="${esc(v || '')}" placeholder="${esc(ph || '')}"></div>`;
   const tsel = (id, v) => `<select id="${id}">${HALF.map(t => `<option value="${t}" ${t === v ? 'selected' : ''}>${fmtT(t)}</option>`).join('')}</select>`;
   const tog = (id, label, on) => `<label class="tog"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}> ${label}</label>`;
-  $('#pbody').innerHTML = `<div class="acard"><h3><span class="hl">${ic('store')} Business information</span></h3>
+  $('#pbody').innerHTML = `${F ? delFeeCard(F) : ''}<div class="acard"><h3><span class="hl">${ic('store')} Business information</span></h3>
       <div class="agrid">${fld('sfN', 'Name of business *', z.name)}${fld('sfT', 'Tagline', z.tagline, '', 'e.g. Specialty coffee by the sea')}${fld('sfP', 'Contact number', z.phone, 'tel')}${fld('sfE', 'Email for notifications', z.email, 'email')}${fld('sfF', 'Facebook page / website', z.facebook)}
         <div class="field"><label>Town</label><select id="sfTown">${TOWNS.map(t => `<option ${t === (z.town || 'San Agustin') ? 'selected' : ''}>${t}</option>`).join('')}</select></div></div>
       <div class="mt">${fld('sfA', 'Address', z.address || (F && F.address))}</div><div class="mt">${fld('sfL', 'Landmark / directions', z.landmark)}</div>
@@ -406,6 +422,7 @@ async function vStore() {
   const saveTok = async tok => { loading(true, 'Connecting to Loyverse…'); try { const r = await api('mSaveLoyverse', { token: MP.token, loyverseToken: tok }); loading(false); toast(r.loyverseConnected ? 'Loyverse connected' : 'Loyverse disconnected'); vStore(); } catch (x) { loading(false); toast(x.message); } };
   if ($('#lvSave')) $('#lvSave').onclick = () => { const t = $('#lvTok').value.trim(); if (!t) { toast('Paste your Loyverse access token.'); return; } saveTok(t); };
   if ($('#lvOff')) $('#lvOff').onclick = () => saveTok('');
+  if (F) wireDelFees(F);
   $('#sfSave').onclick = async () => {
     const v = id => $('#' + id) ? $('#' + id).value.trim() : undefined, c = id => $('#' + id) ? $('#' + id).checked : undefined, hours = {};
     DAYS.forEach(([d]) => hours[d] = { open: $('#ho_' + d).value, close: $('#hc_' + d).value, closed: $('#hx_' + d).checked });
