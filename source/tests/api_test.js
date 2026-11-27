@@ -233,11 +233,12 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   assert(!DB.staff.find(r => r.id === 'rider@tara.ph').data.loc, 'rider location cleared when they go offline');
   assert(!(await ok('rLocation', { token: rider, lat: 12.57, lng: 122.13 })).sharing, 'offline rider location not stored without an active delivery');
   await ok('rAvailable', { token: rider, value: true });
-  await fails('setStatus', { token: rider, ref: fref, status: 'Payment Collected' }, /can't set/);
-  await fails('setStatus', { token: pstaff, ref: fref, status: 'Payment Collected' }, /amount collected .*required/);
   const fb = (await ok('mBookings', { token: pstaff })).bookings.find(b => b.ref === fref), expCash = Rules.cashExpected(fb);
-  assert(expCash === fb.quote.subtotal, 'COD cash expected by merchant = food subtotal (rider keeps delivery fee)');
-  await ok('setStatus', { token: pstaff, ref: fref, status: 'Payment Collected', amount: expCash });
+  assert(fb.codToRider && expCash === Rules.payable(fb), 'COD cash goes to the rider: they collect the whole P' + expCash);
+  await fails('setStatus', { token: pstaff, ref: fref, status: 'Payment Collected', amount: expCash }, /next step|can't set/);
+  await fails('setStatus', { token: rider, ref: fref, status: 'Payment Collected' }, /amount collected .*required/);
+  await ok('setStatus', { token: rider, ref: fref, status: 'Payment Collected', amount: expCash });
+  assert(DB.bookings.find(r => r.id === fref).data.cashCollected.role === 'rider', 'rider records the COD cash they collected');
   await ok('setStatus', { token: pstaff, ref: fref, status: 'Completed' });
   const ro = await ok('rOrders', { token: rider }); assert(ro.orders[0].status === 'Completed' && ro.orders[0].fee === undefined, 'rider sees completed order without merchant money fields');
   const kus = await ok('createBooking', { token: cust, kind: 'food', bizId: 'kusina', fulfillment: 'pickup', payMethod: 'pickup', lines: [{ itemId: 'gyoza', qty: 2, addons: [] }] });
@@ -330,8 +331,8 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   console.log('Payouts');
   const all = (await ok('adminData', { token: admin })).bookings, done = all.find(b => b.ref === fref);
   assert(done.status === 'Completed', 'COD order completed');
-  const L = Rules.ledger(done, {}); assert(L.bizNet === -L.fee - L.storeDelivery && L.cashBiz === Rules.gross(done) && L.cashRecorded, 'cash order: merchant recorded cash, owes the fee and its delivery share');
-  assert(L.riderShare === done.quote.riderFee && L.riderNet === done.quote.storeDeliveryShare && L.riderShare === done.quote.deliveryFee + done.quote.storeDeliveryShare, 'COD delivery: rider keeps the customer part in cash, store share paid out (km ' + done.quote.km + ', rider ₱' + L.riderShare + ')');
+  const L = Rules.ledger(done, {}); assert(L.cashBiz === 0 && L.bizNet === Rules.r2(Rules.gross(done) - L.discount - L.fee - L.storeDelivery), 'COD to rider: the store got no cash; the platform pays the store its sales minus fee and delivery share (P' + L.bizNet + ')');
+  assert(L.riderShare === done.quote.riderFee && L.riderCash === Rules.payable(done) && L.riderNet === Rules.r2(L.riderShare - Rules.payable(done)), 'COD to rider: earning P' + L.riderShare + ' kept separate from the P' + L.riderCash + ' cash held; settlement P' + L.riderNet);
   console.log('Delivery fee matrix per restaurant');
   const MXF = { matrixFees: true, matrix: [{ upToKm: 3, customerFee: 0, storeFee: 20, riderFee: 20 }, { upToKm: 5, customerFee: 30, storeFee: 10, riderFee: 40 }, { upToKm: 8, customerFee: 60, storeFee: 0, riderFee: 50 }] };
   const x1 = Pricing.deliverySplit({ settings: {} }, MXF, 1.2), x2 = Pricing.deliverySplit({ settings: {} }, MXF, 3.0), x3 = Pricing.deliverySplit({ settings: {} }, MXF, 4.1), x4 = Pricing.deliverySplit({ settings: {} }, MXF, 7.9);
@@ -362,8 +363,8 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   const s2 = all.find(b => b.ref === stayB.ref), m2 = Rules.ledger(Object.assign({}, s2, { status: 'Completed' }), {});
   assert(po1.payout.net === Rules.r2(m2.bizNet - 50) && po1.payout.cash === m2.cashBiz, 'stay payout = downpayment - fee - discount... net ' + po1.payout.net);
   await fails('adminPayout', { token: admin, party: 'biz:hiraya', refs: [stayB.ref] }, /not ready/);
-  const po2 = await ok('adminPayout', { token: admin, party: 'biz:pahuway', refs: [fref] }); assert(po2.payout.net < 0 && po2.payout.direction === 'collect', 'cash-only merchant: collect platform fee');
-  const po3 = await ok('adminPayout', { token: admin, party: 'rider:rider@tara.ph', refs: [fref] }); assert(po3.payout.net === L.storeDelivery && L.storeDelivery === 20, 'COD rider: keeps the customer part in cash and is paid the store share ₱' + po3.payout.net);
+  const po2 = await ok('adminPayout', { token: admin, party: 'biz:pahuway', refs: [fref] }); assert(po2.payout.net === L.bizNet && po2.payout.net > 0, 'merchant is paid out for COD sales the rider collected');
+  const po3 = await ok('adminPayout', { token: admin, party: 'rider:rider@tara.ph', refs: [fref] }); assert(po3.payout.net === L.riderNet && po3.payout.direction === 'collect', 'rider settlement: earnings minus COD cash held (rider remits P' + (-po3.payout.net) + ')');
   const ad4 = await ok('adminData', { token: admin }); assert(ad4.payouts.length === 3 && ad4.bookings.find(b => b.ref === fref).riderPaidAt && ad4.bookings.find(b => b.ref === fref).bizPaidAt, 'payouts recorded and bookings settled');
   assert(MAILS.some(m => /Payout statement/.test(m.subject)), 'payout statement emailed');
 

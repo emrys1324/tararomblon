@@ -38,7 +38,7 @@ There are no npm packages to install. The functions use Node's built-in `fetch` 
 ## New: platform pays riders every 3 days
 
 - Customers only see the delivery fee they pay. Rider earnings show only in the Rider app (merchants see what the store pays).
-- Cash on delivery: the rider hands **all** the cash (food + the customer's delivery fee) to the store. The store's payout then deducts the platform fee, the customer's delivery fee and the store's delivery share; the platform pays the rider their full earning.
+- Cash on delivery: the **rider keeps the cash** and records it (Payment Collected). It is not counted as rider earnings; every 3 days the rider is settled: earnings minus COD cash held (if negative, the rider remits the difference). The platform pays the store its sales minus the platform fee and its delivery share.
 - Riders are paid every 3 days (Settings → Riders → "Pay riders their earnings every (days)"). The Rider app shows "Due to you" and the next payout date. Super Admin → Payouts shows "Rider payouts due", and a daily reminder is sent when riders are due.
 - Orders placed before this change keep the old split (rider kept the customer's fee in cash).
 

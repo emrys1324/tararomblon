@@ -57,7 +57,7 @@ var Rules = {
     if (actor.role === 'manager') return actor.bizId === b.bizId ? Rules.STATUSES.filter(function (s) { return s !== b.status; }) : [];
     var nx = Rules.next(b), out = [];
     if (actor.role === 'staff' && actor.bizId === b.bizId) {
-      if (nx && !(nx === 'Payment Confirmed' && b.payMethod === 'online')) out.push(nx);   // HitPay confirms itself
+      if (nx && !(nx === 'Payment Confirmed' && b.payMethod === 'online') && !(nx === 'Payment Collected' && b.codToRider)) out.push(nx);   // HitPay confirms itself; riders record COD cash they keep
       if (['New', 'Payment Confirmed'].indexOf(b.status) >= 0) out.push('Rejected');
       return out;
     }
@@ -65,6 +65,7 @@ var Rules = {
     if (actor.role === 'rider' && b.rider === actor.email && b.riderAccepted) {
       if (['Ready for Pick-up', 'Preparing'].indexOf(b.status) >= 0) out.push('Out for Delivery');
       if (b.status === 'Out for Delivery') out.push('Delivered');
+      if (b.status === 'Delivered' && b.payMethod === 'cod' && b.codToRider) out.push('Payment Collected');
       return out;   // COD cash is recorded by the merchant (amount received) when they tag Payment Collected
     }
     return [];
@@ -97,7 +98,7 @@ var Rules = {
   payable: function (b) { return Rules.r2((+b.quote.total || 0) - Rules.reductions(b).total); },
   /* Cash the merchant should receive when tagging Payment Collected */
   cashExpected: function (b) {
-    if (b.payMethod === 'cod') return b.platformPaysRider ? Rules.payable(b) : Rules.r2(Rules.payable(b) - (+b.quote.deliveryFee || 0));
+    if (b.payMethod === 'cod') return b.codToRider ? Rules.payable(b) : b.platformPaysRider ? Rules.payable(b) : Rules.r2(Rules.payable(b) - (+b.quote.deliveryFee || 0));
     if (b.payMethod === 'pickup') return Rules.payable(b);
     return Rules.r2(Math.max(0, Rules.payable(b) - (+b.dueNow || 0) - (+b.discount || 0)));
   },
@@ -126,7 +127,7 @@ var Rules = {
     st = st || {};
     var m = Rules.money(b), o = { counted: m.counted, gross: m.gross, discount: m.discount, fee: m.fee, delivery: m.delivery, taraBiz: 0, cashBiz: 0, bizNet: 0, riderShare: 0, riderCash: 0, riderNet: 0 };
     if (!m.counted) return o;
-    var codTara = st.codCashTo === 'tara', cod = b.payMethod === 'cod', due = m.gross - m.discount;
+    var cod = b.payMethod === 'cod', codTara = cod && (b.codToRider || (st.codCashTo === 'tara' && !b.platformPaysRider)), due = m.gross - m.discount;
     var taraBiz = (cod && codTara ? Rules.payable(b) - m.delivery : Math.max(0, m.collectedOnline - m.delivery)) + m.codeTara;
     o.taraBiz = Rules.r2(Math.min(taraBiz, Math.max(due, 0)));
     /* cash the merchant actually recorded at Payment Collected, else what they should have received */
@@ -138,7 +139,7 @@ var Rules = {
     o.bizNet = Rules.r2(due - m.fee - o.cashBiz - o.storeDelivery);
     if (b.rider && b.kind === 'food' && Rules.DELIVERED.indexOf(b.status) >= 0) {
       o.riderShare = Rules.riderEarning(b, st);
-      o.riderCash = cod ? (codTara ? Rules.payable(b) : b.platformPaysRider ? 0 : m.delivery) : 0;
+      o.riderCash = cod ? (codTara ? (b.cashCollected && b.cashCollected.role === 'rider' ? +b.cashCollected.amount : Rules.payable(b)) : b.platformPaysRider ? 0 : m.delivery) : 0;
       o.riderNet = Rules.r2(o.riderShare - o.riderCash);
     }
     return o;

@@ -258,7 +258,7 @@ var Rules = {
     if (actor.role === 'manager') return actor.bizId === b.bizId ? Rules.STATUSES.filter(function (s) { return s !== b.status; }) : [];
     var nx = Rules.next(b), out = [];
     if (actor.role === 'staff' && actor.bizId === b.bizId) {
-      if (nx && !(nx === 'Payment Confirmed' && b.payMethod === 'online')) out.push(nx);   // HitPay confirms itself
+      if (nx && !(nx === 'Payment Confirmed' && b.payMethod === 'online') && !(nx === 'Payment Collected' && b.codToRider)) out.push(nx);   // HitPay confirms itself; riders record COD cash they keep
       if (['New', 'Payment Confirmed'].indexOf(b.status) >= 0) out.push('Rejected');
       return out;
     }
@@ -266,6 +266,7 @@ var Rules = {
     if (actor.role === 'rider' && b.rider === actor.email && b.riderAccepted) {
       if (['Ready for Pick-up', 'Preparing'].indexOf(b.status) >= 0) out.push('Out for Delivery');
       if (b.status === 'Out for Delivery') out.push('Delivered');
+      if (b.status === 'Delivered' && b.payMethod === 'cod' && b.codToRider) out.push('Payment Collected');
       return out;   // COD cash is recorded by the merchant (amount received) when they tag Payment Collected
     }
     return [];
@@ -298,7 +299,7 @@ var Rules = {
   payable: function (b) { return Rules.r2((+b.quote.total || 0) - Rules.reductions(b).total); },
   /* Cash the merchant should receive when tagging Payment Collected */
   cashExpected: function (b) {
-    if (b.payMethod === 'cod') return b.platformPaysRider ? Rules.payable(b) : Rules.r2(Rules.payable(b) - (+b.quote.deliveryFee || 0));
+    if (b.payMethod === 'cod') return b.codToRider ? Rules.payable(b) : b.platformPaysRider ? Rules.payable(b) : Rules.r2(Rules.payable(b) - (+b.quote.deliveryFee || 0));
     if (b.payMethod === 'pickup') return Rules.payable(b);
     return Rules.r2(Math.max(0, Rules.payable(b) - (+b.dueNow || 0) - (+b.discount || 0)));
   },
@@ -327,7 +328,7 @@ var Rules = {
     st = st || {};
     var m = Rules.money(b), o = { counted: m.counted, gross: m.gross, discount: m.discount, fee: m.fee, delivery: m.delivery, taraBiz: 0, cashBiz: 0, bizNet: 0, riderShare: 0, riderCash: 0, riderNet: 0 };
     if (!m.counted) return o;
-    var codTara = st.codCashTo === 'tara', cod = b.payMethod === 'cod', due = m.gross - m.discount;
+    var cod = b.payMethod === 'cod', codTara = cod && (b.codToRider || (st.codCashTo === 'tara' && !b.platformPaysRider)), due = m.gross - m.discount;
     var taraBiz = (cod && codTara ? Rules.payable(b) - m.delivery : Math.max(0, m.collectedOnline - m.delivery)) + m.codeTara;
     o.taraBiz = Rules.r2(Math.min(taraBiz, Math.max(due, 0)));
     /* cash the merchant actually recorded at Payment Collected, else what they should have received */
@@ -339,7 +340,7 @@ var Rules = {
     o.bizNet = Rules.r2(due - m.fee - o.cashBiz - o.storeDelivery);
     if (b.rider && b.kind === 'food' && Rules.DELIVERED.indexOf(b.status) >= 0) {
       o.riderShare = Rules.riderEarning(b, st);
-      o.riderCash = cod ? (codTara ? Rules.payable(b) : b.platformPaysRider ? 0 : m.delivery) : 0;
+      o.riderCash = cod ? (codTara ? (b.cashCollected && b.cashCollected.role === 'rider' ? +b.cashCollected.amount : Rules.payable(b)) : b.platformPaysRider ? 0 : m.delivery) : 0;
       o.riderNet = Rules.r2(o.riderShare - o.riderCash);
     }
     return o;
@@ -400,7 +401,7 @@ var Rules = {
 var DEFAULT_SETTINGS = {
   requireIdVerification: true, idUploadAtCheckout: 'optional', proofUpload: 'required', transferEnabled: true,
   transferInstructions: 'Send your payment to GCash 0917 000 0000 (Beyond Tech Solutions) or BPI 0000-0000-00 (Beyond Tech Solutions), then upload a screenshot of your receipt.',
-  riderSharePct: 100, codCashTo: 'merchant', codMinCompleted: 3, codMax: 500, riderPayoutDays: 3, riderDispatch: true, dispatchKm: 5, dispatchWidenMin: 3, dispatchAlertMin: 15, codExemptBefore: '2026-11-21', email: { customers: true, merchants: true, admins: true, riders: true },
+  riderSharePct: 100, codCashTo: 'tara', codMinCompleted: 3, codMax: 500, riderPayoutDays: 3, riderDispatch: true, dispatchKm: 5, dispatchWidenMin: 3, dispatchAlertMin: 15, codExemptBefore: '2026-11-21', email: { customers: true, merchants: true, admins: true, riders: true },
   /* Stays and Things to do show "Coming soon" until a Super Admin opens them in Settings */
   staysLive: false, toursLive: false
 };
@@ -743,6 +744,7 @@ function createCore(env) {
         fee: Rules.feeFor(biz(cat, d.bizId), Rules.gross(d)), discount: 0, idFile: idFile, proofFile: proofFile, rider: '', riderAccepted: false, history: [] });
       if (b.kind === 'food' && b.fulfillment === 'delivery' && st.riderDispatch !== false) { b.dispatch = true; if (b.status === 'New') b.status = 'Finding Rider'; }
       if (b.kind === 'food' && b.fulfillment === 'delivery' && st.codCashTo !== 'tara') b.platformPaysRider = true;   /* riders hand all COD cash to the store; the platform pays their earnings */
+      if (b.kind === 'food' && b.fulfillment === 'delivery' && b.payMethod === 'cod' && st.codCashTo === 'tara') b.codToRider = true;   /* the rider keeps the COD cash; it is settled against their earnings and the platform pays the store */
       b.id = b.ref; b.history.push({ at: created, status: b.status, by: me.name, role: 'customer' }); out.push(b);
     });
     var due = out.reduce(function (t, b) { return t + (+b.dueNow || 0); }, 0);
@@ -1559,7 +1561,7 @@ function createCore(env) {
     var cat = await catalog(), st = settings(cat), days = +st.riderPayoutDays || 3, t = Date.parse(now()), all = await allBookings(), pays = await env.db.all(T.pay), out = [];
     (await staffAll()).filter(function (r) { return r.role === 'rider'; }).forEach(function (r) {
       var un = all.filter(function (b) { return b.rider === r.email && Rules.riderPayable(b); }); if (!un.length) return;
-      var net = Rules.r2(un.reduce(function (s, b) { return s + Rules.ledger(b, st).riderNet; }, 0)); if (net <= 0) return;
+      var net = Rules.r2(un.reduce(function (s, b) { return s + Rules.ledger(b, st).riderNet; }, 0)); if (!net) return;
       var last = pays.filter(function (p) { return p.party === 'rider:' + r.email; }).map(function (p) { return p.at || p.created || ''; }).sort().pop();
       var from = last || un.map(function (b) { return b.updated || b.created; }).sort()[0];
       if (t - Date.parse(from) >= days * 864e5) out.push({ email: r.email, name: r.name || r.email, net: net, n: un.length });
@@ -1573,7 +1575,7 @@ function createCore(env) {
     /* Confirms HitPay payments found by the webhook or the daily check, and expires unpaid online bookings after 60 minutes */
     paymentWebhook: async function (ref) { var bs = (await allBookings()).filter(function (b) { return b.group === ref || b.ref === ref; }); if (bs.length) return await checkHitpay(bs[0].group); return false; },
     reconcile: async function () {
-      try { var due = await ridersDue(), dk = 'ridersdue_' + env.today(); if (due.length && !(await env.cache.get(dk))) { await env.cache.put(dk, '1', 86400); await event('payout', 'Rider payouts due: ' + due.map(function (r) { return r.name + ' P' + r.net; }).join(', ') + '. Pay them in Super Admin → Payouts.', ['super'], '', '', ['super'], 'Rider payouts due (' + due.length + ')', due.map(function (r) { return r.name + ': P' + r.net + ' (' + r.n + ' deliveries)'; }).join('\n') + '\n\nRiders are paid every ' + (+settings(await catalog()).riderPayoutDays || 3) + ' days. Open Super Admin → Payouts.', ''); } } catch (x) { }
+      try { var due = await ridersDue(), dk = 'ridersdue_' + env.today(); if (due.length && !(await env.cache.get(dk))) { await env.cache.put(dk, '1', 86400); await event('payout', 'Rider settlements due: ' + due.map(function (r) { return r.name + (r.net < 0 ? ' owes P' + (-r.net) : ' P' + r.net); }).join(', ') + '. Pay them in Super Admin → Payouts.', ['super'], '', '', ['super'], 'Rider payouts due (' + due.length + ')', due.map(function (r) { return r.name + ': P' + r.net + ' (' + r.n + ' deliveries)'; }).join('\n') + '\n\nRiders are paid every ' + (+settings(await catalog()).riderPayoutDays || 3) + ' days. Open Super Admin → Payouts.', ''); } } catch (x) { }
       var seen = {}, list = (await allBookings()).filter(function (b) { return b.status === 'Awaiting Payment' && b.payMethod === 'online'; });
       for (var i = 0; i < list.length; i++) {
         var b = list[i]; if (seen[b.group]) continue; seen[b.group] = 1;
