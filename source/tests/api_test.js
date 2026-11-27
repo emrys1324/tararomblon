@@ -341,6 +341,9 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   assert(Pricing.deliverySplit({ settings: {} }, Object.assign({}, MXF, { matrixFees: false }), 3.2).riderFee === 20 && Pricing.deliverySplit({ settings: {} }, Object.assign({}, MXF, { matrixFees: false }), 3.2).fee === 14, 'matrix switched off: Settings formula, bands only limit distance');
   assert(Pricing.deliverySplit({ settings: {} }, { matrixFees: true, matrix: [{ upToKm: 4, customerFee: 25, storeFee: 15 }] }, 2).riderFee === 40, 'rider gets customer + store when left empty');
   assert(/0–3 km: Free · 3–5 km: ₱30/.test(Pricing.deliveryText({ settings: {} }, MXF)), 'customers see the bands');
+  const xq = { km: 4.1, deliveryFee: 30, storeDeliveryShare: 10, deliveryBand: { from: 3, to: 5 } }, xe = Pricing.deliveryExplain({ settings: {} }, MXF, xq);
+  assert(xe.cost === 40 && xe.store === 10 && xe.you === 30 && /4.1 km from the store · 3–5 km rate/.test(xe.how), 'checkout explains the fee: cost 40, store covers 10, customer pays 30');
+  assert(/beyond the free 1.5 km × ₱10/.test(Pricing.deliveryExplain({ settings: {} }, {}, { km: 3.2, deliveryFee: 14, storeDeliveryShare: 6, extraKm: 2 }).how), 'formula fees explained too');
   const mxB = Pricing.food(Object.assign(JSON.parse(JSON.stringify(CATALOG)), {}), { bizId: 'pahuway', lines: [{ itemId: item.id, qty: 1, addons: [] }], fulfillment: 'delivery', lat: 12.5720, lng: 122.1330 });
   console.log('Delivery fee rule');
   const DC = { settings: {} }, DF = { maxKm: 10 };

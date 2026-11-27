@@ -107,6 +107,15 @@ var Pricing = {
      The customer pays customerPct % of that fee, the store pays the rest, and the rider earns the whole fee.
      Within freeKm the customer pays nothing and the store pays the rider baseFee. Beyond the store's delivery area: null. */
   DELIVERY: { freeKm: 1.5, perKm: 10, customerPct: 70, baseFee: 20, maxKm: 10, minRider: 20 },
+  /* how this order's delivery fee was worked out, for the checkout summary */
+  deliveryExplain: function (cat, food, q) {
+    if (q.km == null) return null;
+    var cost = Pricing.round((+q.deliveryFee || 0) + (+q.storeDeliveryShare || 0)), store = +q.storeDeliveryShare || 0, you = +q.deliveryFee || 0, R = Pricing.deliveryRule(cat), how;
+    if (q.deliveryBand) how = q.km + ' km from the store · ' + q.deliveryBand.from + '–' + q.deliveryBand.to + ' km rate';
+    else if (q.extraKm) how = q.km + ' km from the store · ' + q.extraKm + ' km beyond the free ' + R.freeKm + ' km × ₱' + R.perKm;
+    else how = q.km + ' km from the store · within the free ' + R.freeKm + ' km';
+    return { how: how, cost: cost, store: store, you: you };
+  },
   /* short text for customers: how delivery is charged for this restaurant */
   deliveryText: function (cat, food) {
     var b = Pricing.bands(food);
@@ -185,7 +194,7 @@ var Pricing = {
       fee = split.fee;
     } else if (p.fulfillment === 'pickup' && !F.pickupEnabled) return { error: 'Pick-up is not available right now.' };
     return { ok: true, bizId: F.bizId, storeName: F.storeName, lines: out, subtotal: Pricing.round(sub), km: km, deliveryFee: fee, total: Pricing.round(sub + fee),
-      riderFee: split ? split.riderFee : 0, storeDeliveryShare: split ? split.storeShare : 0 };
+      riderFee: split ? split.riderFee : 0, storeDeliveryShare: split ? split.storeShare : 0, deliveryBand: split && split.band != null ? { from: split.fromKm, to: split.toKm } : null, extraKm: split ? split.extraKm || 0 : 0 };
   }
 };
 /* ===== END PRICING ===== */

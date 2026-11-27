@@ -595,6 +595,8 @@ footer .fown span{display:inline}
 .copyrow{display:flex;gap:8px}.copyrow input{flex:1;min-width:0;border:1.5px solid var(--line);border-radius:10px;padding:9px 12px;background:#f8f7f3;font-size:13px}
 .soonwarn{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
 .dangerbtn2{color:var(--coral-d,#c4561c)!important;border-color:#f3c3bc!important}
+.delcalc{margin:2px 0 8px;padding:8px 10px;border-radius:10px;background:#f6f3ec;border:1px dashed var(--line);font-size:13px;color:var(--mute)}
+.delcalc .dl{display:flex;justify-content:space-between;margin-top:3px}.delcalc .dl.ok span:last-child{color:#1d7a3e}.delcalc .dl.t{color:var(--ink,#223);font-weight:600;border-top:1px solid var(--line);padding-top:3px}
 
 </style>
 </head>
@@ -843,6 +845,15 @@ var Pricing = {
      The customer pays customerPct % of that fee, the store pays the rest, and the rider earns the whole fee.
      Within freeKm the customer pays nothing and the store pays the rider baseFee. Beyond the store's delivery area: null. */
   DELIVERY: { freeKm: 1.5, perKm: 10, customerPct: 70, baseFee: 20, maxKm: 10, minRider: 20 },
+  /* how this order's delivery fee was worked out, for the checkout summary */
+  deliveryExplain: function (cat, food, q) {
+    if (q.km == null) return null;
+    var cost = Pricing.round((+q.deliveryFee || 0) + (+q.storeDeliveryShare || 0)), store = +q.storeDeliveryShare || 0, you = +q.deliveryFee || 0, R = Pricing.deliveryRule(cat), how;
+    if (q.deliveryBand) how = q.km + ' km from the store · ' + q.deliveryBand.from + '–' + q.deliveryBand.to + ' km rate';
+    else if (q.extraKm) how = q.km + ' km from the store · ' + q.extraKm + ' km beyond the free ' + R.freeKm + ' km × ₱' + R.perKm;
+    else how = q.km + ' km from the store · within the free ' + R.freeKm + ' km';
+    return { how: how, cost: cost, store: store, you: you };
+  },
   /* short text for customers: how delivery is charged for this restaurant */
   deliveryText: function (cat, food) {
     var b = Pricing.bands(food);
@@ -921,7 +932,7 @@ var Pricing = {
       fee = split.fee;
     } else if (p.fulfillment === 'pickup' && !F.pickupEnabled) return { error: 'Pick-up is not available right now.' };
     return { ok: true, bizId: F.bizId, storeName: F.storeName, lines: out, subtotal: Pricing.round(sub), km: km, deliveryFee: fee, total: Pricing.round(sub + fee),
-      riderFee: split ? split.riderFee : 0, storeDeliveryShare: split ? split.storeShare : 0 };
+      riderFee: split ? split.riderFee : 0, storeDeliveryShare: split ? split.storeShare : 0, deliveryBand: split && split.band != null ? { from: split.fromKm, to: split.toKm } : null, extraKm: split ? split.extraKm || 0 : 0 };
   }
 };
 /* ===== END PRICING ===== */
@@ -3643,7 +3654,7 @@ function checkoutFood() {
       $('#fSum').innerHTML = `${q.lines.map(l => `<div class="l"><span>${l.qty}× ${esc(l.name)}${l.addons.length ? '<br><small>' + esc(l.addons.join(', ')) + '</small>' : ''}</span><span>${peso(l.total)}</span></div>`).join('')}
         <div class="l"><span>Subtotal</span><span>${peso(q.subtotal)}</span></div>
         ${PROMO.code ? `<div class="l ok"><span>Code ${esc(PROMO.code)}</span><span>-${peso(PROMO.split[F.bizId] || 0)}</span></div>` : ''}${PROMO.redeem[F.bizId] ? `<div class="l ok"><span>${PROMO.redeem[F.bizId]} reward points</span><span>-${peso(promoFor(F.bizId) - (PROMO.split[F.bizId] || 0))}</span></div>` : ''}
-        ${st.ful === 'delivery' ? `<div class="l"><span>Delivery fee${q.km != null ? ' (' + q.km + ' km)' : ''}</span><span>${q.deliveryFee ? peso(q.deliveryFee) : 'Free'}</span></div><div class="hint" style="margin:-2px 0 6px" data-delrule>${esc(Pricing.deliveryText(CAT, F))}</div>` : ''}
+        ${st.ful === 'delivery' ? `<div class="l"><span>Delivery fee${q.km != null ? ' (' + q.km + ' km)' : ''}</span><span>${q.deliveryFee ? peso(q.deliveryFee) : 'Free'}</span></div>${(x => x ? `<div class="delcalc" data-delcalc><div>${ic('bike', 14)} ${esc(x.how)}</div><div class="dl"><span>Delivery cost</span><span>${peso(x.cost)}</span></div>${x.store ? `<div class="dl ok"><span>${esc(F.storeName)} covers</span><span>−${peso(x.store)}</span></div>` : ''}<div class="dl t"><span>You pay for delivery</span><span>${x.you ? peso(x.you) : 'Free'}</span></div></div>` : '')(Pricing.deliveryExplain(CAT, F, q))}<div class="hint" style="margin:-2px 0 6px" data-delrule>${esc(Pricing.deliveryText(CAT, F))}</div>` : ''}
         <div class="l t"><span>Total</span><span>${peso(tot)}</span></div>${(e => e ? `<div class="l earn"><span>${ic('star', 14)} Points you'll earn when completed</span><span>+${e}</span></div>` : '')(earnText(F.bizId, q.subtotal - promoFor(F.bizId)))}`;
       $('#ckBtn').textContent = pay === 'online' ? 'Pay ' + peso(tot) + ' online' : pay === 'transfer' ? 'Submit order · ' + peso(tot) : 'Place order · ' + peso(tot);
       return q;

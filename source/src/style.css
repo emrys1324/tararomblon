@@ -583,3 +583,5 @@ footer .fown span{display:inline}
 .copyrow{display:flex;gap:8px}.copyrow input{flex:1;min-width:0;border:1.5px solid var(--line);border-radius:10px;padding:9px 12px;background:#f8f7f3;font-size:13px}
 .soonwarn{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
 .dangerbtn2{color:var(--coral-d,#c4561c)!important;border-color:#f3c3bc!important}
+.delcalc{margin:2px 0 8px;padding:8px 10px;border-radius:10px;background:#f6f3ec;border:1px dashed var(--line);font-size:13px;color:var(--mute)}
+.delcalc .dl{display:flex;justify-content:space-between;margin-top:3px}.delcalc .dl.ok span:last-child{color:#1d7a3e}.delcalc .dl.t{color:var(--ink,#223);font-weight:600;border-top:1px solid var(--line);padding-top:3px}
