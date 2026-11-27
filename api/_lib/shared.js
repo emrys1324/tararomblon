@@ -97,6 +97,8 @@ var Pricing = {
     var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
     return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   },
+  /* stay photo gallery: photos[] (first = cover), falling back to the single older photo */
+  stayPhotos: function (st) { var p = (st && st.photos || []).filter(Boolean); return p.length ? p : (st && st.photo ? [st.photo] : []); },
   bands: function (food) { return (food.matrix || []).slice().sort(function (a, b) { return a.upToKm - b.upToKm; }); },
   deliveryFee: function (food, km) {
     var b = Pricing.bands(food);
@@ -1227,6 +1229,16 @@ function createCore(env) {
     if (p.remove) it.photo = '';
     else { if (!p.dataUrl) err('Choose a photo.'); it.photo = (await env.files.save(p.dataUrl, who.bizId + '-' + (p.id || 'logo'), false)).url; }
     await env.db.kvPut('catalog', cat); return { photo: it.photo };
+  };
+  /* Stay photo gallery (Merchant Admin of the stay, or Super Admin): add a photo, or save the new order / removals. First photo = cover. */
+  A.mGallery = async function (p) {
+    var who = await auth(p.token); if (who.role !== 'super' && who.role !== 'manager') err('Merchant Admin access only.');
+    var cat = await catalog(true), st = cat.stays.filter(function (x) { return x.id === p.id && (who.role === 'super' || x.bizId === who.bizId); })[0]; if (!st) err('Stay not found.');
+    var cur = Pricing.stayPhotos(st);
+    if (p.add) { if (cur.length >= 30) err('A stay can have up to 30 photos.'); cur = cur.concat([(await env.files.save(p.add, (st.bizId || 'stay') + '-' + st.id + '-gallery', false)).url]); }
+    else if (Array.isArray(p.photos)) { var seen = {}; cur = p.photos.filter(function (u) { if (cur.indexOf(u) < 0 || seen[u]) return false; seen[u] = 1; return true; }); }
+    st.photos = cur; st.photo = cur[0] || '';
+    await env.db.kvPut('catalog', cat); return { photos: cur };
   };
   /* Merchant Admin: add-on groups of a menu item (on/off, required or optional, customers pick up to 3 per group) */
   A.mAddons = async function (p) {

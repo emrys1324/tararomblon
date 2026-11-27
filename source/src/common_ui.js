@@ -160,6 +160,52 @@ const Push = {
     }
   }
 };
+/* ===== Stay photo gallery: editor (Merchant Admin / Super Admin) and viewer (customers) ===== */
+async function galleryEditor(stayId, token, onChange) {
+  const st = CAT.stays.find(s => s.id === stayId); if (!st) return;
+  let P = Pricing.stayPhotos(st).slice();
+  const save = async list => { loading(true, 'Saving…'); try { const r = await api('mGallery', { token, id: stayId, photos: list }); P = r.photos; st.photos = P; st.photo = P[0] || ''; loading(false); draw(); onChange && onChange(P); } catch (x) { loading(false); toast(x.message); } };
+  const draw = () => {
+    openSheet(`<div class="sbody"><span class="brandl">${esc(st.name)}</span><h2>Photos</h2><p class="meta" style="margin-top:4px">Add photos of the rooms, bathroom, view, beach and common areas so guests can browse before booking. The first photo is the cover. Up to 30.</p>
+      <label class="btn mt">${ic('upload', 16)} Add photos<input type="file" accept="image/*" multiple hidden id="galAdd"></label><span class="hint" id="galProg"></span>
+      <div class="galedit">${P.map((u, i) => `<div class="gtile"><img src="${esc(u)}" alt="" loading="lazy">${i === 0 ? '<span class="gcover">Cover</span>' : ''}<div class="gacts">
+        <button class="gbtn" title="Move left" ${i ? '' : 'disabled'} data-gmv="${i}|-1">←</button><button class="gbtn" title="Move right" ${i < P.length - 1 ? '' : 'disabled'} data-gmv="${i}|1">→</button>
+        ${i ? `<button class="gbtn" title="Make cover" data-gcov="${i}">★</button>` : ''}<button class="gbtn del" title="Delete" data-gdel="${i}">✕</button></div></div>`).join('') || '<p class="meta mt">No photos yet.</p>'}</div>
+      ${P.length ? `<button class="btn ghost full mt" onclick="openGallery('${esc(stayId)}',0)">${ic('locate', 14)} Preview as a guest</button>` : ''}</div>`);
+    $('#galAdd').onchange = async e => { const files = [...e.target.files].slice(0, 30 - P.length); if (!files.length) { toast('A stay can have up to 30 photos.'); return; }
+      for (let k = 0; k < files.length; k++) { $('#galProg') && ($('#galProg').textContent = ' Uploading ' + (k + 1) + ' of ' + files.length + '…');
+        try { const r = await api('mGallery', { token, id: stayId, add: await resizeImage(files[k], 1600) }); P = r.photos; } catch (x) { toast(x.message); break; } }
+      st.photos = P; st.photo = P[0] || ''; toast('Photos added'); draw(); onChange && onChange(P); };
+    document.querySelectorAll('[data-gmv]').forEach(b => b.onclick = () => { const [i, d] = b.dataset.gmv.split('|').map(Number), L = P.slice(), x = L.splice(i, 1)[0]; L.splice(i + d, 0, x); save(L); });
+    document.querySelectorAll('[data-gcov]').forEach(b => b.onclick = () => { const i = +b.dataset.gcov, L = P.slice(), x = L.splice(i, 1)[0]; L.unshift(x); save(L); });
+    document.querySelectorAll('[data-gdel]').forEach(b => b.onclick = () => { if (confirm('Delete this photo?')) save(P.filter((_, j) => j !== +b.dataset.gdel)); });
+  };
+  draw();
+}
+/* customer gallery: Airbnb-style grid / swipeable strip, and a full-screen viewer */
+function galleryHtml(st) {
+  const P = Pricing.stayPhotos(st); if (!P.length) return '';
+  return `<div class="galgrid n${Math.min(P.length, 5)}">${P.slice(0, 5).map((u, i) => `<button class="gimg g${i}" onclick="openGallery('${esc(st.id)}',${i})" aria-label="Photo ${i + 1}"><img src="${esc(u)}" alt="${esc(st.name)} photo ${i + 1}" ${i ? 'loading="lazy"' : ''}></button>`).join('')}
+    <div class="galstrip" onscroll="const c=this.parentNode.querySelector('.gcount');if(c)c.textContent=(Math.round(this.scrollLeft/this.clientWidth)+1)+' / ${P.length}'">${P.map((u, i) => `<button class="gs" onclick="openGallery('${esc(st.id)}',${i})"><img src="${esc(u)}" alt="${esc(st.name)} photo ${i + 1}" ${i ? 'loading="lazy"' : ''}></button>`).join('')}</div>
+    ${P.length > 1 ? `<span class="gcount">1 / ${P.length}</span>` : ''}
+    ${P.length > 1 ? `<button class="galall" onclick="openGallery('${esc(st.id)}',0)">${ic('cal', 14)} Show all ${P.length} photos</button>` : ''}</div>`;
+}
+function openGallery(stayId, start) {
+  const st = CAT.stays.find(s => s.id === stayId); if (!st) return; const P = Pricing.stayPhotos(st); if (!P.length) return;
+  let i = Math.max(0, Math.min(start || 0, P.length - 1)), x0 = null;
+  const d = document.createElement('div'); d.className = 'lbox'; d.setAttribute('role', 'dialog'); d.setAttribute('aria-modal', 'true');
+  d.innerHTML = `<div class="lbtop"><b>${esc(st.name)}</b><span id="lbN"></span><button class="lbx" aria-label="Close">${ic('x', 22)}</button></div><div class="lbimg"><button class="lbp" aria-label="Previous">‹</button><img id="lbI" alt=""><button class="lbn" aria-label="Next">›</button></div><div class="lbthumbs">${P.map((u, k) => `<img src="${esc(u)}" data-k="${k}" loading="lazy" alt="">`).join('')}</div>`;
+  document.body.appendChild(d); document.body.style.overflow = 'hidden';
+  const show = () => { d.querySelector('#lbI').src = P[i]; d.querySelector('#lbN').textContent = (i + 1) + ' / ' + P.length; d.querySelectorAll('.lbthumbs img').forEach((t, k) => t.classList.toggle('on', k === i)); const on = d.querySelector('.lbthumbs img.on'); on && on.scrollIntoView({ inline: 'center', block: 'nearest' }); };
+  const go = n => { i = (i + n + P.length) % P.length; show(); };
+  const close = () => { d.remove(); document.body.style.overflow = ''; document.removeEventListener('keydown', key); };
+  const key = e => { if (e.key === 'Escape') close(); if (e.key === 'ArrowRight') go(1); if (e.key === 'ArrowLeft') go(-1); };
+  d.querySelector('.lbx').onclick = close; d.querySelector('.lbp').onclick = () => go(-1); d.querySelector('.lbn').onclick = () => go(1);
+  d.querySelectorAll('.lbthumbs img').forEach(t => t.onclick = () => { i = +t.dataset.k; show(); });
+  const im = d.querySelector('.lbimg'); im.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, { passive: true }); im.addEventListener('touchend', e => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0; if (Math.abs(dx) > 40) go(dx < 0 ? 1 : -1); x0 = null; });
+  document.addEventListener('keydown', key); if (P.length < 2) { d.querySelector('.lbp').style.display = d.querySelector('.lbn').style.display = 'none'; }
+  show();
+}
 const bellBtn = () => `<button class="iconbtn bell" onclick="Notif.open()" aria-label="Notifications">${ic('bell', 22)}<span class="badge bellbadge" data-n="0"></span></button>`;
 
 /* ================= IN-APP MESSAGING ================= */

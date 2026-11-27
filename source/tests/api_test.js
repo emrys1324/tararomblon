@@ -660,5 +660,17 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   if (unsR) await fails('adminRemoveRider', { token: admin, email: unsR.rider }, /UNSETTLED/);
   assert(true, 'riders with active deliveries or unsettled balances are not removed without confirmation');
 
+  console.log('Stay photo gallery');
+  const gal_gs = CATALOG.stays.find(x => x.bizId === 'hiraya');
+  let gal_g1; for (let k = 0; k < 3; k++) gal_g1 = await ok('mGallery', { token: hmgr, id: gal_gs.id, add: IMG });
+  assert(gal_g1.photos.length >= 3, 'Merchant Admin adds several photos (' + gal_g1.photos.length + ')');
+  const gal_rev = gal_g1.photos.slice().reverse(); const gal_g2 = await ok('mGallery', { token: hmgr, id: gal_gs.id, photos: gal_rev.concat(['https://evil.example/x.jpg']) });
+  const gal_cat2 = (await ok('getCatalog')).catalog, gal_st2 = gal_cat2.stays.find(x => x.id === gal_gs.id);
+  assert(gal_g2.photos[0] === gal_rev[0] && !gal_g2.photos.includes('https://evil.example/x.jpg') && gal_st2.photo === gal_rev[0] && gal_st2.photos.length === gal_g2.photos.length, 'reorder saves; first photo becomes the cover; unknown links are ignored');
+  const gal_g3 = await ok('mGallery', { token: hmgr, id: gal_gs.id, photos: gal_g2.photos.slice(1) }); assert(gal_g3.photos.length === gal_g2.photos.length - 1, 'photo deleted');
+  await fails('mGallery', { token: pm2, id: gal_gs.id, add: IMG }, /Stay not found/);
+  await fails('mGallery', { token: cust, id: gal_gs.id, add: IMG }, /Merchant Admin access|Not allowed/);
+  assert(Pricing.stayPhotos({ photo: 'a.jpg' })[0] === 'a.jpg' && Pricing.stayPhotos({ photos: ['b.jpg'], photo: 'a.jpg' })[0] === 'b.jpg', 'older single photo still shows');
+
   console.log('\nALL PASSED · ' + calls + ' simulated network calls · ' + MAILS.length + ' emails');
 })().catch(e => { console.error('\nFAILED:', e.stack || e); process.exit(1); });

@@ -605,6 +605,26 @@ footer .fown span{display:inline}
 .kpills.xcats button svg{width:28px;height:28px;padding:9px;box-sizing:content-box;border-radius:14px;background:#fff1e6}
 .kpills.xcats .soonb{top:-9px;right:50%;transform:translateX(50%)}
 @media(max-width:640px){.kpills.xcats{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 10px}.kpills.xcats button{flex-direction:row;justify-content:flex-start;padding:12px 12px;font-size:15px;text-align:left}.kpills.xcats button svg{width:22px;height:22px;padding:7px;border-radius:12px}.kpills.xcats .soonb{right:10px;transform:none}}
+/* stay gallery */
+.galedit{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:14px}
+.gtile{position:relative;border-radius:12px;overflow:hidden;aspect-ratio:4/3;background:var(--marble-2)}.gtile img{width:100%;height:100%;object-fit:cover;display:block}
+.gcover{position:absolute;top:6px;left:6px;background:var(--navy);color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
+.gacts{position:absolute;left:0;right:0;bottom:0;display:flex;gap:4px;justify-content:center;padding:6px;background:linear-gradient(transparent,rgba(0,0,0,.55))}
+.gbtn{width:30px;height:30px;border-radius:8px;background:rgba(255,255,255,.92);font-weight:700;color:var(--navy)}.gbtn:disabled{opacity:.35}.gbtn.del{color:#b33}
+.galmini{display:flex;gap:6px;flex-wrap:wrap}.galmini img{width:64px;height:48px;object-fit:cover;border-radius:6px}
+.galgrid{position:relative}.galgrid .gimg{display:none}.galstrip{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;border-radius:18px 18px 0 0}.galstrip::-webkit-scrollbar{display:none}
+.galstrip .gs{flex:0 0 100%;scroll-snap-align:center;aspect-ratio:4/3;max-height:340px;padding:0}.galstrip img,.gimg img{width:100%;height:100%;object-fit:cover;display:block}
+.galall{position:absolute;right:12px;bottom:12px;background:#fff;border-radius:10px;padding:7px 12px;font-size:13px;font-weight:700;color:var(--navy);box-shadow:0 2px 10px rgba(0,0,0,.2);display:flex;gap:6px;align-items:center}
+@media(min-width:760px){.galstrip{display:none}.galgrid{display:grid;gap:6px;grid-template-columns:2fr 1fr 1fr;grid-template-rows:150px 150px;border-radius:18px 18px 0 0;overflow:hidden}.galgrid .gimg{display:block;padding:0;overflow:hidden}.galgrid .g0{grid-row:1/3}
+  .galgrid.n1{grid-template-columns:1fr;grid-template-rows:300px}.galgrid.n2{grid-template-columns:1fr 1fr;grid-template-rows:300px}.galgrid.n2 .g0{grid-row:auto}.galgrid.n3 .g2{grid-column:2/4}.galgrid.n4 .g3{grid-column:2/4}
+  .galgrid .gimg img{transition:transform .25s}.galgrid .gimg:hover img{transform:scale(1.04)}}
+.phcount{position:absolute;right:10px;bottom:10px;background:rgba(0,0,0,.6);color:#fff;font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px;display:flex;gap:4px;align-items:center}
+.lbox{position:fixed;inset:0;z-index:120;background:#0b0f17;display:flex;flex-direction:column;color:#fff}
+.lbtop{display:flex;align-items:center;gap:12px;padding:12px 16px}.lbtop b{flex:1;font-size:15px}.lbtop span{color:#cfd6e4;font-size:14px}.lbx{color:#fff;width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.1)}
+.lbimg{flex:1;position:relative;display:flex;align-items:center;justify-content:center;min-height:0}.lbimg img{max-width:100%;max-height:100%;object-fit:contain}
+.lbp,.lbn{position:absolute;top:50%;transform:translateY(-50%);width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.9);color:#111;font-size:30px;line-height:1}.lbp{left:12px}.lbn{right:12px}
+.lbthumbs{display:flex;gap:6px;overflow-x:auto;padding:10px 12px calc(10px + env(safe-area-inset-bottom));scrollbar-width:none}.lbthumbs img{flex:none;width:64px;height:48px;object-fit:cover;border-radius:6px;opacity:.5;cursor:pointer}.lbthumbs img.on{opacity:1;outline:2px solid #fff}
+.gcount{position:absolute;left:12px;bottom:12px;background:rgba(0,0,0,.6);color:#fff;font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px}@media(min-width:760px){.gcount{display:none}}
 
 </style>
 </head>
@@ -722,6 +742,8 @@ var Pricing = {
     var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
     return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   },
+  /* stay photo gallery: photos[] (first = cover), falling back to the single older photo */
+  stayPhotos: function (st) { var p = (st && st.photos || []).filter(Boolean); return p.length ? p : (st && st.photo ? [st.photo] : []); },
   bands: function (food) { return (food.matrix || []).slice().sort(function (a, b) { return a.upToKm - b.upToKm; }); },
   deliveryFee: function (food, km) {
     var b = Pricing.bands(food);
@@ -1857,6 +1879,16 @@ function createCore(env) {
     else { if (!p.dataUrl) err('Choose a photo.'); it.photo = (await env.files.save(p.dataUrl, who.bizId + '-' + (p.id || 'logo'), false)).url; }
     await env.db.kvPut('catalog', cat); return { photo: it.photo };
   };
+  /* Stay photo gallery (Merchant Admin of the stay, or Super Admin): add a photo, or save the new order / removals. First photo = cover. */
+  A.mGallery = async function (p) {
+    var who = await auth(p.token); if (who.role !== 'super' && who.role !== 'manager') err('Merchant Admin access only.');
+    var cat = await catalog(true), st = cat.stays.filter(function (x) { return x.id === p.id && (who.role === 'super' || x.bizId === who.bizId); })[0]; if (!st) err('Stay not found.');
+    var cur = Pricing.stayPhotos(st);
+    if (p.add) { if (cur.length >= 30) err('A stay can have up to 30 photos.'); cur = cur.concat([(await env.files.save(p.add, (st.bizId || 'stay') + '-' + st.id + '-gallery', false)).url]); }
+    else if (Array.isArray(p.photos)) { var seen = {}; cur = p.photos.filter(function (u) { if (cur.indexOf(u) < 0 || seen[u]) return false; seen[u] = 1; return true; }); }
+    st.photos = cur; st.photo = cur[0] || '';
+    await env.db.kvPut('catalog', cat); return { photos: cur };
+  };
   /* Merchant Admin: add-on groups of a menu item (on/off, required or optional, customers pick up to 3 per group) */
   A.mAddons = async function (p) {
     var who = await auth(p.token, 'manager'), cat = await catalog(true), it = findListing(cat, 'item', p.id, who.bizId); if (!it) err('Menu item not found.');
@@ -2786,6 +2818,52 @@ const Push = {
     }
   }
 };
+/* ===== Stay photo gallery: editor (Merchant Admin / Super Admin) and viewer (customers) ===== */
+async function galleryEditor(stayId, token, onChange) {
+  const st = CAT.stays.find(s => s.id === stayId); if (!st) return;
+  let P = Pricing.stayPhotos(st).slice();
+  const save = async list => { loading(true, 'Saving…'); try { const r = await api('mGallery', { token, id: stayId, photos: list }); P = r.photos; st.photos = P; st.photo = P[0] || ''; loading(false); draw(); onChange && onChange(P); } catch (x) { loading(false); toast(x.message); } };
+  const draw = () => {
+    openSheet(`<div class="sbody"><span class="brandl">${esc(st.name)}</span><h2>Photos</h2><p class="meta" style="margin-top:4px">Add photos of the rooms, bathroom, view, beach and common areas so guests can browse before booking. The first photo is the cover. Up to 30.</p>
+      <label class="btn mt">${ic('upload', 16)} Add photos<input type="file" accept="image/*" multiple hidden id="galAdd"></label><span class="hint" id="galProg"></span>
+      <div class="galedit">${P.map((u, i) => `<div class="gtile"><img src="${esc(u)}" alt="" loading="lazy">${i === 0 ? '<span class="gcover">Cover</span>' : ''}<div class="gacts">
+        <button class="gbtn" title="Move left" ${i ? '' : 'disabled'} data-gmv="${i}|-1">←</button><button class="gbtn" title="Move right" ${i < P.length - 1 ? '' : 'disabled'} data-gmv="${i}|1">→</button>
+        ${i ? `<button class="gbtn" title="Make cover" data-gcov="${i}">★</button>` : ''}<button class="gbtn del" title="Delete" data-gdel="${i}">✕</button></div></div>`).join('') || '<p class="meta mt">No photos yet.</p>'}</div>
+      ${P.length ? `<button class="btn ghost full mt" onclick="openGallery('${esc(stayId)}',0)">${ic('locate', 14)} Preview as a guest</button>` : ''}</div>`);
+    $('#galAdd').onchange = async e => { const files = [...e.target.files].slice(0, 30 - P.length); if (!files.length) { toast('A stay can have up to 30 photos.'); return; }
+      for (let k = 0; k < files.length; k++) { $('#galProg') && ($('#galProg').textContent = ' Uploading ' + (k + 1) + ' of ' + files.length + '…');
+        try { const r = await api('mGallery', { token, id: stayId, add: await resizeImage(files[k], 1600) }); P = r.photos; } catch (x) { toast(x.message); break; } }
+      st.photos = P; st.photo = P[0] || ''; toast('Photos added'); draw(); onChange && onChange(P); };
+    document.querySelectorAll('[data-gmv]').forEach(b => b.onclick = () => { const [i, d] = b.dataset.gmv.split('|').map(Number), L = P.slice(), x = L.splice(i, 1)[0]; L.splice(i + d, 0, x); save(L); });
+    document.querySelectorAll('[data-gcov]').forEach(b => b.onclick = () => { const i = +b.dataset.gcov, L = P.slice(), x = L.splice(i, 1)[0]; L.unshift(x); save(L); });
+    document.querySelectorAll('[data-gdel]').forEach(b => b.onclick = () => { if (confirm('Delete this photo?')) save(P.filter((_, j) => j !== +b.dataset.gdel)); });
+  };
+  draw();
+}
+/* customer gallery: Airbnb-style grid / swipeable strip, and a full-screen viewer */
+function galleryHtml(st) {
+  const P = Pricing.stayPhotos(st); if (!P.length) return '';
+  return `<div class="galgrid n${Math.min(P.length, 5)}">${P.slice(0, 5).map((u, i) => `<button class="gimg g${i}" onclick="openGallery('${esc(st.id)}',${i})" aria-label="Photo ${i + 1}"><img src="${esc(u)}" alt="${esc(st.name)} photo ${i + 1}" ${i ? 'loading="lazy"' : ''}></button>`).join('')}
+    <div class="galstrip" onscroll="const c=this.parentNode.querySelector('.gcount');if(c)c.textContent=(Math.round(this.scrollLeft/this.clientWidth)+1)+' / ${P.length}'">${P.map((u, i) => `<button class="gs" onclick="openGallery('${esc(st.id)}',${i})"><img src="${esc(u)}" alt="${esc(st.name)} photo ${i + 1}" ${i ? 'loading="lazy"' : ''}></button>`).join('')}</div>
+    ${P.length > 1 ? `<span class="gcount">1 / ${P.length}</span>` : ''}
+    ${P.length > 1 ? `<button class="galall" onclick="openGallery('${esc(st.id)}',0)">${ic('cal', 14)} Show all ${P.length} photos</button>` : ''}</div>`;
+}
+function openGallery(stayId, start) {
+  const st = CAT.stays.find(s => s.id === stayId); if (!st) return; const P = Pricing.stayPhotos(st); if (!P.length) return;
+  let i = Math.max(0, Math.min(start || 0, P.length - 1)), x0 = null;
+  const d = document.createElement('div'); d.className = 'lbox'; d.setAttribute('role', 'dialog'); d.setAttribute('aria-modal', 'true');
+  d.innerHTML = `<div class="lbtop"><b>${esc(st.name)}</b><span id="lbN"></span><button class="lbx" aria-label="Close">${ic('x', 22)}</button></div><div class="lbimg"><button class="lbp" aria-label="Previous">‹</button><img id="lbI" alt=""><button class="lbn" aria-label="Next">›</button></div><div class="lbthumbs">${P.map((u, k) => `<img src="${esc(u)}" data-k="${k}" loading="lazy" alt="">`).join('')}</div>`;
+  document.body.appendChild(d); document.body.style.overflow = 'hidden';
+  const show = () => { d.querySelector('#lbI').src = P[i]; d.querySelector('#lbN').textContent = (i + 1) + ' / ' + P.length; d.querySelectorAll('.lbthumbs img').forEach((t, k) => t.classList.toggle('on', k === i)); const on = d.querySelector('.lbthumbs img.on'); on && on.scrollIntoView({ inline: 'center', block: 'nearest' }); };
+  const go = n => { i = (i + n + P.length) % P.length; show(); };
+  const close = () => { d.remove(); document.body.style.overflow = ''; document.removeEventListener('keydown', key); };
+  const key = e => { if (e.key === 'Escape') close(); if (e.key === 'ArrowRight') go(1); if (e.key === 'ArrowLeft') go(-1); };
+  d.querySelector('.lbx').onclick = close; d.querySelector('.lbp').onclick = () => go(-1); d.querySelector('.lbn').onclick = () => go(1);
+  d.querySelectorAll('.lbthumbs img').forEach(t => t.onclick = () => { i = +t.dataset.k; show(); });
+  const im = d.querySelector('.lbimg'); im.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, { passive: true }); im.addEventListener('touchend', e => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0; if (Math.abs(dx) > 40) go(dx < 0 ? 1 : -1); x0 = null; });
+  document.addEventListener('keydown', key); if (P.length < 2) { d.querySelector('.lbp').style.display = d.querySelector('.lbn').style.display = 'none'; }
+  show();
+}
 const bellBtn = () => `<button class="iconbtn bell" onclick="Notif.open()" aria-label="Notifications">${ic('bell', 22)}<span class="badge bellbadge" data-n="0"></span></button>`;
 
 /* ================= IN-APP MESSAGING ================= */
@@ -2957,7 +3035,7 @@ function admTabHtml() {
   if (ADM.tab === 'stays') return (!(D.settings || {}).staysLive ? `<div class="warn soonwarn"><b>Customers can't see any stay yet.</b> Stays are set to <b>Coming soon</b>, so active stays are hidden on the customer site. <button class="btn sm" onclick="ADM.draft.settings=Object.assign({},ADM.draft.settings||{},{staysLive:true});admDirty();admRerender();toast('Stays will be open once you tap Save')">Open stays to customers</button></div>` : '') + D.stays.map((s, i) => `<div class="acard"><h3>${esc(s.name || 'New accommodation')}<button class="xbtn" title="Remove" onclick="admDel('stays',${i})">${ic('x')}</button></h3>
     ${aIn(`stays.${i}.active`, 'Show on website', 'bool')}
     <div class="agrid">${aIn(`stays.${i}.name`, 'Name')}${aBiz(`stays.${i}.bizId`, 'Stay')}${aTown(`stays.${i}.town`)}${aIn(`stays.${i}.location`, 'Address / location')}${aIn(`stays.${i}.rate`, 'Rate per night (₱)', 'num')}${aIn(`stays.${i}.promoPct`, 'Discount (%)', 'num')}${aIn(`stays.${i}.deposit`, 'Security deposit (₱)', 'num')}${aIn(`stays.${i}.maxGuests`, 'Max guests', 'num')}${aIn(`stays.${i}.checkInTime`, 'Check-in time')}${aIn(`stays.${i}.checkOutTime`, 'Check-out time')}</div>
-    ${aIn(`stays.${i}.amenities`, 'Amenities (one per line)', 'textarea', 7)}<div class="field mt"><label>Photo</label></div>${aPhoto(`stays.${i}.photo`)}</div><div class="acard icalcard" data-ical="${esc(s.id)}"><h3>${ic('cal')} Calendar sync · ${esc(s.name || '')}</h3><p class="meta">Loading…</p></div>`).join('') + (setTimeout(icalFill, 0), '')
+    ${aIn(`stays.${i}.amenities`, 'Amenities (one per line)', 'textarea', 7)}<div class="field mt"><label>Photos (first = cover)</label></div><div class="galmini">${Pricing.stayPhotos(s).slice(0, 6).map(u => `<img src="${esc(u)}" alt="">`).join('') || '<span class="hint">No photos yet.</span>'}</div><button class="btn sm mt" onclick="if(!CAT.stays.some(x=>x.id===ADM.draft.stays[${i}].id)){toast('Save the listing first, then add photos.');return;} galleryEditor(ADM.draft.stays[${i}].id, ADM.token, P => { ADM.draft.stays[${i}].photos = P; ADM.draft.stays[${i}].photo = P[0] || ''; })">${ic('upload', 14)} Manage photos (${Pricing.stayPhotos(s).length})</button></div><div class="acard icalcard" data-ical="${esc(s.id)}"><h3>${ic('cal')} Calendar sync · ${esc(s.name || '')}</h3><p class="meta">Loading…</p></div>`).join('') + (setTimeout(icalFill, 0), '')
     + `<button class="btn ghost" onclick="admAdd('stays',{id:uid(),bizId:(ADM.draft.businesses.find(b=>b.type==='Stay')||{}).id||'',name:'New accommodation',town:'San Agustin',location:'San Agustin, Romblon',rate:0,maxGuests:2,checkInTime:'2:00 PM',checkOutTime:'12:00 NN',amenities:'',photo:'',active:false})">+ Add accommodation</button>`;
   if (ADM.tab === 'rentals') {
     const R = D.rentals;

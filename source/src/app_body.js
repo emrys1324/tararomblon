@@ -64,7 +64,8 @@ async function loadCatalog() {
 function stayCard(st) {
   const free = !isBusy('stay', st.id, S.sIn, S.sOut);
   const n = Pricing.dayNum(S.sOut) - Pricing.dayNum(S.sIn);
-  return `<button class="card" onclick="openStay('${st.id}')"><div class="thumb">${(st.photo ? photoOr(st.photo) : sceneArt('beach'))}<span class="tag ${free ? 'ok' : 'no'}">${free ? 'Available' : 'Booked on your dates'}</span></div>
+  const ph = Pricing.stayPhotos(st);
+  return `<button class="card" onclick="openStay('${st.id}')"><div class="thumb">${(ph[0] ? photoOr(ph[0]) : sceneArt('beach'))}${ph.length > 1 ? `<span class="phcount">${ic('cal', 12)} ${ph.length} photos</span>` : ''}<span class="tag ${free ? 'ok' : 'no'}">${free ? 'Available' : 'Booked on your dates'}</span></div>
   <div class="cbody"><span class="brandl">${esc(st.location)}</span><h3>${esc(st.name)}</h3><span class="meta">${ic('pin', 14)} ${esc(townOf(st))} · up to ${st.maxGuests} guests</span>
   <div class="price">${Pricing.promo(st) ? `<span class="was">${peso(st.rate)}</span>` : ''}<b>${peso(Pricing.off(st.rate, Pricing.promo(st)))}</b> / night${Pricing.promo(st) ? `<span class="promo">-${Pricing.promo(st)}%</span>` : ''}${n > 1 ? ` · ${peso(Pricing.off(st.rate * n, Pricing.promo(st)))} for ${n} nights` : ''}</div></div></button>`;
 }
@@ -88,7 +89,7 @@ function renderStays() {
 }
 function openStay(id) {
   const st = CAT.stays.find(s => s.id === id);
-  openSheet(`<div class="thumb">${(st.photo ? photoOr(st.photo) : sceneArt('beach'))}</div><div class="sbody">
+  openSheet(`${Pricing.stayPhotos(st).length ? galleryHtml(st) : `<div class="thumb">${sceneArt('beach')}</div>`}<div class="sbody">
     <span class="brandl">${esc(st.location)}</span><h2>${esc(st.name)}</h2>
     <p class="meta">${peso(st.rate)} per night · up to ${st.maxGuests} guests · check-in ${esc(st.checkInTime)} · check-out ${esc(st.checkOutTime)}</p>
     <div class="amen"><b style="display:block;margin-bottom:4px">Amenities</b>${esc(st.amenities)}</div>

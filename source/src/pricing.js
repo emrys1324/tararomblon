@@ -96,6 +96,8 @@ var Pricing = {
     var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
     return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   },
+  /* stay photo gallery: photos[] (first = cover), falling back to the single older photo */
+  stayPhotos: function (st) { var p = (st && st.photos || []).filter(Boolean); return p.length ? p : (st && st.photo ? [st.photo] : []); },
   bands: function (food) { return (food.matrix || []).slice().sort(function (a, b) { return a.upToKm - b.upToKm; }); },
   deliveryFee: function (food, km) {
     var b = Pricing.bands(food);

@@ -35,6 +35,11 @@ source/                  editable source + build.py + tests
 
 There are no npm packages to install. The functions use Node's built-in `fetch` and `crypto`.
 
+## New: photo galleries for stays (like Airbnb)
+
+- **Merchant app → Listings & prices → stay → Photos**: add many photos at once (up to 30, resized automatically), reorder them (← →), make one the cover (★) or delete them. Super Admin can do the same under Listings & rates → Stays → Manage photos.
+- **Customers**: the stay page shows a photo grid on computers (cover + 4) and a swipeable strip with a counter on phones; "Show all photos" opens a full-screen viewer with arrows, swipe, thumbnails and keyboard keys. Stay cards show the number of photos.
+
 ## New: merchant payouts due the next day (Super Admin → Payouts)
 
 - Every morning the app lists each merchant's earnings for transactions **Completed before today** (net of platform fee, discounts and the store's delivery share) that haven't been paid out yet: "Merchant payouts due today".
