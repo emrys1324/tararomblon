@@ -2,7 +2,7 @@
 var DEFAULT_SETTINGS = {
   requireIdVerification: true, idUploadAtCheckout: 'optional', proofUpload: 'required', transferEnabled: true,
   transferInstructions: 'Send your payment to GCash 0917 000 0000 (Beyond Tech Solutions) or BPI 0000-0000-00 (Beyond Tech Solutions), then upload a screenshot of your receipt.',
-  riderSharePct: 100, codCashTo: 'tara', codMinCompleted: 3, codMax: 500, riderPayoutDays: 3, riderDispatch: true, dispatchKm: 5, dispatchWidenMin: 3, dispatchAlertMin: 15, codExemptBefore: '2026-11-21', email: { customers: true, merchants: true, admins: true, riders: true },
+  riderSharePct: 100, codCashTo: 'rider', codMinCompleted: 3, codMax: 500, riderPayoutDays: 3, riderDispatch: true, dispatchKm: 5, dispatchWidenMin: 3, dispatchAlertMin: 15, codExemptBefore: '2026-11-21', email: { customers: true, merchants: true, admins: true, riders: true },
   /* Stays and Things to do show "Coming soon" until a Super Admin opens them in Settings */
   staysLive: false, toursLive: false
 };
@@ -199,7 +199,7 @@ function createCore(env) {
   function offerView(b, cat, me) {
     var S = storeOf(cat, b), q = b.quote || {}, k = riderKm(me, S);
     return { ref: b.ref, status: b.status, created: b.created, offerAt: b.offer.at, store: { name: S.name, address: S.address, lat: S.lat, lng: S.lng }, dropoff: { label: b.landmark || '', area: (b.customer && b.customer.address) || '', lat: b.lat, lng: b.lng },
-      km: q.km, kmToStore: k, riderFee: q.riderFee || 0, customerFee: q.deliveryFee || 0, storeFee: q.storeDeliveryShare || 0, payMethod: b.payMethod, collect: b.payMethod === 'cod' ? Rules.payable(b) : 0, items: (b.lines || []).reduce(function (t, l) { return t + (+l.qty || 1); }, 0) };
+      km: q.km, kmToStore: k, riderFee: q.riderFee || 0, customerFee: q.deliveryFee || 0, storeFee: q.storeDeliveryShare || 0, payMethod: b.payMethod, collect: b.payMethod === 'cod' ? Rules.payable(b) : 0, payStore: b.payMethod === 'cod' && b.riderPaysStore ? Rules.codAmounts(b).payStore : 0, items: (b.lines || []).reduce(function (t, l) { return t + (+l.qty || 1); }, 0) };
   }
 
   /* ---------- bookings ---------- */
@@ -359,8 +359,9 @@ function createCore(env) {
         status: Rules.CASH.indexOf(d.payMethod) >= 0 ? 'New' : 'Awaiting Payment', payStatus: Rules.CASH.indexOf(d.payMethod) >= 0 ? 'Unpaid' : 'Pending',
         fee: Rules.feeFor(biz(cat, d.bizId), Rules.gross(d)), discount: 0, idFile: idFile, proofFile: proofFile, rider: '', riderAccepted: false, history: [] });
       if (b.kind === 'food' && b.fulfillment === 'delivery' && st.riderDispatch !== false) { b.dispatch = true; if (b.status === 'New') b.status = 'Finding Rider'; }
-      if (b.kind === 'food' && b.fulfillment === 'delivery' && st.codCashTo !== 'tara') b.platformPaysRider = true;   /* riders hand all COD cash to the store; the platform pays their earnings */
-      if (b.kind === 'food' && b.fulfillment === 'delivery' && b.payMethod === 'cod' && st.codCashTo === 'tara') b.codToRider = true;   /* the rider keeps the COD cash; it is settled against their earnings and the platform pays the store */
+      if (b.kind === 'food' && b.fulfillment === 'delivery' && st.codCashTo === 'merchant') b.platformPaysRider = true;   /* riders hand all COD cash to the store; the platform pays their earnings */
+      if (b.kind === 'food' && b.fulfillment === 'delivery' && b.payMethod === 'cod' && st.codCashTo === 'tara') b.codToRider = true;
+      if (b.kind === 'food' && b.fulfillment === 'delivery' && b.payMethod === 'cod' && (st.codCashTo || 'rider') === 'rider') b.riderPaysStore = true;   /* the rider pays the store for the food at pick-up, collects everything from the customer and keeps the customer's delivery fee */   /* the rider keeps the COD cash; it is settled against their earnings and the platform pays the store */
       b.id = b.ref; b.history.push({ at: created, status: b.status, by: me.name, role: 'customer' }); out.push(b);
     });
     var due = out.reduce(function (t, b) { return t + (+b.dueNow || 0); }, 0);

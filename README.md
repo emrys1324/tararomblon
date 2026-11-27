@@ -35,6 +35,12 @@ source/                  editable source + build.py + tests
 
 There are no npm packages to install. The functions use Node's built-in `fetch` and `crypto`.
 
+## New: COD — the rider pays the store at pick-up
+
+- Settings → Riders → "Cash collected by riders on COD orders goes to" → **Rider pays the store at pick-up** (now the default).
+- The Rider app shows a Cash on delivery box on each COD order: **1. At pick-up, pay the store ₱X** (the food amount), **2. At drop-off, collect ₱Y from the customer**, and what the rider keeps (the customer's delivery fee, which counts toward their earning). Delivery requests show the same amounts before accepting.
+- The merchant's order card says "The rider pays you ₱X in cash at pick-up"; the store records it with Payment Collected. The store's payout then only deducts the platform fee (and its delivery share); the rider's settlement is their earning minus the delivery fee they kept.
+
 ## New: simple delivery fees set by each merchant; delivery address from the map
 
 - **Merchant app → Store settings → Delivery fees**: each food merchant sets what customers pay per distance (Up to km → ₱ fee, ₱0 = free). Customers farther than the last distance can't order delivery. Riders always earn at least the minimum (Settings → Delivery fee, ₱20); if the fee is lower or free, the store covers the difference. Super Admin sees the same simple table (Listings & rates → restaurant → Delivery), with an "Advanced" view for a custom store / rider split.

@@ -627,6 +627,9 @@ footer .fown span{display:inline}
 .gcount{position:absolute;left:12px;bottom:12px;background:rgba(0,0,0,.6);color:#fff;font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px}@media(min-width:760px){.gcount{display:none}}
 .dfrow{display:grid;grid-template-columns:90px 1fr 1fr auto;gap:8px;align-items:end;padding:6px 0;border-bottom:1px solid var(--marble-2)}.dfrow .field{margin:0}.dffrom{font-size:13px;color:var(--mute);padding-bottom:12px}
 @media(max-width:520px){.dfrow{grid-template-columns:1fr 1fr auto}.dffrom{grid-column:1/-1;padding:0}}
+.codbox{margin:10px 0;padding:12px;border-radius:12px;background:#fff7ef;border:1.5px solid var(--coral,#ee7a35)}.codbox>b{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+.codl{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed #f1d3bb;font-size:15px}.codl b{font-size:18px;color:var(--navy)}.codl.done span{text-decoration:line-through;color:var(--mute)}.codl.keep{border:none;color:#1d7a3e}.codl.keep b{color:#1d7a3e;font-size:15px}
+.codbox small{display:block;margin-top:6px;color:var(--mute)}
 
 </style>
 </head>
@@ -950,6 +953,15 @@ var Rules = {
   /* What the customer pays in total (order / booking total less code and points) */
   payable: function (b) { return Rules.r2((+b.quote.total || 0) - Rules.reductions(b).total); },
   /* Cash the merchant should receive when tagging Payment Collected */
+  /* COD amounts for the rider: what to pay the store at pick-up, what to collect from the customer, what they keep */
+  codAmounts: function (b) {
+    if (!b || b.payMethod !== 'cod') return null;
+    var collect = Rules.payable(b), fee = +(b.quote && b.quote.deliveryFee) || 0;
+    if (b.riderPaysStore) return { mode: 'payStore', payStore: Rules.r2(collect - fee), collect: collect, keep: fee };
+    if (b.codToRider) return { mode: 'keepAll', payStore: 0, collect: collect, keep: collect };
+    if (b.platformPaysRider) return { mode: 'handAll', payStore: collect, collect: collect, keep: 0 };
+    return { mode: 'handFood', payStore: Rules.r2(collect - fee), collect: collect, keep: fee };
+  },
   cashExpected: function (b) {
     if (b.payMethod === 'cod') return b.codToRider ? Rules.payable(b) : b.platformPaysRider ? Rules.payable(b) : Rules.r2(Rules.payable(b) - (+b.quote.deliveryFee || 0));
     if (b.payMethod === 'pickup') return Rules.payable(b);
@@ -1055,7 +1067,7 @@ var Rules = {
 var DEFAULT_SETTINGS = {
   requireIdVerification: true, idUploadAtCheckout: 'optional', proofUpload: 'required', transferEnabled: true,
   transferInstructions: 'Send your payment to GCash 0917 000 0000 (Beyond Tech Solutions) or BPI 0000-0000-00 (Beyond Tech Solutions), then upload a screenshot of your receipt.',
-  riderSharePct: 100, codCashTo: 'tara', codMinCompleted: 3, codMax: 500, riderPayoutDays: 3, riderDispatch: true, dispatchKm: 5, dispatchWidenMin: 3, dispatchAlertMin: 15, codExemptBefore: '2026-11-21', email: { customers: true, merchants: true, admins: true, riders: true },
+  riderSharePct: 100, codCashTo: 'rider', codMinCompleted: 3, codMax: 500, riderPayoutDays: 3, riderDispatch: true, dispatchKm: 5, dispatchWidenMin: 3, dispatchAlertMin: 15, codExemptBefore: '2026-11-21', email: { customers: true, merchants: true, admins: true, riders: true },
   /* Stays and Things to do show "Coming soon" until a Super Admin opens them in Settings */
   staysLive: false, toursLive: false
 };
@@ -1252,7 +1264,7 @@ function createCore(env) {
   function offerView(b, cat, me) {
     var S = storeOf(cat, b), q = b.quote || {}, k = riderKm(me, S);
     return { ref: b.ref, status: b.status, created: b.created, offerAt: b.offer.at, store: { name: S.name, address: S.address, lat: S.lat, lng: S.lng }, dropoff: { label: b.landmark || '', area: (b.customer && b.customer.address) || '', lat: b.lat, lng: b.lng },
-      km: q.km, kmToStore: k, riderFee: q.riderFee || 0, customerFee: q.deliveryFee || 0, storeFee: q.storeDeliveryShare || 0, payMethod: b.payMethod, collect: b.payMethod === 'cod' ? Rules.payable(b) : 0, items: (b.lines || []).reduce(function (t, l) { return t + (+l.qty || 1); }, 0) };
+      km: q.km, kmToStore: k, riderFee: q.riderFee || 0, customerFee: q.deliveryFee || 0, storeFee: q.storeDeliveryShare || 0, payMethod: b.payMethod, collect: b.payMethod === 'cod' ? Rules.payable(b) : 0, payStore: b.payMethod === 'cod' && b.riderPaysStore ? Rules.codAmounts(b).payStore : 0, items: (b.lines || []).reduce(function (t, l) { return t + (+l.qty || 1); }, 0) };
   }
 
   /* ---------- bookings ---------- */
@@ -1412,8 +1424,9 @@ function createCore(env) {
         status: Rules.CASH.indexOf(d.payMethod) >= 0 ? 'New' : 'Awaiting Payment', payStatus: Rules.CASH.indexOf(d.payMethod) >= 0 ? 'Unpaid' : 'Pending',
         fee: Rules.feeFor(biz(cat, d.bizId), Rules.gross(d)), discount: 0, idFile: idFile, proofFile: proofFile, rider: '', riderAccepted: false, history: [] });
       if (b.kind === 'food' && b.fulfillment === 'delivery' && st.riderDispatch !== false) { b.dispatch = true; if (b.status === 'New') b.status = 'Finding Rider'; }
-      if (b.kind === 'food' && b.fulfillment === 'delivery' && st.codCashTo !== 'tara') b.platformPaysRider = true;   /* riders hand all COD cash to the store; the platform pays their earnings */
-      if (b.kind === 'food' && b.fulfillment === 'delivery' && b.payMethod === 'cod' && st.codCashTo === 'tara') b.codToRider = true;   /* the rider keeps the COD cash; it is settled against their earnings and the platform pays the store */
+      if (b.kind === 'food' && b.fulfillment === 'delivery' && st.codCashTo === 'merchant') b.platformPaysRider = true;   /* riders hand all COD cash to the store; the platform pays their earnings */
+      if (b.kind === 'food' && b.fulfillment === 'delivery' && b.payMethod === 'cod' && st.codCashTo === 'tara') b.codToRider = true;
+      if (b.kind === 'food' && b.fulfillment === 'delivery' && b.payMethod === 'cod' && (st.codCashTo || 'rider') === 'rider') b.riderPaysStore = true;   /* the rider pays the store for the food at pick-up, collects everything from the customer and keeps the customer's delivery fee */   /* the rider keeps the COD cash; it is settled against their earnings and the platform pays the store */
       b.id = b.ref; b.history.push({ at: created, status: b.status, by: me.name, role: 'customer' }); out.push(b);
     });
     var due = out.reduce(function (t, b) { return t + (+b.dueNow || 0); }, 0);
@@ -2748,7 +2761,7 @@ function wireStatus(root, getToken, onDone, lookup) {
     const ref = btn.dataset.ss, st = btn.dataset.st, b = lookup ? lookup(ref) : null, ovr = btn.dataset.ovr;
     openSheet(`<div class="sbody"><h2>${esc(b ? actionLabel(b, st) : st)}?</h2><p class="meta" style="margin-top:6px">${esc(ref)} will change from <b>${esc(b ? b.status : '')}</b> to <b>${esc(st)}</b>. The customer${b && b.rider ? ', rider' : ''} and business will be notified.</p>
       ${ovr ? '<div class="warn">This is an override. It skips the normal order flow and is recorded in the history.</div>' : ''}
-      ${st === 'Payment Collected' && b ? `<div class="field mt"><label>Amount collected (P) * — required</label><input id="ssAmt" type="number" min="0" step="any" inputmode="decimal" required placeholder="Type the amount you received" value=""><span class="hint">Expected ${peso(Rules.cashExpected(b))}${b.payMethod === 'cod' ? (b.codToRider ? ' from the customer. You keep this cash; it is settled against your earnings (not part of them)' : b.platformPaysRider ? ' from the rider (the whole amount the customer paid, incl. the delivery fee)' : ' from the rider (food amount; the rider keeps the delivery fee)') : b.payMethod === 'pickup' ? ' at pick-up' : ' balance at the venue'}. This goes to the Super Admin cash report.</span></div>` : ''}
+      ${st === 'Payment Collected' && b ? `<div class="field mt"><label>Amount collected (P) * — required</label><input id="ssAmt" type="number" min="0" step="any" inputmode="decimal" required placeholder="Type the amount you received" value=""><span class="hint">Expected ${peso(Rules.cashExpected(b))}${b.payMethod === 'cod' ? (b.riderPaysStore ? ' from the rider at pick-up (the food amount; the rider keeps the delivery fee)' : b.codToRider ? ' from the customer. You keep this cash; it is settled against your earnings (not part of them)' : b.platformPaysRider ? ' from the rider (the whole amount the customer paid, incl. the delivery fee)' : ' from the rider (food amount; the rider keeps the delivery fee)') : b.payMethod === 'pickup' ? ' at pick-up' : ' balance at the venue'}. This goes to the Super Admin cash report.</span></div>` : ''}
       <div class="field mt"><label>Note (optional, shared in the history)</label><input id="ssNote" maxlength="200"></div><div class="err" id="ssErr"></div>
       <div class="row2"><button class="btn ghost" onclick="closeSheet()">Back</button><button class="btn ${Rules.EXCEPTIONS.indexOf(st) >= 0 ? 'dangerbtn' : ''}" id="ssGo">Yes, ${esc(st)}</button></div></div>`);
     $('#ssGo').onclick = async () => {
@@ -3086,7 +3099,7 @@ function offersHtml(on) {
   return `<div class="offers"><h3>${ic('bell', 18)} New delivery request${L.length > 1 ? 's' : ''} <span class="hint">first to accept gets it</span></h3>${L.map(o => `<div class="offer">
     <div class="oftop"><b class="ofearn">${peso(o.riderFee)}</b><span>you earn${o.km != null ? ' · ' + o.km + ' km delivery' : ''}${o.kmToStore != null ? ' · ' + o.kmToStore + ' km to the store' : ''}</span></div>
     <div class="rstops"><div><span class="lbl">Pick up</span><b>${esc(o.store.name)}</b><span class="hint">${esc(o.store.address || '')}</span></div><div><span class="lbl">Deliver to</span><b>${esc(o.dropoff.label || o.dropoff.area || 'Customer')}</b>${o.dropoff.label && o.dropoff.area ? `<span class="hint">${esc(o.dropoff.area)}</span>` : ''}</div></div>
-    <div class="hint">${o.items} item${o.items === 1 ? '' : 's'} · ${o.collect ? 'Cash on delivery: collect ' + peso(o.collect) : 'Already paid'}${o.storeFee ? ' · store pays ' + peso(o.storeFee) + ' of your fee' : ''} · ${esc(o.ref)} · ${tm(o.offerAt)}</div>
+    <div class="hint">${o.items} item${o.items === 1 ? '' : 's'} · ${o.collect ? (o.payStore ? 'Cash on delivery: pay the store ' + peso(o.payStore) + ' at pick-up, collect ' + peso(o.collect) : 'Cash on delivery: collect ' + peso(o.collect)) : 'Already paid'}${o.storeFee ? ' · store pays ' + peso(o.storeFee) + ' of your fee' : ''} · ${esc(o.ref)} · ${tm(o.offerAt)}</div>
     <div class="sact"><button class="btn" data-ofok="${esc(o.ref)}">${ic('check')} Accept</button><button class="btn ghost" data-ofno="${esc(o.ref)}">Decline</button></div></div>`).join('')}</div>`;
 }
 function wireOffers() {
@@ -3103,6 +3116,18 @@ function nextPayout() {
   const from = paid || unpaid; if (!from) return 'after your first delivery';
   const d = new Date(Date.parse(from) + payDays() * 864e5); return d < new Date() ? 'due now' : d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
 }
+/* Cash on delivery: a clear box with what to pay the store at pick-up and what to collect from the customer */
+function codBox(b) {
+  const a = Rules.codAmounts(b); if (!a || Rules.CLOSED.includes(b.status)) return '';
+  const store = bizName(b.bizId), picked = ['Out for Delivery', 'Delivered', 'Payment Collected'].includes(b.status);
+  if (a.mode === 'payStore') return `<div class="codbox"><b>${ic('wallet', 16)} Cash on delivery</b>
+    <div class="codl ${picked ? 'done' : ''}"><span>1. At pick-up, pay ${esc(store)}</span><b>${peso(a.payStore)}</b></div>
+    <div class="codl"><span>2. At drop-off, collect from the customer</span><b>${peso(a.collect)}</b></div>
+    ${a.keep ? `<div class="codl keep"><span>You keep (customer's delivery fee)</span><b>${peso(a.keep)}</b></div>` : ''}
+    <small>Bring at least ${peso(a.payStore)} in cash for the store. What you keep counts toward your earning; the rest is settled every ${payDays()} days.</small></div>`;
+  if (a.mode === 'keepAll') return `<div class="codbox"><b>${ic('wallet', 16)} Cash on delivery</b><div class="codl"><span>Pay the store</span><b>${peso(0)}</b></div><div class="codl"><span>Collect from the customer</span><b>${peso(a.collect)}</b></div><small>You keep the cash; it is settled against your earnings every ${payDays()} days.</small></div>`;
+  return `<div class="codbox"><b>${ic('wallet', 16)} Cash on delivery</b><div class="codl"><span>Collect from the customer</span><b>${peso(a.collect)}</b></div><div class="codl"><span>Then hand to ${esc(store)}</span><b>${peso(a.payStore)}</b></div>${a.keep ? `<div class="codl keep"><span>You keep</span><b>${peso(a.keep)}</b></div>` : ''}</div>`;
+}
 function mapsLink(b) { return b.lat != null ? `https://www.google.com/maps/dir/?api=1&destination=${b.lat},${b.lng}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((b.landmark || b.customer.address) + ', Romblon')}`; }
 function vList(list, empty) {
   $('#pbody').innerHTML = list.map(b => {
@@ -3113,10 +3138,10 @@ function vList(list, empty) {
       <div class="rstops"><div><span class="lbl">Pick up</span><b>${esc(F.storeName)}</b><span class="hint">${esc(F.address)}</span><a class="link" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${F.lat},${F.lng}">${ic('nav', 14)} Directions</a></div>
         <div><span class="lbl">Deliver to</span><b>${esc(b.customer.name)}</b><span class="hint">${esc(b.landmark || b.customer.address)}</span><span class="rowbtns" style="margin:4px 0 0"><a class="link" target="_blank" rel="noopener" href="${mapsLink(b)}">${ic('nav', 14)} Directions</a><a class="link" href="tel:${esc(String(b.customer.phone).replace(/\s/g, ''))}">${ic('phone', 14)} ${esc(b.customer.phone)}</a></span></div></div>
       <div class="hint">${b.lines.map(l => esc(l.qty + ' x ' + l.name + (l.addons && l.addons.length ? ' (' + l.addons.join(', ') + ')' : ''))).join(' · ')}</div>
-      <div class="rmoney"><div><span>${cash ? 'Collect from customer' : 'Already paid'}</span><b>${cash ? peso(Rules.payable(b)) : peso(0)}</b></div><div><span>Your delivery fee</span><b>${peso(fee)}</b><small class="hint">${b.quote.km != null ? b.quote.km + ' km · ' : ''}customer ${peso(custFee)} + store ${peso(storeFee)}</small></div></div>
+      ${codBox(b)}<div class="rmoney"><div><span>${cash ? 'Collect from customer' : 'Already paid'}</span><b>${cash ? peso(Rules.payable(b)) : peso(0)}</b></div><div><span>Your delivery fee</span><b>${peso(fee)}</b><small class="hint">${b.quote.km != null ? b.quote.km + ' km · ' : ''}customer ${peso(custFee)} + store ${peso(storeFee)}</small></div></div>
       ${b.notes ? `<div class="warn">Customer note: ${esc(b.notes)}</div>` : ''}
       ${!b.riderAccepted && !Rules.CLOSED.includes(b.status) ? `<div class="sact"><button class="btn" onclick="respond('${esc(b.ref)}',true)">${ic('check')} Accept delivery</button><button class="btn ghost danger" onclick="respond('${esc(b.ref)}',false)">Decline</button></div>` : statusActions(b, { role: 'rider', email: RP.me.email })}
-      ${cash && b.status === 'Delivered' ? `<div class="hint" style="margin-top:8px">${b.codToRider ? `Keep the ${peso(Rules.payable(b))} cash you collect and tap <b>Payment Collected</b> to record it. It is settled against your earnings every ${payDays()} days; it is not part of your earnings.` : b.platformPaysRider ? `Hand all ${peso(Rules.cashExpected(b))} to ${esc(F.storeName)}. Your ${peso(fee)} earning is paid to you by Beyond Tech Solutions every ${payDays()} days.` : `Hand ${peso(Rules.cashExpected(b))} to ${esc(F.storeName)} and keep the customer's ${peso(custFee)} delivery fee.${storeFee ? ` The store's ${peso(storeFee)} share is added to your payout.` : ''}`} The store records the cash received.</div>` : ''}
+      ${cash && b.status === 'Delivered' ? `<div class="hint" style="margin-top:8px">${b.riderPaysStore ? `You paid ${esc(F.storeName)} ${peso(Rules.codAmounts(b).payStore)} at pick-up and collected ${peso(Rules.payable(b))} from the customer. You keep the ${peso(custFee)} delivery fee; it counts toward your ${peso(fee)} earning and the rest is settled every ${payDays()} days.` : b.codToRider ? `Keep the ${peso(Rules.payable(b))} cash you collect and tap <b>Payment Collected</b> to record it. It is settled against your earnings every ${payDays()} days; it is not part of your earnings.` : b.platformPaysRider ? `Hand all ${peso(Rules.cashExpected(b))} to ${esc(F.storeName)}. Your ${peso(fee)} earning is paid to you by Beyond Tech Solutions every ${payDays()} days.` : `Hand ${peso(Rules.cashExpected(b))} to ${esc(F.storeName)} and keep the customer's ${peso(custFee)} delivery fee.${storeFee ? ` The store's ${peso(storeFee)} share is added to your payout.` : ''}`} The store records the cash received.</div>` : ''}
       <div class="rowbtns" style="margin:10px 0 0"><button class="btn ghost sm" onclick="Chat.open({ref:'${esc(b.ref)}',chan:'customer'})">${ic('chat')} Message customer</button><button class="btn ghost sm" onclick="Chat.open({ref:'${esc(b.ref)}',chan:'merchant'})">${ic('store')} Message ${esc(F.storeName)}</button></div></div>`;
   }).join('') || `<div class="empty"><div class="big">${ic('bike', 40)}</div>${empty}</div>`;
   wireStatus($('#pbody'), () => RP.token, async () => { await reload(true); render(); }, ref => RP.orders.find(b => b.ref === ref));

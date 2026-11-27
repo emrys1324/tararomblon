@@ -97,6 +97,15 @@ var Rules = {
   /* What the customer pays in total (order / booking total less code and points) */
   payable: function (b) { return Rules.r2((+b.quote.total || 0) - Rules.reductions(b).total); },
   /* Cash the merchant should receive when tagging Payment Collected */
+  /* COD amounts for the rider: what to pay the store at pick-up, what to collect from the customer, what they keep */
+  codAmounts: function (b) {
+    if (!b || b.payMethod !== 'cod') return null;
+    var collect = Rules.payable(b), fee = +(b.quote && b.quote.deliveryFee) || 0;
+    if (b.riderPaysStore) return { mode: 'payStore', payStore: Rules.r2(collect - fee), collect: collect, keep: fee };
+    if (b.codToRider) return { mode: 'keepAll', payStore: 0, collect: collect, keep: collect };
+    if (b.platformPaysRider) return { mode: 'handAll', payStore: collect, collect: collect, keep: 0 };
+    return { mode: 'handFood', payStore: Rules.r2(collect - fee), collect: collect, keep: fee };
+  },
   cashExpected: function (b) {
     if (b.payMethod === 'cod') return b.codToRider ? Rules.payable(b) : b.platformPaysRider ? Rules.payable(b) : Rules.r2(Rules.payable(b) - (+b.quote.deliveryFee || 0));
     if (b.payMethod === 'pickup') return Rules.payable(b);
