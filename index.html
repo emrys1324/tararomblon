@@ -597,6 +597,7 @@ footer .fown span{display:inline}
 .dangerbtn2{color:var(--coral-d,#c4561c)!important;border-color:#f3c3bc!important}
 .delcalc{margin:2px 0 8px;padding:8px 10px;border-radius:10px;background:#f6f3ec;border:1px dashed var(--line);font-size:13px;color:var(--mute)}
 .delcalc .dl{display:flex;justify-content:space-between;margin-top:3px}.delcalc .dl.ok span:last-child{color:#1d7a3e}.delcalc .dl.t{color:var(--ink,#223);font-weight:600;border-top:1px solid var(--line);padding-top:3px}
+.duecard{border-left:4px solid var(--coral,#ee7a35)}.duecard h3{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 
 </style>
 </head>
@@ -2310,6 +2311,19 @@ function createCore(env) {
     });
     return out;
   }
+  /* merchants are paid the next day: everything Completed before today (Philippine time) and not yet paid out */
+  async function merchantsDue() {
+    var cat = await catalog(), st = settings(cat), td = env.today(), pay = await payees(), all = await allBookings(), out = [];
+    var doneDay = function (b) { var h = (b.history || []).filter(function (x) { return x.status === 'Completed'; }).pop(); var at = (h && h.at) || b.updated || b.created; return new Date(Date.parse(at) + 8 * 3600e3).toISOString().slice(0, 10); };
+    cat.businesses.forEach(function (z) {
+      var l = all.filter(function (b) { return b.bizId === z.id && Rules.bizPayable(b) && doneDay(b) < td; }); if (!l.length) return;
+      var net = Rules.r2(l.reduce(function (s, b) { return s + Rules.ledger(b, st).bizNet; }, 0)); if (!net) return;
+      var bk = pay['biz:' + z.id] || {};
+      out.push({ bizId: z.id, name: z.name, net: net, n: l.length, refs: l.map(function (b) { return b.ref; }), from: l.map(doneDay).sort()[0], to: l.map(doneDay).sort().pop(), bank: { accountName: bk.accountName || '', bank: bk.bank || '', accountNo: bk.accountNo || '' } });
+    });
+    return out;
+  }
+  A.merchantsDue = async function (p) { await auth(p.token, 'super'); return { due: await merchantsDue(), today: env.today() }; };
   A.ridersDue = async function (p) { await auth(p.token, 'super'); return { due: await ridersDue() }; };
   return {
     icsFeed: icsFeed,
@@ -2317,6 +2331,7 @@ function createCore(env) {
     /* Confirms HitPay payments found by the webhook or the daily check, and expires unpaid online bookings after 60 minutes */
     paymentWebhook: async function (ref) { var bs = (await allBookings()).filter(function (b) { return b.group === ref || b.ref === ref; }); if (bs.length) return await checkHitpay(bs[0].group); return false; },
     reconcile: async function () {
+      try { var md = (await merchantsDue()).filter(function (m) { return m.net > 0; }), mk = 'merchantsdue_' + env.today(); if (md.length && !(await env.cache.get(mk))) { await env.cache.put(mk, '1', 86400); var tot = Rules.r2(md.reduce(function (s, m) { return s + m.net; }, 0)); await event('payout', 'Merchant payouts due today: ' + md.map(function (m) { return m.name + ' P' + m.net; }).join(', ') + ' (total P' + tot + '). Download the CSV in Super Admin → Payouts.', ['super'], '', '', ['super'], 'Merchant payouts due today (P' + tot + ')', md.map(function (m) { return m.name + ': P' + m.net + ' (' + m.n + ' transactions) -> ' + (m.bank.bank ? m.bank.bank + ' ' + m.bank.accountNo + ' (' + m.bank.accountName + ')' : 'NO PAYOUT ACCOUNT SAVED'); }).join('\n') + '\n\nOpen Super Admin → Payouts to download the CSV and record the payouts.', ''); } } catch (x) { }
       try { var due = await ridersDue(), dk = 'ridersdue_' + env.today(); if (due.length && !(await env.cache.get(dk))) { await env.cache.put(dk, '1', 86400); await event('payout', 'Rider settlements due: ' + due.map(function (r) { return r.name + (r.net < 0 ? ' owes P' + (-r.net) : ' P' + r.net); }).join(', ') + '. Pay them in Super Admin → Payouts.', ['super'], '', '', ['super'], 'Rider payouts due (' + due.length + ')', due.map(function (r) { return r.name + ': P' + r.net + ' (' + r.n + ' deliveries)'; }).join('\n') + '\n\nRiders are paid every ' + (+settings(await catalog()).riderPayoutDays || 3) + ' days. Open Super Admin → Payouts.', ''); } } catch (x) { }
       var seen = {}, list = (await allBookings()).filter(function (b) { return b.status === 'Awaiting Payment' && b.payMethod === 'online'; });
       for (var i = 0; i < list.length; i++) {

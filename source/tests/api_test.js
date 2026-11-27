@@ -632,5 +632,17 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   const old2 = Object.assign({}, pb2, { platformPaysRider: false, cashCollected: { amount: 150 } }), lo = Rules.ledger(old2, {}); assert(Rules.cashExpected(old2) === 150 && lo.riderCash === 30 && lo.riderNet === 20, 'older orders keep the old split (rider kept the customer fee)');
   const due = await ok('ridersDue', { token: admin }); assert(Array.isArray(due.due), 'Super Admin sees riders due for payout');
 
+  console.log('Merchant payouts due the next day');
+  const mo1 = await ok('createBooking', { token: cust, kind: 'food', bizId: 'pahuway', fulfillment: 'pickup', payMethod: 'online', lines: [{ itemId: item.id, qty: 2, addons: [] }] });
+  await ok('setStatus', { token: admin, ref: mo1.refs[0], status: 'Payment Confirmed' }); await ok('setStatus', { token: admin, ref: mo1.refs[0], status: 'Completed' });
+  let md = (await ok('merchantsDue', { token: admin })).due.find(x => x.bizId === 'pahuway');
+  assert(!md || !md.refs.includes(mo1.refs[0]), 'an order completed today is not due until tomorrow');
+  const mrec = DB.bookings.find(r => r.id === mo1.refs[0]).data; mrec.history.forEach(h => { h.at = new Date(Date.now() - 864e5).toISOString(); }); mrec.updated = new Date(Date.now() - 864e5).toISOString();
+  md = (await ok('merchantsDue', { token: admin })).due.find(x => x.bizId === 'pahuway');
+  assert(md && md.refs.includes(mo1.refs[0]) && md.net > 0 && 'accountNo' in md.bank, 'completed yesterday: due today with amount P' + (md && md.net) + ' and payout account');
+  DB.cache = (DB.cache || []).filter(r => !/^merchantsdue_/.test(r.key)); const mb0 = MAILS.length;
+  const cres = mkRes(); process.env.CRON_SECRET = process.env.CRON_SECRET || 'cron-test'; await cronFn({ method: 'GET', headers: { authorization: 'Bearer ' + process.env.CRON_SECRET } }, cres);
+  assert(MAILS.slice(mb0).some(m => /Merchant payouts due today/.test(m.subject)), 'daily reminder email lists merchant payouts due');
+
   console.log('\nALL PASSED · ' + calls + ' simulated network calls · ' + MAILS.length + ' emails');
 })().catch(e => { console.error('\nFAILED:', e.stack || e); process.exit(1); });

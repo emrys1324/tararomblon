@@ -597,6 +597,7 @@ footer .fown span{display:inline}
 .dangerbtn2{color:var(--coral-d,#c4561c)!important;border-color:#f3c3bc!important}
 .delcalc{margin:2px 0 8px;padding:8px 10px;border-radius:10px;background:#f6f3ec;border:1px dashed var(--line);font-size:13px;color:var(--mute)}
 .delcalc .dl{display:flex;justify-content:space-between;margin-top:3px}.delcalc .dl.ok span:last-child{color:#1d7a3e}.delcalc .dl.t{color:var(--ink,#223);font-weight:600;border-top:1px solid var(--line);padding-top:3px}
+.duecard{border-left:4px solid var(--coral,#ee7a35)}.duecard h3{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 
 </style>
 </head>
@@ -2189,6 +2190,19 @@ function createCore(env) {
     });
     return out;
   }
+  /* merchants are paid the next day: everything Completed before today (Philippine time) and not yet paid out */
+  async function merchantsDue() {
+    var cat = await catalog(), st = settings(cat), td = env.today(), pay = await payees(), all = await allBookings(), out = [];
+    var doneDay = function (b) { var h = (b.history || []).filter(function (x) { return x.status === 'Completed'; }).pop(); var at = (h && h.at) || b.updated || b.created; return new Date(Date.parse(at) + 8 * 3600e3).toISOString().slice(0, 10); };
+    cat.businesses.forEach(function (z) {
+      var l = all.filter(function (b) { return b.bizId === z.id && Rules.bizPayable(b) && doneDay(b) < td; }); if (!l.length) return;
+      var net = Rules.r2(l.reduce(function (s, b) { return s + Rules.ledger(b, st).bizNet; }, 0)); if (!net) return;
+      var bk = pay['biz:' + z.id] || {};
+      out.push({ bizId: z.id, name: z.name, net: net, n: l.length, refs: l.map(function (b) { return b.ref; }), from: l.map(doneDay).sort()[0], to: l.map(doneDay).sort().pop(), bank: { accountName: bk.accountName || '', bank: bk.bank || '', accountNo: bk.accountNo || '' } });
+    });
+    return out;
+  }
+  A.merchantsDue = async function (p) { await auth(p.token, 'super'); return { due: await merchantsDue(), today: env.today() }; };
   A.ridersDue = async function (p) { await auth(p.token, 'super'); return { due: await ridersDue() }; };
   return {
     icsFeed: icsFeed,
@@ -2196,6 +2210,7 @@ function createCore(env) {
     /* Confirms HitPay payments found by the webhook or the daily check, and expires unpaid online bookings after 60 minutes */
     paymentWebhook: async function (ref) { var bs = (await allBookings()).filter(function (b) { return b.group === ref || b.ref === ref; }); if (bs.length) return await checkHitpay(bs[0].group); return false; },
     reconcile: async function () {
+      try { var md = (await merchantsDue()).filter(function (m) { return m.net > 0; }), mk = 'merchantsdue_' + env.today(); if (md.length && !(await env.cache.get(mk))) { await env.cache.put(mk, '1', 86400); var tot = Rules.r2(md.reduce(function (s, m) { return s + m.net; }, 0)); await event('payout', 'Merchant payouts due today: ' + md.map(function (m) { return m.name + ' P' + m.net; }).join(', ') + ' (total P' + tot + '). Download the CSV in Super Admin → Payouts.', ['super'], '', '', ['super'], 'Merchant payouts due today (P' + tot + ')', md.map(function (m) { return m.name + ': P' + m.net + ' (' + m.n + ' transactions) -> ' + (m.bank.bank ? m.bank.bank + ' ' + m.bank.accountNo + ' (' + m.bank.accountName + ')' : 'NO PAYOUT ACCOUNT SAVED'); }).join('\n') + '\n\nOpen Super Admin → Payouts to download the CSV and record the payouts.', ''); } } catch (x) { }
       try { var due = await ridersDue(), dk = 'ridersdue_' + env.today(); if (due.length && !(await env.cache.get(dk))) { await env.cache.put(dk, '1', 86400); await event('payout', 'Rider settlements due: ' + due.map(function (r) { return r.name + (r.net < 0 ? ' owes P' + (-r.net) : ' P' + r.net); }).join(', ') + '. Pay them in Super Admin → Payouts.', ['super'], '', '', ['super'], 'Rider payouts due (' + due.length + ')', due.map(function (r) { return r.name + ': P' + r.net + ' (' + r.n + ' deliveries)'; }).join('\n') + '\n\nRiders are paid every ' + (+settings(await catalog()).riderPayoutDays || 3) + ' days. Open Super Admin → Payouts.', ''); } } catch (x) { }
       var seen = {}, list = (await allBookings()).filter(function (b) { return b.status === 'Awaiting Payment' && b.payMethod === 'online'; });
       for (var i = 0; i < list.length; i++) {
@@ -3348,10 +3363,11 @@ function payable(party) {
 function outstanding() {
   return CAT.businesses.map(z => 'biz:' + z.id).concat(riderList().map(r => 'rider:' + r.email)).map(p => { const l = payable(p), biz = p.startsWith('biz:'); return { p, n: l.length, net: Rules.r2(l.reduce((t, x) => t + (biz ? x.L.bizNet : x.L.riderNet), 0)) }; });
 }
+function dlMerchDue() { const r = window._mdue; if (!r) return; downloadCSV('merchant-payouts-' + r.today + '.csv', [['Business', 'Amount (PHP)', 'Bank / e-wallet', 'Account name', 'Account number', 'Transactions', 'Completed from', 'Completed to', 'References'], ...r.due.filter(x => x.net > 0).map(x => [x.name, x.net.toFixed(2), x.bank.bank, x.bank.accountName, x.bank.accountNo, x.n, x.from, x.to, x.refs.join(' ')])]); }
 function vPayouts() {
   const po = AD.po, pay = AD.data.payees || {}, out = outstanding(), biz = po.party.startsWith('biz:');
   const opt = p => { const o = out.find(x => x.p === p) || { n: 0, net: 0 }; return `<option value="${esc(p)}" ${po.party === p ? 'selected' : ''}>${esc(partyName(p))}${o.n ? ' · ' + o.n + ' to settle (' + (o.net >= 0 ? peso(o.net) : '-' + peso(-o.net)) + ')' : ''}</option>`; };
-  let h = `<div id="ridersDue"></div><div class="acard"><div class="field"><label>Business or rider</label><select id="poP"><option value="">Choose…</option><optgroup label="Businesses">${CAT.businesses.map(z => opt('biz:' + z.id)).join('')}</optgroup><optgroup label="Riders">${riderList().map(r => opt('rider:' + r.email)).join('')}</optgroup></select></div>
+  let h = `<div id="merchDue"></div><div id="ridersDue"></div><div class="acard"><div class="field"><label>Business or rider</label><select id="poP"><option value="">Choose…</option><optgroup label="Businesses">${CAT.businesses.map(z => opt('biz:' + z.id)).join('')}</optgroup><optgroup label="Riders">${riderList().map(r => opt('rider:' + r.email)).join('')}</optgroup></select></div>
     <p class="hint">Net payout = non-cash payments Tara Romblon collected for them (HitPay and transfers${ST().codCashTo === 'tara' ? ', plus COD cash riders remitted to Tara' : ''}) − platform fees − cash they collected and kept. A negative amount is cash they should remit to Tara Romblon. Businesses are settled once a transaction is Completed; riders once delivered.</p></div>`;
   if (po.party) {
     const b = pay[po.party] || {}, list = payable(po.party), sel = list.filter(x => po.sel[x.b.ref] !== false);
@@ -3382,6 +3398,11 @@ function vPayouts() {
     ${hist.map(x => `<tr><td>${esc(x.id)}<br><span class="hint">${x.refs.map(refLink).join(' ')}</span></td><td>${dOnly(x.at)}</td><td>${esc(x.name)}</td><td>${x.refs.length}</td><td class="${x.net < 0 ? 'neg' : ''}"><b>${x.net < 0 ? '-' + peso(-x.net) : peso(x.net)}</b></td><td>${x.bank && x.bank.accountNo ? esc(x.bank.bank + ' ' + x.bank.accountNo) : '-'}</td><td>${esc(x.method || '')}${x.reference ? '<br><span class="hint">' + esc(x.reference) + '</span>' : ''}</td></tr>`).join('') || '<tr><td colspan="7">No payouts recorded yet.</td></tr>'}</table></div>
     <div class="rowbtns mt"><button class="btn ghost sm" id="poDl">Download payout history CSV</button><button class="btn ghost sm" id="poOut">Download outstanding balances CSV</button></div></div>`;
   P(h);
+  api('merchantsDue', { token: ADM.token }).then(r => { window._mdue = r; const el = $('#merchDue'), pos = r.due.filter(x => x.net > 0), neg = r.due.filter(x => x.net < 0); if (!el || !r.due.length) return;
+    el.innerHTML = `<div class="acard duecard"><h3>${ic('wallet')} Merchant payouts due today <span class="hint">earnings up to yesterday, paid the next day</span></h3>
+      ${pos.length ? `<table class="btable"><tr><th>Business</th><th>Transactions</th><th>Amount</th><th>Send to</th></tr>${pos.map(x => `<tr><td><button class="link" onclick="AD.po.party='biz:${esc(x.bizId)}';AD.po.sel={};vPayouts()">${esc(x.name)}</button></td><td>${x.n}</td><td><b>${peso(x.net)}</b></td><td>${x.bank.bank ? esc(x.bank.bank + ' · ' + x.bank.accountNo + ' · ' + x.bank.accountName) : '<span class="warnc">No payout account saved</span>'}</td></tr>`).join('')}<tr class="tot"><td>Total</td><td></td><td>${peso(pos.reduce((t, x) => t + x.net, 0))}</td><td></td></tr></table>` : ''}
+      ${neg.length ? `<p class="hint mt">To collect from: ${neg.map(x => esc(x.name) + ' ' + peso(-x.net)).join(' · ')} (cash they kept is more than what they are owed).</p>` : ''}
+      <div class="rowbtns mt"><button class="btn sm" onclick="dlMerchDue()">${ic('doc', 14)} Download payout CSV</button><span class="hint">Pay each merchant (HitPay bulk payout or your bank), then record it below: choose the business and tap Record payout.</span></div></div>`; }).catch(() => {});
   api('ridersDue', { token: ADM.token }).then(r => { const el = $('#ridersDue'); if (!el || !r.due.length) return; el.innerHTML = `<div class="warn" style="margin-bottom:12px"><b>Rider settlements due</b> (riders keep COD cash; earnings minus cash held are settled every ${+(ST().riderPayoutDays) || 3} days): ${r.due.map(x => `<button class="link" onclick="AD.po.party='rider:${esc(x.email)}';AD.po.sel={};vPayouts()">${esc(x.name)} ${x.net < 0 ? 'owes ' + peso(-x.net) : peso(x.net)}</button>`).join(' · ')}</div>`; }).catch(() => {});
   $('#poP').onchange = e => { AD.po = { party: e.target.value, sel: {}, adj: '', adjNote: '', method: 'Bank transfer', reference: '', note: '' }; vPayouts(); };
   const keep = () => { if (!$('#poAdj')) return; Object.assign(AD.po, { adj: $('#poAdj').value, adjNote: $('#poAdjN').value, method: $('#poM').value, reference: $('#poR').value, note: $('#poN').value }); };

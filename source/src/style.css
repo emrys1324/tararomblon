@@ -585,3 +585,4 @@ footer .fown span{display:inline}
 .dangerbtn2{color:var(--coral-d,#c4561c)!important;border-color:#f3c3bc!important}
 .delcalc{margin:2px 0 8px;padding:8px 10px;border-radius:10px;background:#f6f3ec;border:1px dashed var(--line);font-size:13px;color:var(--mute)}
 .delcalc .dl{display:flex;justify-content:space-between;margin-top:3px}.delcalc .dl.ok span:last-child{color:#1d7a3e}.delcalc .dl.t{color:var(--ink,#223);font-weight:600;border-top:1px solid var(--line);padding-top:3px}
+.duecard{border-left:4px solid var(--coral,#ee7a35)}.duecard h3{display:flex;gap:8px;align-items:center;flex-wrap:wrap}

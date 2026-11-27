@@ -35,6 +35,12 @@ source/                  editable source + build.py + tests
 
 There are no npm packages to install. The functions use Node's built-in `fetch` and `crypto`.
 
+## New: merchant payouts due the next day (Super Admin → Payouts)
+
+- Every morning the app lists each merchant's earnings for transactions **Completed before today** (net of platform fee, discounts and the store's delivery share) that haven't been paid out yet: "Merchant payouts due today".
+- **Download payout CSV**: business, amount, bank / e-wallet, account name and number, transactions and references, ready for HitPay bulk payout or your bank's batch transfer. After paying, record each payout (choose the business → Record payout) so it isn't counted again.
+- A daily email / in-app reminder lists who is due and flags merchants with no payout account saved. Merchants who owe (cash they kept is more than what they're owed) are listed under "To collect from".
+
 ## New: platform pays riders every 3 days
 
 - Customers only see the delivery fee they pay. Rider earnings show only in the Rider app (merchants see what the store pays).
