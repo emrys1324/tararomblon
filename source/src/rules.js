@@ -104,12 +104,14 @@ var Rules = {
   codAmounts: function (b) {
     if (!b || b.payMethod !== 'cod') return null;
     var collect = Rules.payable(b), fee = +(b.quote && b.quote.deliveryFee) || 0;
-    if (b.riderPaysStore) return { mode: 'payStore', payStore: Rules.r2(collect - fee), collect: collect, keep: fee };
+    var sub = +(b.quote && b.quote.riderSubsidy) || 0;   /* the store's rider subsidy: the rider pays the store that much less at pick-up */
+    if (b.riderPaysStore) return { mode: 'payStore', payStore: Rules.r2(collect - fee - sub), collect: collect, keep: Rules.r2(fee + sub), subsidy: sub };
     if (b.codToRider) return { mode: 'keepAll', payStore: 0, collect: collect, keep: collect };
     if (b.platformPaysRider) return { mode: 'handAll', payStore: collect, collect: collect, keep: 0 };
     return { mode: 'handFood', payStore: Rules.r2(collect - fee), collect: collect, keep: fee };
   },
   cashExpected: function (b) {
+    if (b.payMethod === 'cod' && b.riderPaysStore) return Rules.codAmounts(b).payStore;
     if (b.payMethod === 'cod') return b.codToRider ? Rules.payable(b) : b.platformPaysRider ? Rules.payable(b) : Rules.r2(Rules.payable(b) - (+b.quote.deliveryFee || 0));
     if (b.payMethod === 'pickup') return Rules.payable(b);
     return Rules.r2(Math.max(0, Rules.payable(b) - (+b.dueNow || 0) - (+b.discount || 0)));
@@ -151,7 +153,7 @@ var Rules = {
     o.bizNet = Rules.r2(due - m.fee - o.cashBiz - o.storeDelivery);
     if (b.rider && b.kind === 'food' && Rules.delivered(b)) {
       o.riderShare = Rules.riderEarning(b, st);
-      o.riderCash = cod ? (codTara ? (b.cashCollected && b.cashCollected.role === 'rider' ? +b.cashCollected.amount : Rules.payable(b)) : b.platformPaysRider ? 0 : m.delivery) : 0;
+      o.riderCash = cod ? (codTara ? (b.cashCollected && b.cashCollected.role === 'rider' ? +b.cashCollected.amount : Rules.payable(b)) : b.platformPaysRider ? 0 : Rules.r2(m.delivery + (b.riderPaysStore ? +(b.quote.riderSubsidy || 0) : 0))) : 0;
       o.riderNet = Rules.r2(o.riderShare - o.riderCash);
     }
     return o;

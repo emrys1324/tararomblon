@@ -128,9 +128,9 @@ var Pricing = {
     var R = Pricing.deliveryRule(cat), b = Pricing.bands(food), max = +food.maxKm || (b.length ? +b[b.length - 1].upToKm : R.maxKm);
     if (km == null || km > max + 1e-9) return null;
     /* the customer pays the delivery fee; the rider earns it, and the platform tops the rider up to the minimum (incentive). Stores pay nothing. */
-    var mk = function (c, extra, band) { c = Pricing.round(c); var r = Math.max(c, R.minRider), o = { km: km, fee: c, riderFee: Pricing.round(r), storeShare: 0, incentive: Pricing.round(r - c), extraKm: extra || 0 }; if (band != null) { o.band = band; o.fromKm = band ? +b[band - 1].upToKm : 0; o.toKm = +b[band].upToKm; } return o; };
+    var mk = function (c, extra, band, sub) { c = Pricing.round(c); sub = Pricing.round(Math.max(0, +sub || 0)); var r = Math.max(c + sub, R.minRider), o = { km: km, fee: c, riderFee: Pricing.round(r), storeShare: sub, subsidy: sub, incentive: Pricing.round(r - c - sub), extraKm: extra || 0 }; if (band != null) { o.band = band; o.fromKm = band ? +b[band - 1].upToKm : 0; o.toKm = +b[band].upToKm; } return o; };
     if (food.matrixFees && b.length) {
-      for (var i = 0; i < b.length; i++) if (km <= +b[i].upToKm + 1e-9) return mk(+(b[i].customerFee != null && b[i].customerFee !== '' ? b[i].customerFee : b[i].fee) || 0, 0, i);
+      for (var i = 0; i < b.length; i++) if (km <= +b[i].upToKm + 1e-9) return mk(+(b[i].customerFee != null && b[i].customerFee !== '' ? b[i].customerFee : b[i].fee) || 0, 0, i, b[i].subsidy);
       return null;
     }
     if (km <= R.freeKm + 1e-9) return mk(0, 0);
@@ -192,7 +192,7 @@ var Pricing = {
       fee = split.fee;
     } else if (p.fulfillment === 'pickup' && !F.pickupEnabled) return { error: 'Pick-up is not available right now.' };
     return { ok: true, bizId: F.bizId, storeName: F.storeName, lines: out, subtotal: Pricing.round(sub), km: km, deliveryFee: fee, total: Pricing.round(sub + fee),
-      riderFee: split ? split.riderFee : 0, storeDeliveryShare: split ? split.storeShare : 0, deliveryIncentive: split ? split.incentive || 0 : 0, deliveryBand: split && split.band != null ? { from: split.fromKm, to: split.toKm } : null, extraKm: split ? split.extraKm || 0 : 0 };
+      riderFee: split ? split.riderFee : 0, storeDeliveryShare: split ? split.storeShare : 0, deliveryIncentive: split ? split.incentive || 0 : 0, riderSubsidy: split ? split.subsidy || 0 : 0, deliveryBand: split && split.band != null ? { from: split.fromKm, to: split.toKm } : null, extraKm: split ? split.extraKm || 0 : 0 };
   }
 };
 /* ===== END PRICING ===== */

@@ -129,9 +129,9 @@ var Pricing = {
     var R = Pricing.deliveryRule(cat), b = Pricing.bands(food), max = +food.maxKm || (b.length ? +b[b.length - 1].upToKm : R.maxKm);
     if (km == null || km > max + 1e-9) return null;
     /* the customer pays the delivery fee; the rider earns it, and the platform tops the rider up to the minimum (incentive). Stores pay nothing. */
-    var mk = function (c, extra, band) { c = Pricing.round(c); var r = Math.max(c, R.minRider), o = { km: km, fee: c, riderFee: Pricing.round(r), storeShare: 0, incentive: Pricing.round(r - c), extraKm: extra || 0 }; if (band != null) { o.band = band; o.fromKm = band ? +b[band - 1].upToKm : 0; o.toKm = +b[band].upToKm; } return o; };
+    var mk = function (c, extra, band, sub) { c = Pricing.round(c); sub = Pricing.round(Math.max(0, +sub || 0)); var r = Math.max(c + sub, R.minRider), o = { km: km, fee: c, riderFee: Pricing.round(r), storeShare: sub, subsidy: sub, incentive: Pricing.round(r - c - sub), extraKm: extra || 0 }; if (band != null) { o.band = band; o.fromKm = band ? +b[band - 1].upToKm : 0; o.toKm = +b[band].upToKm; } return o; };
     if (food.matrixFees && b.length) {
-      for (var i = 0; i < b.length; i++) if (km <= +b[i].upToKm + 1e-9) return mk(+(b[i].customerFee != null && b[i].customerFee !== '' ? b[i].customerFee : b[i].fee) || 0, 0, i);
+      for (var i = 0; i < b.length; i++) if (km <= +b[i].upToKm + 1e-9) return mk(+(b[i].customerFee != null && b[i].customerFee !== '' ? b[i].customerFee : b[i].fee) || 0, 0, i, b[i].subsidy);
       return null;
     }
     if (km <= R.freeKm + 1e-9) return mk(0, 0);
@@ -193,7 +193,7 @@ var Pricing = {
       fee = split.fee;
     } else if (p.fulfillment === 'pickup' && !F.pickupEnabled) return { error: 'Pick-up is not available right now.' };
     return { ok: true, bizId: F.bizId, storeName: F.storeName, lines: out, subtotal: Pricing.round(sub), km: km, deliveryFee: fee, total: Pricing.round(sub + fee),
-      riderFee: split ? split.riderFee : 0, storeDeliveryShare: split ? split.storeShare : 0, deliveryIncentive: split ? split.incentive || 0 : 0, deliveryBand: split && split.band != null ? { from: split.fromKm, to: split.toKm } : null, extraKm: split ? split.extraKm || 0 : 0 };
+      riderFee: split ? split.riderFee : 0, storeDeliveryShare: split ? split.storeShare : 0, deliveryIncentive: split ? split.incentive || 0 : 0, riderSubsidy: split ? split.subsidy || 0 : 0, deliveryBand: split && split.band != null ? { from: split.fromKm, to: split.toKm } : null, extraKm: split ? split.extraKm || 0 : 0 };
   }
 };
 /* ===== END PRICING ===== */
@@ -304,12 +304,14 @@ var Rules = {
   codAmounts: function (b) {
     if (!b || b.payMethod !== 'cod') return null;
     var collect = Rules.payable(b), fee = +(b.quote && b.quote.deliveryFee) || 0;
-    if (b.riderPaysStore) return { mode: 'payStore', payStore: Rules.r2(collect - fee), collect: collect, keep: fee };
+    var sub = +(b.quote && b.quote.riderSubsidy) || 0;   /* the store's rider subsidy: the rider pays the store that much less at pick-up */
+    if (b.riderPaysStore) return { mode: 'payStore', payStore: Rules.r2(collect - fee - sub), collect: collect, keep: Rules.r2(fee + sub), subsidy: sub };
     if (b.codToRider) return { mode: 'keepAll', payStore: 0, collect: collect, keep: collect };
     if (b.platformPaysRider) return { mode: 'handAll', payStore: collect, collect: collect, keep: 0 };
     return { mode: 'handFood', payStore: Rules.r2(collect - fee), collect: collect, keep: fee };
   },
   cashExpected: function (b) {
+    if (b.payMethod === 'cod' && b.riderPaysStore) return Rules.codAmounts(b).payStore;
     if (b.payMethod === 'cod') return b.codToRider ? Rules.payable(b) : b.platformPaysRider ? Rules.payable(b) : Rules.r2(Rules.payable(b) - (+b.quote.deliveryFee || 0));
     if (b.payMethod === 'pickup') return Rules.payable(b);
     return Rules.r2(Math.max(0, Rules.payable(b) - (+b.dueNow || 0) - (+b.discount || 0)));
@@ -351,7 +353,7 @@ var Rules = {
     o.bizNet = Rules.r2(due - m.fee - o.cashBiz - o.storeDelivery);
     if (b.rider && b.kind === 'food' && Rules.delivered(b)) {
       o.riderShare = Rules.riderEarning(b, st);
-      o.riderCash = cod ? (codTara ? (b.cashCollected && b.cashCollected.role === 'rider' ? +b.cashCollected.amount : Rules.payable(b)) : b.platformPaysRider ? 0 : m.delivery) : 0;
+      o.riderCash = cod ? (codTara ? (b.cashCollected && b.cashCollected.role === 'rider' ? +b.cashCollected.amount : Rules.payable(b)) : b.platformPaysRider ? 0 : Rules.r2(m.delivery + (b.riderPaysStore ? +(b.quote.riderSubsidy || 0) : 0))) : 0;
       o.riderNet = Rules.r2(o.riderShare - o.riderCash);
     }
     return o;
@@ -609,7 +611,7 @@ function createCore(env) {
   function offerView(b, cat, me) {
     var S = storeOf(cat, b), q = b.quote || {}, k = riderKm(me, S);
     return { ref: b.ref, status: b.status, created: b.created, offerAt: b.offer.at, store: { name: S.name, address: S.address, lat: S.lat, lng: S.lng }, dropoff: { label: b.landmark || '', area: (b.customer && b.customer.address) || '', lat: b.lat, lng: b.lng },
-      km: q.km, kmToStore: k, riderFee: q.riderFee || 0, customerFee: q.deliveryFee || 0, storeFee: q.storeDeliveryShare || 0, incentive: q.deliveryIncentive || 0, payMethod: b.payMethod, collect: b.payMethod === 'cod' ? Rules.payable(b) : 0, payStore: b.payMethod === 'cod' && b.riderPaysStore ? Rules.codAmounts(b).payStore : 0, items: (b.lines || []).reduce(function (t, l) { return t + (+l.qty || 1); }, 0) };
+      km: q.km, kmToStore: k, riderFee: Pricing.round((q.riderFee || 0) - (q.riderSubsidy || 0)), customerFee: q.deliveryFee || 0, storeFee: q.storeDeliveryShare || 0, incentive: q.deliveryIncentive || 0, payMethod: b.payMethod, collect: b.payMethod === 'cod' ? Rules.payable(b) : 0, payStore: b.payMethod === 'cod' && b.riderPaysStore ? Rules.r2(Rules.codAmounts(b).payStore + (q.riderSubsidy || 0)) : 0, items: (b.lines || []).reduce(function (t, l) { return t + (+l.qty || 1); }, 0) };
   }
 
   /* ---------- bookings ---------- */
@@ -1328,12 +1330,12 @@ function createCore(env) {
   /* Merchant Admin: simple delivery fees per distance (what the customer pays). Riders earn it; the platform tops them up to the minimum. */
   A.mSaveDelivery = async function (p) {
     var who = await auth(p.token, 'manager'), cat = await catalog(true), F = Pricing.store(cat, who.bizId); if (!F) err('This business has no food store.');
-    var bands = (p.bands || []).map(function (b) { return { upToKm: Pricing.round(+b.upToKm), fee: Pricing.round(+b.fee) }; });
+    var bands = (p.bands || []).map(function (b) { return { upToKm: Pricing.round(+b.upToKm), fee: Pricing.round(+b.fee), subsidy: Pricing.round(+b.subsidy || 0) }; });
     if (!bands.length) err('Add at least one distance.'); if (bands.length > 12) err('Up to 12 distances.');
-    bands.forEach(function (b, i) { if (!(b.upToKm > 0) || b.upToKm > 30) err('Distance ' + (i + 1) + ': enter "up to" km between 0.1 and 30.'); if (!(b.fee >= 0)) err('Distance ' + (i + 1) + ': the fee must be ₱0 or more.'); if (i && b.upToKm <= bands[i - 1].upToKm) err('Each distance must be farther than the one before it.'); });
-    F.matrix = bands.map(function (b) { return { upToKm: b.upToKm, customerFee: b.fee }; }); F.matrixFees = true; F.simpleFees = true; delete F.maxKm;
+    bands.forEach(function (b, i) { if (!(b.upToKm > 0) || b.upToKm > 30) err('Distance ' + (i + 1) + ': enter "up to" km between 0.1 and 30.'); if (!(b.fee >= 0)) err('Distance ' + (i + 1) + ': the fee must be ₱0 or more.'); if (!(b.subsidy >= 0) || b.subsidy > 1000) err('Distance ' + (i + 1) + ': the rider subsidy must be ₱0 to ₱1,000.'); if (i && b.upToKm <= bands[i - 1].upToKm) err('Each distance must be farther than the one before it.'); });
+    F.matrix = bands.map(function (b) { var o = { upToKm: b.upToKm, customerFee: b.fee }; if (b.subsidy) o.subsidy = b.subsidy; return o; }); F.matrixFees = true; F.simpleFees = true; delete F.maxKm;
     await env.db.kvPut('catalog', cat);
-    await event('listing', who.name + ' updated delivery fees for ' + F.storeName + ': ' + bands.map(function (b, i) { return (i ? bands[i - 1].upToKm : 0) + '-' + b.upToKm + ' km P' + b.fee; }).join(', '), ['super', 'biz:' + who.bizId], '', who.bizId, [], '', '', who.email);
+    await event('listing', who.name + ' updated delivery fees for ' + F.storeName + ': ' + bands.map(function (b, i) { return (i ? bands[i - 1].upToKm : 0) + '-' + b.upToKm + ' km P' + b.fee + (b.subsidy ? ' (+P' + b.subsidy + ' rider subsidy)' : ''); }).join(', '), ['super', 'biz:' + who.bizId], '', who.bizId, [], '', '', who.email);
     return { matrix: F.matrix };
   };
   /* Merchant Admin: prices, promo discount and security deposit of their own listings */
@@ -1361,7 +1363,9 @@ function createCore(env) {
     return { dataUrl: await env.files.read(id) };
   };
   /* rider */
-  A.rOrders = async function (p) { var who = await auth(p.token, 'rider'); await sweepOffers(); var cat = await catalog(), all = await allBookings(); return { me: pubStaff(who.rec), offers: who.rec.available ? all.filter(function (b) { return b.dispatch && !b.rider && b.offer && !b.offer.closed && b.offer.riders.indexOf(who.email) >= 0 && (b.offer.declined || []).indexOf(who.email) < 0 && Rules.CLOSED.indexOf(b.status) < 0; }).map(function (b) { return offerView(b, cat, who.rec); }) : [], orders: (await allBookings()).filter(function (b) { return b.rider === who.email; }).map(function (b) { var c = strip(b); delete c.fee; delete c.discount; delete c.idFile; delete c.proofFile; return c; }) }; };
+  /* the store's rider subsidy is shown to the rider only at the store (pick-up) and after delivery */
+  function riderSeesSubsidy(b) { return ['Ready for Pick-up', 'Payment Collected'].indexOf(b.status) >= 0 && !Rules.delivered(b) || Rules.delivered(b) || b.status === 'Out for Delivery' || Rules.CLOSED.indexOf(b.status) >= 0; }
+  A.rOrders = async function (p) { var who = await auth(p.token, 'rider'); await sweepOffers(); var cat = await catalog(), all = await allBookings(); return { me: pubStaff(who.rec), offers: who.rec.available ? all.filter(function (b) { return b.dispatch && !b.rider && b.offer && !b.offer.closed && b.offer.riders.indexOf(who.email) >= 0 && (b.offer.declined || []).indexOf(who.email) < 0 && Rules.CLOSED.indexOf(b.status) < 0; }).map(function (b) { return offerView(b, cat, who.rec); }) : [], orders: (await allBookings()).filter(function (b) { return b.rider === who.email; }).map(function (b) { var c = strip(b); delete c.fee; delete c.discount; delete c.idFile; delete c.proofFile; if (!riderSeesSubsidy(b) && c.quote && c.quote.riderSubsidy) { c.quote.riderFee = Pricing.round(c.quote.riderFee - c.quote.riderSubsidy); c.quote.storeDeliveryShare = 0; c.quote.riderSubsidy = 0; c.subsidyHidden = true; } return c; }) }; };
   A.rAvailable = async function (p) { var who = await auth(p.token, 'rider'), still = !p.value && (await allBookings()).some(function (b) { return b.rider === who.email && liveFor(b); }); who.rec = await patch(T.staff, who.rec.id || who.email, function (r) { r.available = !!p.value; r.lastSeen = now(); if (!p.value && !still) delete r.loc; }) || who.rec; await event('rider', who.name + ' is now ' + (p.value ? 'available' : 'offline'), ['super'], '', '', []); return { me: pubStaff(who.rec) }; };
   A.rOffer = async function (p) {
     var who = await auth(p.token, 'rider'), b = await getB(p.ref), cat = await catalog();

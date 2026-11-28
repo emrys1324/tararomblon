@@ -651,3 +651,5 @@ footer .fown span{display:inline}
 .pnow{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;font-size:14px}.pnow b{font-size:16px;color:var(--navy)}.pnow span{color:var(--mute);font-size:13px}.prog.bad .pnow b{color:#b33}
 .minibar{height:4px;border-radius:9px;background:#eef1f6;margin:5px 0 2px;overflow:hidden}.minibar i{display:block;height:100%;background:linear-gradient(90deg,#f6a457,#ee7a35)}
 @media(prefers-reduced-motion:reduce){.prider,.pfill{animation:none!important;transition:none}}
+.dfrow{grid-template-columns:90px 1fr 1fr 1fr auto}@media(max-width:520px){.dfrow{grid-template-columns:1fr 1fr 1fr auto}}
+.codl.sub{color:#7a4a00;background:#fff1d6;margin:0 -6px;padding:6px;border-radius:8px;border:none}.codl.sub b{color:#7a4a00;font-size:16px}

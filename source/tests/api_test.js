@@ -706,5 +706,29 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   const sd_dlv = await ok('createBooking', { token: cust, kind: 'food', bizId: 'pahuway', fulfillment: 'delivery', payMethod: 'online', lat: 12.5720, lng: 122.1330, landmark: 'Cagbo-aya Rd, San Agustin, Romblon', lines: [{ itemId: item.id, qty: 1, addons: [] }] });
   assert(DB.bookings.find(r => r.id === sd_dlv.refs[0]).data.landmark === 'Cagbo-aya Rd, San Agustin, Romblon', 'delivery address from the map is saved on the order');
 
+  console.log('Merchant rider subsidy');
+  await fails('mSaveDelivery', { token: pm2, bands: [{ upToKm: 3, fee: 30, subsidy: -5 }] }, /subsidy/);
+  await ok('mSaveDelivery', { token: pm2, bands: [{ upToKm: 1, fee: 0, subsidy: 10 }, { upToKm: 5, fee: 40, subsidy: 15 }] });
+  const sub_sbF = Pricing.store((await ok('getCatalog')).catalog, 'pahuway'), sub_sbC = (await ok('getCatalog')).catalog;
+  const sub_sb1 = Pricing.deliverySplit(sub_sbC, sub_sbF, 0.5), sub_sb2 = Pricing.deliverySplit(sub_sbC, sub_sbF, 3);
+  assert(sub_sb1.fee === 0 && sub_sb1.subsidy === 10 && sub_sb1.riderFee === 20 && sub_sb1.incentive === 10, 'free + P10 subsidy: rider earns P20 (P10 store, P10 platform)');
+  assert(sub_sb2.fee === 40 && sub_sb2.subsidy === 15 && sub_sb2.riderFee === 55 && sub_sb2.incentive === 0, 'P40 fee + P15 subsidy: rider earns P55');
+  const sub_codS = { kind: 'food', fulfillment: 'delivery', payMethod: 'cod', status: 'Completed', payStatus: 'Paid', rider: 'r@x', riderPaysStore: true, payAtPickup: true, fee: 15, discount: 0, lines: [{ total: 150 }], quote: { subtotal: 150, total: 190, deliveryFee: 40, storeDeliveryShare: 15, riderSubsidy: 15, riderFee: 55 }, cashCollected: { amount: 135 } };
+  const sub_ca2 = Rules.codAmounts(sub_codS), sub_lc = Rules.ledger(sub_codS, {});
+  assert(sub_ca2.payStore === 135 && sub_ca2.collect === 190 && sub_ca2.keep === 55 && Rules.cashExpected(sub_codS) === 135, 'COD: rider pays the store P135 (P150 food − P15 subsidy), collects P190, keeps P55');
+  assert(sub_lc.bizNet === -15 && sub_lc.riderCash === 55 && sub_lc.riderNet === 0, 'COD: store owes only the platform fee; rider already holds their P55');
+  const sub_onS = Object.assign({}, sub_codS, { payMethod: 'online', riderPaysStore: false, payAtPickup: false, dueNow: 190, cashCollected: null }), sub_lo2 = Rules.ledger(sub_onS, {});
+  assert(sub_lo2.storeDelivery === 15 && sub_lo2.riderCash === 0 && sub_lo2.riderNet === 55, 'GCash / HitPay: subsidy taken from the store payout; platform pays the rider P55 at payout');
+  const sub_sOrd = await ok('createBooking', { token: cust, kind: 'food', bizId: 'pahuway', fulfillment: 'delivery', payMethod: 'online', lat: 12.5720, lng: 122.1330, landmark: 'x', lines: [{ itemId: item.id, qty: 1, addons: [] }] });
+  await ok('setStatus', { token: admin, ref: sub_sOrd.refs[0], status: 'Payment Confirmed' });
+  const sub_rTok = (await ok('riderLogin', { email: 'paolo@r.ph', password: 'paolo-pass-2' })).token; await ok('rAvailable', { token: sub_rTok, value: true }); await ok('assignRider', { token: admin, ref: sub_sOrd.refs[0], rider: 'paolo@r.ph' });
+  const sub_offS = (await ok('rOrders', { token: sub_rTok })).offers.find(x => x.ref === sub_sOrd.refs[0]);
+  assert(sub_offS && sub_offS.riderFee === Pricing.round(DB.bookings.find(r => r.id === sub_sOrd.refs[0]).data.quote.riderFee - DB.bookings.find(r => r.id === sub_sOrd.refs[0]).data.quote.riderSubsidy), 'the delivery request does not show the subsidy');
+  await ok('rOffer', { token: sub_rTok, ref: sub_sOrd.refs[0], accept: true });
+  let sub_myS = (await ok('rOrders', { token: sub_rTok })).orders.find(x => x.ref === sub_sOrd.refs[0]); assert(!sub_myS.quote.riderSubsidy && sub_myS.subsidyHidden, 'after accepting, still hidden until pick-up');
+  for (const st of ['Accepted', 'Preparing', 'Ready for Pick-up']) await ok('setStatus', { token: pm2, ref: sub_sOrd.refs[0], status: st });
+  sub_myS = (await ok('rOrders', { token: sub_rTok })).orders.find(x => x.ref === sub_sOrd.refs[0]); assert(sub_myS.quote.riderSubsidy > 0, 'at the store (Ready for Pick-up) the rider sees the P' + sub_myS.quote.riderSubsidy + ' subsidy');
+  await ok('rAvailable', { token: sub_rTok, value: false });
+
   console.log('\nALL PASSED · ' + calls + ' simulated network calls · ' + MAILS.length + ' emails');
 })().catch(e => { console.error('\nFAILED:', e.stack || e); process.exit(1); });

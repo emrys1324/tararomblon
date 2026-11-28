@@ -35,6 +35,13 @@ source/                  editable source + build.py + tests
 
 There are no npm packages to install. The functions use Node's built-in `fetch` and `crypto`.
 
+## New: merchant rider subsidy
+
+- **Merchant app → Delivery fees** has a new **Rider subsidy (₱)** column per distance band (₱0–1000). It is an extra amount the store gives the rider on top of the customer's delivery fee.
+- Riders see the subsidy only once the order is **Ready for Pick-up** (and after: out for delivery, earnings). It is hidden on delivery requests and while the food is being prepared.
+- **COD:** the rider pays the store the food total minus the subsidy, collects the full amount from the customer, and keeps delivery fee + subsidy.
+- **GCash / HitPay (online):** the subsidy is deducted from the store's payout and the platform pays it to the rider on the regular rider payout schedule.
+
 ## New: straightforward delivery fees — no store fee
 
 - The **customer pays the delivery fee** (set per distance by each merchant, or the Settings default: free for the first 1.5 km, then ₱10 per km). **Stores pay nothing** toward delivery.
