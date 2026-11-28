@@ -618,3 +618,7 @@ footer .fown span{display:inline}
 .codbox{margin:10px 0;padding:12px;border-radius:12px;background:#fff7ef;border:1.5px solid var(--coral,#ee7a35)}.codbox>b{display:flex;gap:6px;align-items:center;margin-bottom:6px}
 .codl{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed #f1d3bb;font-size:15px}.codl b{font-size:18px;color:var(--navy)}.codl.done span{text-decoration:line-through;color:var(--mute)}.codl.keep{border:none;color:#1d7a3e}.codl.keep b{color:#1d7a3e;font-size:15px}
 .codbox small{display:block;margin-top:6px;color:var(--mute)}
+.ordtabs{margin:0 0 12px;display:inline-flex}.ordtabs span{opacity:.7;margin-left:4px;font-weight:400}
+.hcard{background:#fff;border:1px solid var(--line);border-radius:14px;margin:0 0 10px;overflow:hidden}.hcard>summary{list-style:none;display:flex;gap:12px;align-items:center;padding:12px 14px;cursor:pointer}.hcard>summary::-webkit-details-marker{display:none}
+.hcard .hic{flex:none;width:40px;height:40px;border-radius:12px;background:#fff1e6;color:var(--coral-d,#c4561c);display:grid;place-items:center}.hcard .hmid{flex:1;min-width:0;display:flex;flex-direction:column}.hcard .hmid .hint{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hcard .hright{display:flex;flex-direction:column;align-items:flex-end;gap:4px}.hcard[open]>summary{border-bottom:1px solid var(--marble-2)}.hcard>.trip{margin:0;border:none;border-radius:0;box-shadow:none}.hcard.bad .hright b{color:var(--mute);text-decoration:line-through}

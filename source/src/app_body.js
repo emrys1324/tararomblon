@@ -820,7 +820,8 @@ function bookingCard(b) {
     ${activityLog(b)}</div>`;
 }
 /* ===== MY ORDERS & BOOKINGS: every order and booking, its status, activity log, rider and live map ===== */
-const isActiveB = b => !Rules.CLOSED.includes(b.status);
+/* done for the customer: closed, or a food order already delivered / picked up, or a stay / rental already finished */
+const isActiveB = b => !Rules.CLOSED.includes(b.status) && !(b.kind === 'food' && (Rules.DELIVERED.includes(b.status) || b.status === 'Order Picked Up')) && !['Checked Out', 'Returned'].includes(b.status);
 const canTrack = b => b.kind === 'food' && b.fulfillment === 'delivery' && !!b.rider && !Rules.CLOSED.includes(b.status) && !Rules.DELIVERED.includes(b.status);
 function riderBlock(b) {
   if (b.kind !== 'food' || b.fulfillment !== 'delivery' || Rules.CLOSED.includes(b.status) && b.status !== 'Completed') return '';
@@ -843,7 +844,7 @@ function activeBadges() {
   const act = (window._myB || []).filter(isActiveB).slice(0, 3);
   h.innerHTML = act.map(b => `<div class="actbar"><span class="aic">${kindIcon(b.kind)}</span><div><b>${esc(bizName(b.bizId))} · ${esc(b.status)}</b><span class="hint">${esc(b.ref)}${b.riderInfo && canTrack(b) ? ' · rider ' + esc(b.riderInfo.name) : ''}</span></div>${canTrack(b) ? `<button class="btn sm" onclick="Track.open('${esc(b.ref)}',session.token)">${ic('locate', 14)} Track</button>` : `<button class="btn ghost sm" data-go="orders">View</button>`}</div>`).join('');
 }
-const ORD = { f: 'active', timer: null };
+const ORD = { tab: 'active', f: 'all', timer: null };
 async function renderOrders(quiet) {
   const el = $('#ordBody'); if (!el) return;
   if (!session) { el.innerHTML = `<div class="empty"><div class="big">${ic('receipt', 40)}</div><h2 style="color:var(--ink)">Your orders & bookings</h2><p style="margin:8px 0 16px">Log in to see the status of your orders and bookings and track your rider.</p><button class="btn navy" onclick="openSignIn()">Log in</button></div>`; return; }
@@ -852,16 +853,27 @@ async function renderOrders(quiet) {
   catch (x) { if (!quiet) el.innerHTML = `<div class="err">${esc(x.message)}</div>`; if (/sign in/i.test(x.message)) signOut(); return; }
   if (currentView !== 'orders') return;
   const open = [...document.querySelectorAll('#ordBody details.alog[open]')].map(d => d.dataset.ref);
-  const F = [['active', 'In progress'], ['all', 'All'], ['food', 'Food'], ['rental', 'Rentals'], ['stay', 'Stays'], ['tour', 'Things to do'], ['past', 'Past']];
-  const pick = list.filter(b => ORD.f === 'all' ? true : ORD.f === 'active' ? isActiveB(b) : ORD.f === 'past' ? !isActiveB(b) : b.kind === ORD.f);
-  const cnt = k => list.filter(b => k === 'all' ? true : k === 'active' ? isActiveB(b) : k === 'past' ? !isActiveB(b) : b.kind === k).length;
-  el.innerHTML = `<div class="shead"><div><h2>My orders & bookings</h2><p>${list.length} total · status updates automatically</p></div></div>
-    <div class="chips ordf">${F.filter(f => f[0] === 'active' || f[0] === 'all' || cnt(f[0])).map(f => `<button class="${ORD.f === f[0] ? 'on' : ''}" data-ordf="${f[0]}">${f[1]} <span>${cnt(f[0])}</span></button>`).join('')}</div>
-    <div id="myB">${pick.length ? pick.map(bookingCard).join('') : `<div class="empty">${ORD.f === 'active' ? 'Nothing in progress right now.' : 'Nothing here yet.'}${list.length ? '' : `<p class="mt"><button class="btn" data-go="food">Order food</button> <button class="btn ghost" data-go="rentals">Rent a scooter</button></p>`}</div>`}</div>`;
+  const act = list.filter(isActiveB), hist = list.filter(b => !isActiveB(b)).sort((a, b) => String(b.updated || b.created).localeCompare(String(a.updated || a.created)));
+  const base = ORD.tab === 'history' ? hist : act;
+  const F = [['all', 'All'], ['food', 'Food'], ['rental', 'Rentals'], ['stay', 'Stays'], ['tour', 'Things to do']], cnt = k => base.filter(b => k === 'all' || b.kind === k).length;
+  if (ORD.f !== 'all' && !cnt(ORD.f)) ORD.f = 'all';
+  const pick = base.filter(b => ORD.f === 'all' || b.kind === ORD.f);
+  const empty = ORD.tab === 'history' ? 'No past orders or bookings yet. Delivered, completed and cancelled ones will appear here.' : `Nothing in progress right now.${hist.length ? ` <button class="link" data-ordtab="history">See your history (${hist.length})</button>` : ''}`;
+  el.innerHTML = `<div class="shead"><div><h2>My orders & bookings</h2><p>Status updates automatically</p></div></div>
+    <div class="seg ordtabs"><button class="${ORD.tab === 'active' ? 'on' : ''}" data-ordtab="active">Active <span>${act.length}</span></button><button class="${ORD.tab === 'history' ? 'on' : ''}" data-ordtab="history">History <span>${hist.length}</span></button></div>
+    ${F.filter(f => f[0] === 'all' || cnt(f[0])).length > 2 ? `<div class="chips ordf">${F.filter(f => f[0] === 'all' || cnt(f[0])).map(f => `<button class="${ORD.f === f[0] ? 'on' : ''}" data-ordf="${f[0]}">${f[1]} <span>${cnt(f[0])}</span></button>`).join('')}</div>` : ''}
+    <div id="myB">${pick.length ? pick.map(b => ORD.tab === 'history' ? histCard(b) : bookingCard(b)).join('') : `<div class="empty">${empty}${list.length ? '' : `<p class="mt"><button class="btn" data-go="food">Order food</button> <button class="btn ghost" data-go="rentals">Rent a scooter</button></p>`}</div>`}</div>`;
+  document.querySelectorAll('[data-ordtab]').forEach(x => x.onclick = () => { ORD.tab = x.dataset.ordtab; ORD.f = 'all'; renderOrders(true); });
   document.querySelectorAll('#ordBody details.alog').forEach((d, i) => { d.dataset.ref = pick[i] && pick[i].ref; if (open.includes(d.dataset.ref)) d.open = true; });
   document.querySelectorAll('[data-ordf]').forEach(x => x.onclick = () => { ORD.f = x.dataset.ordf; renderOrders(true); });
   wireMyBookings();
   clearTimeout(ORD.timer); ORD.timer = setTimeout(() => { if (currentView === 'orders' && !$('#ov').classList.contains('show')) renderOrders(true); else if (currentView === 'orders') ORD.timer = setTimeout(() => renderOrders(true), 15000); }, 15000);
+}
+/* History: a compact card that opens the full details */
+function histCard(b) {
+  const done = new Date(b.updated || b.created), bad = Rules.EXCEPTIONS.includes(b.status);
+  const what = b.kind === 'food' ? b.lines.map(l => l.qty + '× ' + l.name).join(', ') : b.lines.map(l => l.label).join(', ');
+  return `<details class="hcard ${bad ? 'bad' : ''}"><summary><span class="hic">${kindIcon(b.kind)}</span><div class="hmid"><b>${esc(bizName(b.bizId))}</b><span class="hint">${esc(what).slice(0, 90)}</span><span class="hint">${done.toLocaleDateString('en-PH', { dateStyle: 'medium' })} · ${esc(b.ref)}</span></div><div class="hright"><b>${peso(Rules.payable(b))}</b>${statusChip(b.status)}</div></summary>${bookingCard(b)}</details>`;
 }
 async function refreshActive() { if (!session) return; try { window._myB = (await api('myBookings', { token: session.token })).bookings; activeBadges(); } catch (x) { } }
 function wireMyBookings() {
