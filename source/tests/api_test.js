@@ -184,12 +184,11 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   await fails('createBooking', Object.assign({}, codP, { lines: [{ itemId: item.id, qty: Math.ceil(501 / item.price), addons: [] }] }), /up to ₱500/);
   assert(Rules.codBlock({ codMinCompleted: 3, codMax: 500 }, 3, 500) === null && Rules.codBlock({ codMinCompleted: 3, codMax: 0 }, 5, 9000) === null, 'COD allowed after 3 completed, up to ₱500 (0 = no ceiling)');
   const XS = { codMinCompleted: 3, codMax: 500, codExemptBefore: '2026-11-21' };
-  assert(Rules.codBlock(XS, 0, 300, '2026-11-20T15:59:00.000Z') === null && /unlocks/.test(Rules.codBlock(XS, 0, 300, '2026-11-20T16:00:00.000Z')), 'customers who signed up before 21 Nov 2026 (PH time) keep COD; later sign-ups need 3 completed');
-  assert(/up to ₱500/.test(Rules.codBlock(XS, 0, 501, '2026-01-01T00:00:00.000Z')) && /unlocks/.test(Rules.codBlock(Object.assign({}, XS, { codExemptBefore: '' }), 0, 300, '2026-01-01T00:00:00.000Z')), 'exempt customers still have the ₱500 ceiling; empty date = no exemption');
-  anaRec.created = '2026-10-01T02:00:00.000Z';
-  const exB = await ok('createBooking', Object.assign({}, codP, { lines: [{ itemId: item.id, qty: 1, addons: [] }] })); assert(exB.refs.length === 1, 'existing customer (signed up 1 Oct) places COD with 0 completed');
-  anaRec.created = '2030-01-01T00:00:00.000Z'; DB.bookings.splice(DB.bookings.findIndex(r => r.id === exB.refs[0]), 1);
+  assert(/unlocks/.test(Rules.codBlock(XS, 0, 300, '2026-01-01T00:00:00.000Z')) && /unlocks/.test(Rules.codBlock(XS, 2, 300, '2025-06-01T00:00:00.000Z')), 'no exemption: even customers who signed up long ago (and an old saved exemption date) need 3 completed orders');
   for (const id of ['TR-FAKE-1', 'TR-FAKE-2', 'TR-FAKE-3']) { const k = DB.bookings.findIndex(r => r.id === id); DB.bookings.splice(k, 1); }
+  anaRec.created = '2026-10-01T02:00:00.000Z';
+  await fails('createBooking', Object.assign({}, codP, { lines: [{ itemId: item.id, qty: 1, addons: [] }] }), /unlocks after 3/);
+  anaRec.created = '2030-01-01T00:00:00.000Z';
   tbl('bookings').push(...[1, 2, 3].map(i => ({ id: 'TR-FAKE-' + i, data: { ref: 'TR-FAKE-' + i, email: 'ana@mail.com', status: 'Completed', kind: 'food', created: '2026-01-0' + i } })));
   const rider = await staffLogin('rider@tara.ph', 'rider');
   await ok('rAvailable', { token: rider, value: true });

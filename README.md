@@ -38,7 +38,8 @@ There are no npm packages to install. The functions use Node's built-in `fetch` 
 ## New: Rider Arrived status, HitPay as the default payment
 
 - **Rider Arrived:** delivery orders now go Out for Delivery → **Rider Arrived** → Delivered. The rider taps **Arrived at customer** when they reach the drop-off. The customer sees "Your order has arrived" on the progress bar and rider card and gets a push and email ("Your order … has arrived"; COD orders are reminded how much cash to prepare). The rider can still mark Delivered directly if needed.
-- **Default payment:** for delivery, **Pay online via HitPay (GCash, Maya, cards)** is listed first and selected by default for everyone. Cash on delivery only appears once the customer has 3 completed orders (and the order is ₱500 or less). Customers who signed up before the date in Super Admin → Settings → "skip the completed-orders rule" are still exempt; clear that field to apply the rule to everyone.
+- **Default payment:** for delivery, **Pay online via HitPay (GCash, Maya, cards)** is listed first and selected by default for everyone. Cash on delivery only appears once the customer has 3 completed orders (and the order is ₱500 or less). This applies to **everyone**: the old exemption for customers who signed up before 21 Nov 2026 has been removed (any saved exemption date is ignored).
+- **Progress bar for riders and merchants:** the Rider app and Merchant app order cards now show the same moving progress bar (motorcycle icon, step X of Y, next step) as the customer, with staff wording (e.g. "Rider arrived at the customer").
 - **COD cash:** the rider pays the store the **full order total** at pick-up and collects the order + delivery fee from the customer.
 
 ## New: merchant rider subsidy

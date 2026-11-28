@@ -2,7 +2,7 @@
 var DEFAULT_SETTINGS = {
   requireIdVerification: true, idUploadAtCheckout: 'optional', proofUpload: 'required', transferEnabled: true,
   transferInstructions: 'Send your payment to GCash 0917 000 0000 (Beyond Tech Solutions) or BPI 0000-0000-00 (Beyond Tech Solutions), then upload a screenshot of your receipt.',
-  riderSharePct: 100, codCashTo: 'rider', codMinCompleted: 3, codMax: 500, riderPayoutDays: 3, riderDispatch: true, dispatchKm: 5, dispatchWidenMin: 3, dispatchAlertMin: 15, codExemptBefore: '2026-11-21', email: { customers: true, merchants: true, admins: true, riders: true },
+  riderSharePct: 100, codCashTo: 'rider', codMinCompleted: 3, codMax: 500, riderPayoutDays: 3, riderDispatch: true, dispatchKm: 5, dispatchWidenMin: 3, dispatchAlertMin: 15, email: { customers: true, merchants: true, admins: true, riders: true },
   /* Stays and Things to do show "Coming soon" until a Super Admin opens them in Settings */
   staysLive: false, toursLive: false
 };
@@ -287,7 +287,7 @@ function createCore(env) {
     if (prev === 'Finding Rider') { if (b.offer) b.offer.closed = now(), await env.db.put(T.book, b); await event('status', txt, ['cust:' + b.email, 'super'].concat(((b.offer && b.offer.riders) || []).map(function (e) { return 'rider:' + e; })), b.ref, b.bizId, ['cust:' + b.email], 'Update on ' + b.ref + ': ' + status, 'Your order ' + b.ref + ' is now: ' + status + (note ? '\nNote: ' + note : ''), who.email); return b; }
     var mailTo = ['cust:' + b.email]; if (who.role === 'super' || who.role === 'system' || who.role === 'rider') mailTo.push('biz:' + b.bizId);
     if (b.rider && ['Ready for Pick-up', 'Cancelled', 'Rejected'].indexOf(status) >= 0) mailTo.push('rider:' + b.rider);
-    if (status === 'Rider Arrived') { await event('status', b.ref + ': your order has arrived. ' + (who.name || 'Your rider') + ' is at your location.', audFor(b), b.ref, b.bizId, ['cust:' + b.email], 'Your order ' + b.ref + ' has arrived', 'Your rider has arrived with your order ' + b.ref + ' from ' + bn + '. Please meet them at your location.' + (b.payMethod === 'cod' ? ' Please prepare ' + 'P' + Rules.payable(b) + ' in cash.' : ''), who.email); return b; }
+    if (status === 'Rider Arrived') { await event('status', txt + ' (at the customer)', audFor(b).filter(function (x) { return x.indexOf('cust:') !== 0; }), b.ref, b.bizId, [], '', '', who.email); await event('status', b.ref + ': your order has arrived. ' + (who.name || 'Your rider') + ' is at your location.', ['cust:' + b.email], b.ref, b.bizId, ['cust:' + b.email], 'Your order ' + b.ref + ' has arrived', 'Your rider has arrived with your order ' + b.ref + ' from ' + bn + '. Please meet them at your location.' + (b.payMethod === 'cod' ? ' Please prepare ' + 'P' + Rules.payable(b) + ' in cash.' : ''), who.email); return b; }
     await event('status', txt, audFor(b), b.ref, b.bizId, mailTo, 'Update on ' + b.ref + ': ' + status, 'Your ' + (b.kind === 'food' ? 'order' : 'booking') + ' ' + b.ref + ' with ' + bn + ' is now: ' + status + (note ? '\nNote: ' + note : '') + '\n\n' + summary(b), who.email);
     return b;
   }

@@ -919,15 +919,9 @@ var Rules = {
   /* Cash on delivery: only after N completed transactions, and only up to a ceiling. Returns null when allowed, else the reason. */
   codBlock: function (st, completed, total, created) {
     var need = +st.codMinCompleted || 0, max = +st.codMax || 0;
-    if (completed < need && !Rules.codExempt(st, created)) return 'Cash on delivery unlocks after ' + need + ' completed orders or bookings (you have ' + completed + '). Please pay online for now.';
+    if (completed < need) return 'Cash on delivery unlocks after ' + need + ' completed orders or bookings (you have ' + completed + '). Please pay online for now.';
     if (max && total > max + 1e-9) return 'Cash on delivery is for orders up to ₱' + max + '. Please pay online for this order.';
     return null;
-  },
-  /* Customers who signed up before this Philippine date keep cash on delivery without the completed-orders rule (the ceiling still applies). */
-  codExempt: function (st, created) {
-    var cut = String(st.codExemptBefore || '').slice(0, 10); if (!cut) return false;
-    if (!created) return true;
-    var t = Date.parse(created); return isNaN(t) ? true : new Date(t + 8 * 3600e3).toISOString().slice(0, 10) < cut;
   },
   completedCount: function (list, email) { return (list || []).filter(function (b) { return (!email || b.email === email) && b.status === 'Completed'; }).length; },
   /* Customers can cancel an order or booking that is not paid yet and not being prepared / in progress (or while still finding a rider) */
@@ -1104,7 +1098,7 @@ var Rules = {
 var DEFAULT_SETTINGS = {
   requireIdVerification: true, idUploadAtCheckout: 'optional', proofUpload: 'required', transferEnabled: true,
   transferInstructions: 'Send your payment to GCash 0917 000 0000 (Beyond Tech Solutions) or BPI 0000-0000-00 (Beyond Tech Solutions), then upload a screenshot of your receipt.',
-  riderSharePct: 100, codCashTo: 'rider', codMinCompleted: 3, codMax: 500, riderPayoutDays: 3, riderDispatch: true, dispatchKm: 5, dispatchWidenMin: 3, dispatchAlertMin: 15, codExemptBefore: '2026-11-21', email: { customers: true, merchants: true, admins: true, riders: true },
+  riderSharePct: 100, codCashTo: 'rider', codMinCompleted: 3, codMax: 500, riderPayoutDays: 3, riderDispatch: true, dispatchKm: 5, dispatchWidenMin: 3, dispatchAlertMin: 15, email: { customers: true, merchants: true, admins: true, riders: true },
   /* Stays and Things to do show "Coming soon" until a Super Admin opens them in Settings */
   staysLive: false, toursLive: false
 };
@@ -1389,7 +1383,7 @@ function createCore(env) {
     if (prev === 'Finding Rider') { if (b.offer) b.offer.closed = now(), await env.db.put(T.book, b); await event('status', txt, ['cust:' + b.email, 'super'].concat(((b.offer && b.offer.riders) || []).map(function (e) { return 'rider:' + e; })), b.ref, b.bizId, ['cust:' + b.email], 'Update on ' + b.ref + ': ' + status, 'Your order ' + b.ref + ' is now: ' + status + (note ? '\nNote: ' + note : ''), who.email); return b; }
     var mailTo = ['cust:' + b.email]; if (who.role === 'super' || who.role === 'system' || who.role === 'rider') mailTo.push('biz:' + b.bizId);
     if (b.rider && ['Ready for Pick-up', 'Cancelled', 'Rejected'].indexOf(status) >= 0) mailTo.push('rider:' + b.rider);
-    if (status === 'Rider Arrived') { await event('status', b.ref + ': your order has arrived. ' + (who.name || 'Your rider') + ' is at your location.', audFor(b), b.ref, b.bizId, ['cust:' + b.email], 'Your order ' + b.ref + ' has arrived', 'Your rider has arrived with your order ' + b.ref + ' from ' + bn + '. Please meet them at your location.' + (b.payMethod === 'cod' ? ' Please prepare ' + 'P' + Rules.payable(b) + ' in cash.' : ''), who.email); return b; }
+    if (status === 'Rider Arrived') { await event('status', txt + ' (at the customer)', audFor(b).filter(function (x) { return x.indexOf('cust:') !== 0; }), b.ref, b.bizId, [], '', '', who.email); await event('status', b.ref + ': your order has arrived. ' + (who.name || 'Your rider') + ' is at your location.', ['cust:' + b.email], b.ref, b.bizId, ['cust:' + b.email], 'Your order ' + b.ref + ' has arrived', 'Your rider has arrived with your order ' + b.ref + ' from ' + bn + '. Please meet them at your location.' + (b.payMethod === 'cod' ? ' Please prepare ' + 'P' + Rules.payable(b) + ' in cash.' : ''), who.email); return b; }
     await event('status', txt, audFor(b), b.ref, b.bizId, mailTo, 'Update on ' + b.ref + ': ' + status, 'Your ' + (b.kind === 'food' ? 'order' : 'booking') + ' ' + b.ref + ' with ' + bn + ' is now: ' + status + (note ? '\nNote: ' + note : '') + '\n\n' + summary(b), who.email);
     return b;
   }
@@ -2795,6 +2789,23 @@ function timeline(b) {
   const f = Rules.flow(b), i = f.indexOf(b.status), bad = Rules.EXCEPTIONS.indexOf(b.status) >= 0;
   return `<div class="tl">${f.map((s, j) => `<span class="${bad ? '' : j < i ? 'past' : j === i ? 'now' : ''}">${esc(s)}</span>`).join('')}${bad ? `<span class="now bad">${esc(b.status)}</span>` : ''}</div>`;
 }
+/* ===== order status as a moving progress bar (motorcycle for deliveries) ===== */
+const STEP_LABEL = { 'Finding Rider': 'Finding a rider', 'Awaiting Payment': 'Waiting for payment', 'Payment Confirmed': 'Payment confirmed', 'New': 'Order placed', 'Accepted': 'Accepted by the store', 'Preparing': 'Preparing your order', 'Ready for Pick-up': 'Ready for pick-up', 'Payment Collected': 'Rider at the store', 'Out for Delivery': 'On the way to you', 'Rider Arrived': 'Your order has arrived', 'Delivered': 'Delivered', 'Order Picked Up': 'Picked up', 'Checked In': 'Checked in', 'Checked Out': 'Checked out', 'Returned': 'Returned', 'Completed': 'Completed' };
+/* wording for riders and merchants (staff), where the customer's wording ("your order", "to you") does not fit */
+const STEP_LABEL_STAFF = { 'Finding Rider': 'Finding a rider', 'New': 'New order', 'Accepted': 'Accepted', 'Preparing': 'Preparing', 'Ready for Pick-up': 'Ready for pick-up', 'Out for Delivery': 'Out for delivery', 'Rider Arrived': 'Rider arrived at the customer', 'Delivered': 'Delivered' };
+function progressBar(b, staff) {
+  const L = s => (staff && STEP_LABEL_STAFF[s]) || (staff && s === 'Payment Collected' ? (b.payAtPickup ? 'Rider paid the store' : 'Payment collected') : null) || STEP_LABEL[s] || s;
+  const f = Rules.flow(b), bad = Rules.EXCEPTIONS.includes(b.status), i = Math.max(0, f.indexOf(b.status)), last = f.length - 1;
+  const done = !bad && (b.status === 'Completed' || (b.kind === 'food' && Rules.delivered(b)));
+  const vis = f.filter(s => !(b.payAtPickup && s === 'Payment Collected' && false));
+  const pct = bad ? 0 : done ? 100 : Math.round(i / last * 100), nx = Rules.next(b);
+  const icon = b.kind === 'food' ? (b.fulfillment === 'delivery' ? 'scooter' : 'cup') : b.kind === 'rental' ? 'scooter' : b.kind === 'stay' ? 'bed' : 'boat';
+  const mood = bad ? 'bad' : done ? 'done' : b.status === 'Finding Rider' ? 'search' : ['Out for Delivery', 'Rider Arrived'].includes(b.status) ? 'go' : 'wait';
+  return `<div class="prog ${mood}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="${esc(L(b.status))}">
+    <div class="ptrack"><div class="pfill" style="width:${pct}%"></div>${vis.map((s, k) => `<span class="pdot ${k <= i && !bad ? 'on' : ''}" style="left:${k / last * 100}%" title="${esc(L(s))}"></span>`).join('')}
+      <span class="prider" style="left:${pct}%">${ic(done ? 'check' : icon, 18)}</span>${b.kind === 'food' && b.fulfillment === 'delivery' ? `<span class="phome">${ic('home', 14)}</span>` : ''}</div>
+    <div class="pnow"><b>${esc(bad ? b.status : L(b.status))}</b>${bad ? '' : done ? '' : `<span>Step ${i + 1} of ${f.length}${nx ? ' · next: ' + esc(L(nx)) : ''}</span>`}</div></div>`;
+}
 /* Wires every [data-ss] button inside root: confirm, then call setStatus. onDone(booking) refreshes the view. */
 function wireStatus(root, getToken, onDone, lookup) {
   root.querySelectorAll('[data-ss]').forEach(btn => btn.onclick = () => {
@@ -3134,7 +3145,7 @@ function card(b) {
   const c = b.customer, m = Rules.money(b), subj = encodeURIComponent(`${bizName(b.bizId)} - your ${b.kind === 'food' ? 'order' : 'booking'} ${b.ref}`);
   const rider = b.rider ? MP.riders.find(r => r.email === b.rider) : null;
   return `<div class="ordcard"><div class="th"><div><span class="ref">${esc(b.ref)}</span> <span class="mini">${kindIcon(b.kind)} ${b.kind === 'food' ? (b.fulfillment === 'delivery' ? 'Delivery' : 'Pick-up') : b.kind === 'stay' ? 'Stay' : b.kind === 'tour' ? 'Tour / service' : 'Rental'}</span><br><span class="mini">Placed ${dt(b.created)}</span></div>${statusChip(b.status)}</div>
-    ${timeline(b)}
+    ${progressBar(b, true)}
     <div class="cgrid">
       <div><span class="lbl">Customer</span><b>${esc(c.name)}</b><br><a href="tel:${esc(String(c.phone).replace(/\s/g, ''))}">${esc(c.phone)}</a><br><a href="mailto:${esc(b.email)}?subject=${subj}">${esc(b.email)}</a><br><span class="hint">${esc(c.address)}</span></div>
       <div><span class="lbl">${b.kind === 'food' ? 'Order' : 'Booking'}</span>${b.lines.map(l => `<div>${esc(l.type ? l.label : l.qty + ' x ' + l.name)}${l.addons && l.addons.length ? ` <span class="hint">(${esc(l.addons.join(', '))})</span>` : ''}${l.note ? ` <span class="hint">"${esc(l.note)}"</span>` : ''}${l.type ? `<br><span class="hint">${esc(bookingDates(l))}${l.type === 'stay' ? ' · ' + l.guests + ' guest(s)' : l.type === 'tour' ? ' · ' + l.pax + ' pax' : ' · ' + l.helmets + ' helmet(s) · ' + esc(l.pickup) + ' to ' + esc(l.ret)}</span>` : ''}</div>`).join('')}

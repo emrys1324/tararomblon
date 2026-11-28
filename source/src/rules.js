@@ -32,15 +32,9 @@ var Rules = {
   /* Cash on delivery: only after N completed transactions, and only up to a ceiling. Returns null when allowed, else the reason. */
   codBlock: function (st, completed, total, created) {
     var need = +st.codMinCompleted || 0, max = +st.codMax || 0;
-    if (completed < need && !Rules.codExempt(st, created)) return 'Cash on delivery unlocks after ' + need + ' completed orders or bookings (you have ' + completed + '). Please pay online for now.';
+    if (completed < need) return 'Cash on delivery unlocks after ' + need + ' completed orders or bookings (you have ' + completed + '). Please pay online for now.';
     if (max && total > max + 1e-9) return 'Cash on delivery is for orders up to ₱' + max + '. Please pay online for this order.';
     return null;
-  },
-  /* Customers who signed up before this Philippine date keep cash on delivery without the completed-orders rule (the ceiling still applies). */
-  codExempt: function (st, created) {
-    var cut = String(st.codExemptBefore || '').slice(0, 10); if (!cut) return false;
-    if (!created) return true;
-    var t = Date.parse(created); return isNaN(t) ? true : new Date(t + 8 * 3600e3).toISOString().slice(0, 10) < cut;
   },
   completedCount: function (list, email) { return (list || []).filter(function (b) { return (!email || b.email === email) && b.status === 'Completed'; }).length; },
   /* Customers can cancel an order or booking that is not paid yet and not being prepared / in progress (or while still finding a rider) */

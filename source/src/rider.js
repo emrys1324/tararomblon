@@ -113,7 +113,7 @@ function vList(list, empty) {
     const F = Pricing.store(CAT, b.bizId) || { storeName: bizName(b.bizId), address: '', lat: 12.57, lng: 122.13 };
     const fee = earn(b), cash = b.payMethod === 'cod', custFee = +b.quote.deliveryFee || 0, storeFee = +b.quote.storeDeliveryShare || 0;
     return `<div class="ordcard"><div class="th"><div><span class="ref">${esc(b.ref)}</span><br><span class="mini">${esc(bizName(b.bizId))} · placed ${tm(b.created)}</span></div>${statusChip(b.status)}</div>
-      ${timeline(b)}
+      ${progressBar(b, true)}
       <div class="rstops"><div><span class="lbl">Pick up</span><b>${esc(F.storeName)}</b><span class="hint">${esc(F.address)}</span><a class="link" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${F.lat},${F.lng}">${ic('nav', 14)} Directions</a></div>
         <div><span class="lbl">Deliver to</span><b>${esc(b.customer.name)}</b><span class="hint">${esc(b.landmark || b.customer.address)}</span><span class="rowbtns" style="margin:4px 0 0"><a class="link" target="_blank" rel="noopener" href="${mapsLink(b)}">${ic('nav', 14)} Directions</a><a class="link" href="tel:${esc(String(b.customer.phone).replace(/\s/g, ''))}">${ic('phone', 14)} ${esc(b.customer.phone)}</a></span></div></div>
       <div class="hint">${b.lines.map(l => esc(l.qty + ' x ' + l.name + (l.addons && l.addons.length ? ' (' + l.addons.join(', ') + ')' : ''))).join(' · ')}</div>

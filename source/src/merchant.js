@@ -70,7 +70,7 @@ function card(b) {
   const c = b.customer, m = Rules.money(b), subj = encodeURIComponent(`${bizName(b.bizId)} - your ${b.kind === 'food' ? 'order' : 'booking'} ${b.ref}`);
   const rider = b.rider ? MP.riders.find(r => r.email === b.rider) : null;
   return `<div class="ordcard"><div class="th"><div><span class="ref">${esc(b.ref)}</span> <span class="mini">${kindIcon(b.kind)} ${b.kind === 'food' ? (b.fulfillment === 'delivery' ? 'Delivery' : 'Pick-up') : b.kind === 'stay' ? 'Stay' : b.kind === 'tour' ? 'Tour / service' : 'Rental'}</span><br><span class="mini">Placed ${dt(b.created)}</span></div>${statusChip(b.status)}</div>
-    ${timeline(b)}
+    ${progressBar(b, true)}
     <div class="cgrid">
       <div><span class="lbl">Customer</span><b>${esc(c.name)}</b><br><a href="tel:${esc(String(c.phone).replace(/\s/g, ''))}">${esc(c.phone)}</a><br><a href="mailto:${esc(b.email)}?subject=${subj}">${esc(b.email)}</a><br><span class="hint">${esc(c.address)}</span></div>
       <div><span class="lbl">${b.kind === 'food' ? 'Order' : 'Booking'}</span>${b.lines.map(l => `<div>${esc(l.type ? l.label : l.qty + ' x ' + l.name)}${l.addons && l.addons.length ? ` <span class="hint">(${esc(l.addons.join(', '))})</span>` : ''}${l.note ? ` <span class="hint">"${esc(l.note)}"</span>` : ''}${l.type ? `<br><span class="hint">${esc(bookingDates(l))}${l.type === 'stay' ? ' · ' + l.guests + ' guest(s)' : l.type === 'tour' ? ' · ' + l.pax + ' pax' : ' · ' + l.helmets + ' helmet(s) · ' + esc(l.pickup) + ' to ' + esc(l.ret)}</span>` : ''}</div>`).join('')}

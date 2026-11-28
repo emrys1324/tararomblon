@@ -56,6 +56,23 @@ function timeline(b) {
   const f = Rules.flow(b), i = f.indexOf(b.status), bad = Rules.EXCEPTIONS.indexOf(b.status) >= 0;
   return `<div class="tl">${f.map((s, j) => `<span class="${bad ? '' : j < i ? 'past' : j === i ? 'now' : ''}">${esc(s)}</span>`).join('')}${bad ? `<span class="now bad">${esc(b.status)}</span>` : ''}</div>`;
 }
+/* ===== order status as a moving progress bar (motorcycle for deliveries) ===== */
+const STEP_LABEL = { 'Finding Rider': 'Finding a rider', 'Awaiting Payment': 'Waiting for payment', 'Payment Confirmed': 'Payment confirmed', 'New': 'Order placed', 'Accepted': 'Accepted by the store', 'Preparing': 'Preparing your order', 'Ready for Pick-up': 'Ready for pick-up', 'Payment Collected': 'Rider at the store', 'Out for Delivery': 'On the way to you', 'Rider Arrived': 'Your order has arrived', 'Delivered': 'Delivered', 'Order Picked Up': 'Picked up', 'Checked In': 'Checked in', 'Checked Out': 'Checked out', 'Returned': 'Returned', 'Completed': 'Completed' };
+/* wording for riders and merchants (staff), where the customer's wording ("your order", "to you") does not fit */
+const STEP_LABEL_STAFF = { 'Finding Rider': 'Finding a rider', 'New': 'New order', 'Accepted': 'Accepted', 'Preparing': 'Preparing', 'Ready for Pick-up': 'Ready for pick-up', 'Out for Delivery': 'Out for delivery', 'Rider Arrived': 'Rider arrived at the customer', 'Delivered': 'Delivered' };
+function progressBar(b, staff) {
+  const L = s => (staff && STEP_LABEL_STAFF[s]) || (staff && s === 'Payment Collected' ? (b.payAtPickup ? 'Rider paid the store' : 'Payment collected') : null) || STEP_LABEL[s] || s;
+  const f = Rules.flow(b), bad = Rules.EXCEPTIONS.includes(b.status), i = Math.max(0, f.indexOf(b.status)), last = f.length - 1;
+  const done = !bad && (b.status === 'Completed' || (b.kind === 'food' && Rules.delivered(b)));
+  const vis = f.filter(s => !(b.payAtPickup && s === 'Payment Collected' && false));
+  const pct = bad ? 0 : done ? 100 : Math.round(i / last * 100), nx = Rules.next(b);
+  const icon = b.kind === 'food' ? (b.fulfillment === 'delivery' ? 'scooter' : 'cup') : b.kind === 'rental' ? 'scooter' : b.kind === 'stay' ? 'bed' : 'boat';
+  const mood = bad ? 'bad' : done ? 'done' : b.status === 'Finding Rider' ? 'search' : ['Out for Delivery', 'Rider Arrived'].includes(b.status) ? 'go' : 'wait';
+  return `<div class="prog ${mood}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="${esc(L(b.status))}">
+    <div class="ptrack"><div class="pfill" style="width:${pct}%"></div>${vis.map((s, k) => `<span class="pdot ${k <= i && !bad ? 'on' : ''}" style="left:${k / last * 100}%" title="${esc(L(s))}"></span>`).join('')}
+      <span class="prider" style="left:${pct}%">${ic(done ? 'check' : icon, 18)}</span>${b.kind === 'food' && b.fulfillment === 'delivery' ? `<span class="phome">${ic('home', 14)}</span>` : ''}</div>
+    <div class="pnow"><b>${esc(bad ? b.status : L(b.status))}</b>${bad ? '' : done ? '' : `<span>Step ${i + 1} of ${f.length}${nx ? ' · next: ' + esc(L(nx)) : ''}</span>`}</div></div>`;
+}
 /* Wires every [data-ss] button inside root: confirm, then call setStatus. onDone(booking) refreshes the view. */
 function wireStatus(root, getToken, onDone, lookup) {
   root.querySelectorAll('[data-ss]').forEach(btn => btn.onclick = () => {

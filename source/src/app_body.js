@@ -820,20 +820,6 @@ function bookingCard(b) {
       ${Rules.custCanCancel(b) ? `<button class="btn ghost sm dangerbtn2" onclick="custCancel('${esc(b.ref)}')">${ic('x', 14)} Cancel ${b.kind === 'food' ? 'order' : 'booking'}</button>` : ''}<button class="btn ghost sm" onclick="Chat.open({ref:'${esc(b.ref)}'})">${ic('chat')} Message ${esc(bizName(b.bizId))}</button>${b.rider && !Rules.CLOSED.includes(b.status) ? `<button class="btn ghost sm" onclick="Chat.open({ref:'${esc(b.ref)}',chan:'rider'})">${ic('bike')} Message rider</button>` : ''}</div>
     ${activityLog(b)}</div>`;
 }
-/* ===== order status as a moving progress bar (motorcycle for deliveries) ===== */
-const STEP_LABEL = { 'Finding Rider': 'Finding a rider', 'Awaiting Payment': 'Waiting for payment', 'Payment Confirmed': 'Payment confirmed', 'New': 'Order placed', 'Accepted': 'Accepted by the store', 'Preparing': 'Preparing your order', 'Ready for Pick-up': 'Ready for pick-up', 'Payment Collected': 'Rider at the store', 'Out for Delivery': 'On the way to you', 'Rider Arrived': 'Your order has arrived', 'Delivered': 'Delivered', 'Order Picked Up': 'Picked up', 'Checked In': 'Checked in', 'Checked Out': 'Checked out', 'Returned': 'Returned', 'Completed': 'Completed' };
-function progressBar(b) {
-  const f = Rules.flow(b), bad = Rules.EXCEPTIONS.includes(b.status), i = Math.max(0, f.indexOf(b.status)), last = f.length - 1;
-  const done = !bad && (b.status === 'Completed' || (b.kind === 'food' && Rules.delivered(b)));
-  const vis = f.filter(s => !(b.payAtPickup && s === 'Payment Collected' && false));
-  const pct = bad ? 0 : done ? 100 : Math.round(i / last * 100), nx = Rules.next(b);
-  const icon = b.kind === 'food' ? (b.fulfillment === 'delivery' ? 'scooter' : 'cup') : b.kind === 'rental' ? 'scooter' : b.kind === 'stay' ? 'bed' : 'boat';
-  const mood = bad ? 'bad' : done ? 'done' : b.status === 'Finding Rider' ? 'search' : ['Out for Delivery', 'Rider Arrived'].includes(b.status) ? 'go' : 'wait';
-  return `<div class="prog ${mood}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="${esc(STEP_LABEL[b.status] || b.status)}">
-    <div class="ptrack"><div class="pfill" style="width:${pct}%"></div>${vis.map((s, k) => `<span class="pdot ${k <= i && !bad ? 'on' : ''}" style="left:${k / last * 100}%" title="${esc(STEP_LABEL[s] || s)}"></span>`).join('')}
-      <span class="prider" style="left:${pct}%">${ic(done ? 'check' : icon, 18)}</span>${b.kind === 'food' && b.fulfillment === 'delivery' ? `<span class="phome">${ic('home', 14)}</span>` : ''}</div>
-    <div class="pnow"><b>${esc(bad ? b.status : STEP_LABEL[b.status] || b.status)}</b>${bad ? '' : done ? '' : `<span>Step ${i + 1} of ${f.length}${nx ? ' · next: ' + esc(STEP_LABEL[nx] || nx) : ''}</span>`}</div></div>`;
-}
 /* ===== MY ORDERS & BOOKINGS: every order and booking, its status, activity log, rider and live map ===== */
 /* done for the customer: closed, or a food order already delivered / picked up, or a stay / rental already finished */
 const isActiveB = b => !Rules.CLOSED.includes(b.status) && !(b.kind === 'food' && (Rules.delivered(b) || b.status === 'Order Picked Up')) && !['Checked Out', 'Returned'].includes(b.status);
