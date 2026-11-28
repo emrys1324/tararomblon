@@ -45,7 +45,7 @@ There are no npm packages to install. The functions use Node's built-in `fetch` 
 
 - Settings → Riders → "Cash collected by riders on COD orders goes to" → **Rider pays the store at pick-up** (now the default).
 - The Rider app shows a Cash on delivery box on each COD order: **1. At pick-up, pay the store ₱X** (the food amount), **2. At drop-off, collect ₱Y from the customer**, and what the rider keeps (the customer's delivery fee, which counts toward their earning). Delivery requests show the same amounts before accepting.
-- The merchant's order card says "The rider pays you ₱X in cash at pick-up"; the store records it with Payment Collected. The store's payout then only deducts the platform fee (and its delivery share); the rider's settlement is their earning minus the delivery fee they kept.
+- The merchant's order card says "The rider pays you ₱X in cash at pick-up". Order steps: Ready for Pick-up → **Payment Collected** (the store records the rider's payment at pick-up, amount required) → **Out for Delivery** (only available after Payment Collected, for the rider and the store) → Delivered → Completed. The store's payout then only deducts the platform fee (and its delivery share); the rider's settlement is their earning minus the delivery fee they kept.
 
 ## New: simple delivery fees set by each merchant; delivery address from the map
 

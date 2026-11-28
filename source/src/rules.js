@@ -14,6 +14,8 @@ var Rules = {
   MAX_SUPER: 2, MAX_PER_BUSINESS: 4,
   BIZ_TYPES: [['Stay', 'Stays'], ['Rental', 'Rentals'], ['Food', 'Food'], ['Tour', 'Tours'], ['Service', 'Other Services']],
   DELIVERED: ['Delivered', 'Payment Collected', 'Completed'],
+  /* delivered to the customer? (COD orders paid at pick-up reach Payment Collected before they go out for delivery) */
+  delivered: function (b) { return !!b && (b.status === 'Delivered' || b.status === 'Completed' || (b.status === 'Payment Collected' && !b.payAtPickup)); },
   ROLE_LABEL: { super: 'Super Admin', manager: 'Merchant Admin', staff: 'Merchant Staff', rider: 'Delivery Rider' },
 
   /* The step-by-step flow for a transaction, based on what it is and how it's paid */
@@ -23,6 +25,7 @@ var Rules = {
     if (b.kind === 'rental') return pre.concat(['Order Picked Up', 'Returned', 'Payment Collected', 'Completed']);
     if (b.kind === 'tour') return pre.concat(['Checked In', 'Payment Collected', 'Completed']);
     if (b.fulfillment === 'delivery' && b.dispatch) pre = b.payMethod === 'online' || b.payMethod === 'transfer' ? ['Awaiting Payment', 'Finding Rider', 'Payment Confirmed', 'Accepted'] : ['Finding Rider', 'New', 'Accepted'];
+    if (b.fulfillment === 'delivery' && b.payAtPickup) return pre.concat(['Preparing', 'Ready for Pick-up', 'Payment Collected', 'Out for Delivery', 'Delivered', 'Completed']);   /* COD: the rider pays the store at pick-up, then goes out for delivery */
     if (b.fulfillment === 'delivery') return pre.concat(['Preparing', 'Ready for Pick-up', 'Out for Delivery', 'Delivered'], b.payMethod === 'cod' ? ['Payment Collected', 'Completed'] : ['Completed']);
     return pre.concat(['Preparing', 'Ready for Pick-up', 'Order Picked Up'], b.payMethod === 'pickup' ? ['Payment Collected', 'Completed'] : ['Completed']);
   },
@@ -54,7 +57,7 @@ var Rules = {
   allowed: function (b, actor) {
     if (!actor) return [];
     if (actor.role === 'super') return Rules.STATUSES.filter(function (s) { return s !== b.status; });
-    if (actor.role === 'manager') return actor.bizId === b.bizId ? Rules.STATUSES.filter(function (s) { return s !== b.status; }) : [];
+    if (actor.role === 'manager') return actor.bizId === b.bizId ? Rules.STATUSES.filter(function (s) { return s !== b.status && !(b.payAtPickup && !b.cashCollected && ['Out for Delivery', 'Delivered', 'Completed'].indexOf(s) >= 0); }) : [];   /* COD paid at pick-up: record the rider's payment first */
     var nx = Rules.next(b), out = [];
     if (actor.role === 'staff' && actor.bizId === b.bizId) {
       if (nx && !(nx === 'Payment Confirmed' && b.payMethod === 'online') && !(nx === 'Payment Collected' && b.codToRider)) out.push(nx);   // HitPay confirms itself; riders record COD cash they keep
@@ -63,7 +66,7 @@ var Rules = {
     }
     if (actor.role === 'customer' && b.email === actor.email) return Rules.custCanCancel(b) ? ['Cancelled'] : [];
     if (actor.role === 'rider' && b.rider === actor.email && b.riderAccepted) {
-      if (['Ready for Pick-up', 'Preparing'].indexOf(b.status) >= 0) out.push('Out for Delivery');
+      if (b.payAtPickup ? b.status === 'Payment Collected' : ['Ready for Pick-up', 'Preparing'].indexOf(b.status) >= 0) out.push('Out for Delivery');
       if (b.status === 'Out for Delivery') out.push('Delivered');
       if (b.status === 'Delivered' && b.payMethod === 'cod' && b.codToRider) out.push('Payment Collected');
       return out;   // COD cash is recorded by the merchant (amount received) when they tag Payment Collected
@@ -118,7 +121,7 @@ var Rules = {
     var pct = !st || st.riderSharePct == null ? 100 : +st.riderSharePct; return Rules.r2((+(b.quote || {}).deliveryFee || 0) * pct / 100);
   },
   /* what the store pays toward a delivery (its share of the fee, or the base fee within the free distance) */
-  storeDelivery: function (b) { return b.kind === 'food' && b.fulfillment === 'delivery' && b.rider && Rules.DELIVERED.indexOf(b.status) >= 0 ? Rules.r2(+(b.quote || {}).storeDeliveryShare || 0) : 0; },
+  storeDelivery: function (b) { return b.kind === 'food' && b.fulfillment === 'delivery' && b.rider && Rules.delivered(b) ? Rules.r2(+(b.quote || {}).storeDeliveryShare || 0) : 0; },
   money: function (b) {
     var ok = Rules.confirmed(b), gross = Rules.gross(b), R = Rules.reductions(b), manual = +b.discount || 0;
     var disc = Math.min(manual + R.codeMerch + R.points, gross), fee = ok ? Math.min(+b.fee || 0, gross) : 0;
@@ -146,7 +149,7 @@ var Rules = {
     o.cashRecorded = recorded != null; o.cashExpected = Rules.r2(Math.max(0, due - taraBiz) + extra);
     o.storeDelivery = m.storeDelivery;
     o.bizNet = Rules.r2(due - m.fee - o.cashBiz - o.storeDelivery);
-    if (b.rider && b.kind === 'food' && Rules.DELIVERED.indexOf(b.status) >= 0) {
+    if (b.rider && b.kind === 'food' && Rules.delivered(b)) {
       o.riderShare = Rules.riderEarning(b, st);
       o.riderCash = cod ? (codTara ? (b.cashCollected && b.cashCollected.role === 'rider' ? +b.cashCollected.amount : Rules.payable(b)) : b.platformPaysRider ? 0 : m.delivery) : 0;
       o.riderNet = Rules.r2(o.riderShare - o.riderCash);
@@ -159,11 +162,11 @@ var Rules = {
   pointsEstimate: function (biz, amount) { var p = Rules.rewardsOf(biz); return p.enabled ? Rules.pointsFor(p, amount) : 0; },
   /* live rider tracking: shared only while an accepted delivery is on its way */
   TRACK: ['New', 'Payment Confirmed', 'Accepted', 'Preparing', 'Ready for Pick-up', 'Out for Delivery'],
-  trackable: function (b) { return b.kind === 'food' && b.fulfillment === 'delivery' && !!b.rider && !!b.riderAccepted && Rules.TRACK.indexOf(b.status) >= 0; },
+  trackable: function (b) { return b.kind === 'food' && b.fulfillment === 'delivery' && !!b.rider && !!b.riderAccepted && (Rules.TRACK.indexOf(b.status) >= 0 || (b.payAtPickup && b.status === 'Payment Collected')); },
   r2: function (n) { return Math.round(n * 100) / 100; },
   /* Transactions ready for payout: businesses once Completed, riders once delivered */
   bizPayable: function (b) { return b.status === 'Completed' && !b.bizPaidAt && Rules.confirmed(b); },
-  riderPayable: function (b) { return !!b.rider && b.kind === 'food' && Rules.DELIVERED.indexOf(b.status) >= 0 && !b.riderPaidAt; },
+  riderPayable: function (b) { return !!b.rider && b.kind === 'food' && Rules.delivered(b) && !b.riderPaidAt; },
   /* Discount code amount for an eligible amount (percent of order total or fixed, capped) */
   codeAmount: function (d, amount) {
     if (!d || !(amount > 0)) return 0;

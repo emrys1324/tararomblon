@@ -53,7 +53,7 @@ async function reload(quiet) {
   loading(false);
 }
 function render() {
-  const act = RP.orders.filter(b => !Rules.CLOSED.includes(b.status) && !Rules.DELIVERED.includes(b.status));
+  const act = RP.orders.filter(b => !Rules.CLOSED.includes(b.status) && !Rules.delivered(b));
   const unread = RP.threads.filter(t => Chat.unread(t)).length;
   const on = !!RP.me.available, n = act.length;
   $('#ptitle').innerHTML = `Deliveries <span class="rstat ${on ? 'on' : ''}">${on ? 'Online' : 'Offline'}</span>`;
@@ -88,7 +88,7 @@ function ding() { try { navigator.vibrate && navigator.vibrate([200, 100, 200]);
 const payDays = () => +((CAT.settings || {}).riderPayoutDays) || 3;
 /* next payout date: every N days from the last payout this rider received (or from their first unpaid delivery) */
 function nextPayout() {
-  const paid = RP.orders.map(b => b.riderPaidAt).filter(Boolean).sort().pop(), unpaid = RP.orders.filter(b => Rules.DELIVERED.includes(b.status) && !b.riderPaidAt).map(b => b.updated || b.created).sort()[0];
+  const paid = RP.orders.map(b => b.riderPaidAt).filter(Boolean).sort().pop(), unpaid = RP.orders.filter(b => Rules.delivered(b) && !b.riderPaidAt).map(b => b.updated || b.created).sort()[0];
   const from = paid || unpaid; if (!from) return 'after your first delivery';
   const d = new Date(Date.parse(from) + payDays() * 864e5); return d < new Date() ? 'due now' : d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
 }
@@ -128,9 +128,9 @@ async function respond(ref, accept) {
 function vEarn() {
   const now = new Date(), weekAgo = dayOf(new Date(now.getTime() - 6 * 864e5));
   const inR = b => RP.range === 'all' || (RP.range === 'today' ? dayOf(b.updated || b.created) === today : dayOf(b.updated || b.created) >= weekAgo);
-  const done = RP.orders.filter(b => DONE.includes(b.status) && inR(b)), fee = earn;
+  const done = RP.orders.filter(b => Rules.delivered(b) && inR(b)), fee = earn;
   const earned = done.reduce((t, b) => t + fee(b), 0), cashOf = b => b.cashCollected && b.cashCollected.role === 'rider' ? +b.cashCollected.amount : Rules.payable(b);
-  const open = RP.orders.filter(b => DONE.includes(b.status) && !b.riderPaidAt), net = Rules.r2(open.reduce((t, b) => t + Rules.ledger(b, ST()).riderNet, 0)), held = Rules.r2(open.filter(b => b.payMethod === 'cod' && b.codToRider).reduce((t, b) => t + cashOf(b), 0));
+  const open = RP.orders.filter(b => Rules.delivered(b) && !b.riderPaidAt), net = Rules.r2(open.reduce((t, b) => t + Rules.ledger(b, ST()).riderNet, 0)), held = Rules.r2(open.filter(b => b.payMethod === 'cod' && b.codToRider).reduce((t, b) => t + cashOf(b), 0));
   const cash = done.filter(b => b.payMethod === 'cod').reduce((t, b) => t + cashOf(b), 0);
   $('#pbody').innerHTML = `<div class="seg" style="margin-bottom:12px">${[['today', 'Today'], ['week', 'Last 7 days'], ['all', 'All time']].map(x => `<button class="${RP.range === x[0] ? 'on' : ''}" onclick="RP.range='${x[0]}';vEarn()">${x[1]}</button>`).join('')}</div>
     <div class="kpis"><div class="kpi"><span>Completed deliveries</span><b>${done.length}</b><small>${(() => { const st = Pricing.stores(CAT); if (st.length && st.every(f => f.matrixFees)) return 'Your fee is shown on each request'; const R = Pricing.deliveryRule(CAT); return peso(R.baseFee) + ' within ' + R.freeKm + ' km · ' + peso(R.perKm) + '/km after'; })()}</small></div><div class="kpi"><span>Delivery earnings</span><b>${peso(earned)}</b><small>your delivery fees only · COD cash not included</small></div>

@@ -241,7 +241,7 @@ function vRiders() {
   const lic = r => `<span class="schip ${r.licenseStatus === 'verified' ? 'done' : r.licenseStatus === 'rejected' ? 'bad' : 'wait'}">License ${esc(r.licenseStatus || 'not uploaded')}</span>`;
   P(`<div class="filters2"><input id="rq" placeholder="Search name, email, phone, plate, license…" value="${esc(AD.rq)}"><button class="btn sm" onclick="riderSheet()">${ic('plus')} Add rider</button></div>
     <div class="rowbtns"><span class="meta">${list.length} rider${list.length === 1 ? '' : 's'} · ${riderList().filter(r => r.available).length} available now · ${pendingLic()} license${pendingLic() === 1 ? '' : 's'} to verify</span><button class="btn ghost sm" id="rDl">Download CSV</button></div>
-    ${list.map(r => { const mine = B.filter(b => b.rider === r.email), done = mine.filter(b => Rules.DELIVERED.includes(b.status)), owe = mine.filter(Rules.riderPayable).reduce((t, b) => t + Rules.ledger(b, st).riderNet, 0);
+    ${list.map(r => { const mine = B.filter(b => b.rider === r.email), done = mine.filter(b => Rules.delivered(b)), owe = mine.filter(Rules.riderPayable).reduce((t, b) => t + Rules.ledger(b, st).riderNet, 0);
       return `<div class="acard"><div class="rcard"><div><h3 style="margin:0">${esc(r.name || r.email)}</h3><div class="rowbtns" style="margin:6px 0 0"><span class="schip ${r.available ? 'go' : ''}">${r.available ? 'Available' : 'Offline'}</span>${lic(r)}${r.active === false ? '<span class="schip bad">Inactive</span>' : ''}</div></div>
         <div class="rowbtns" style="margin:0"><button class="btn ghost sm" onclick="riderSheet('${esc(r.email)}')">${ic('gear')} Edit</button></div></div>
         <div class="kv">${[['Email', r.email], ['Mobile', r.phone], ['Town', r.town], ['Address', r.address], ['Vehicle', r.vehicle], ['Plate no.', r.plate], ["Driver's license", r.licenseNo], ['License expiry', r.licenseExpiry ? fmtD(r.licenseExpiry) : ''], ['Joined', r.joined ? dOnly(r.joined) : ''], ['Last seen', r.lastSeen ? dt(r.lastSeen) : '']].filter(x => x[1]).map(x => `<div><span>${x[0]}</span><b>${esc(x[1])}</b></div>`).join('')}
@@ -483,7 +483,7 @@ function vReports() {
   const T = k => rows.reduce((t, x) => t + x[k], 0);
   const rem = conf.filter(b => Rules.NONCASH.includes(b.payMethod) && Rules.money(b).collectedOnline);
   const months = {}; conf.forEach(b => { const m = b.created.slice(0, 7), x = Rules.money(b); months[m] = months[m] || { n: 0, g: 0, f: 0 }; months[m].n++; months[m].g += x.gross; months[m].f += x.fee; });
-  const st = ST(), riders = riderList().map(rd => { const l = B.filter(b => b.rider === rd.email && Rules.DELIVERED.includes(b.status)).map(b => ({ b, L: Rules.ledger(b, st) })), un = l.filter(x => !x.b.riderPaidAt);
+  const st = ST(), riders = riderList().map(rd => { const l = B.filter(b => b.rider === rd.email && Rules.delivered(b)).map(b => ({ b, L: Rules.ledger(b, st) })), un = l.filter(x => !x.b.riderPaidAt);
     return { rd, n: l.length, earned: Rules.r2(l.reduce((t, x) => t + x.L.riderShare, 0)), cash: Rules.r2(l.reduce((t, x) => t + x.L.riderCash, 0)), due: Rules.r2(un.reduce((t, x) => t + x.L.riderNet, 0)) }; });
   const cashRows = biz.map(z => { const l = conf.filter(b => b.bizId === z.id).map(b => Rules.ledger(b, st)); let cash = 0, tara = 0, feeCash = 0, feeNon = 0, rec = 0, recN = 0;
     l.forEach(L => { const due = L.gross - L.discount, sh = due > 0 ? Math.min(1, L.cashBiz / due) : 0; cash += L.cashBiz; tara += L.taraBiz; feeCash += L.fee * sh; feeNon += L.fee * (1 - sh); if (L.cashRecorded) { rec += L.cashBiz; recN++; } });

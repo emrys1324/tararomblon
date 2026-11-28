@@ -276,7 +276,7 @@ function createCore(env) {
     }
     b.status = status; b.payStatus = Rules.payStatusFor(b, status);
     if (status === 'Completed') await awardPoints(b, cat0);
-    if (b.rider && Rules.DELIVERED.concat(Rules.CLOSED).indexOf(status) >= 0) {
+    if (b.rider && (Rules.delivered(Object.assign({}, b, { status: status })) || Rules.CLOSED.indexOf(status) >= 0)) {
       var others = (await allBookings()).filter(function (x) { return x.ref !== b.ref && x.rider === b.rider && liveFor(x); });
       if (!others.length) { var rr = await env.db.get(T.staff, b.rider); if (rr && rr.loc && !rr.available) { delete rr.loc; await env.db.put(T.staff, rr); } }
     }
@@ -361,7 +361,7 @@ function createCore(env) {
       if (b.kind === 'food' && b.fulfillment === 'delivery' && st.riderDispatch !== false) { b.dispatch = true; if (b.status === 'New') b.status = 'Finding Rider'; }
       if (b.kind === 'food' && b.fulfillment === 'delivery' && st.codCashTo === 'merchant') b.platformPaysRider = true;   /* riders hand all COD cash to the store; the platform pays their earnings */
       if (b.kind === 'food' && b.fulfillment === 'delivery' && b.payMethod === 'cod' && st.codCashTo === 'tara') b.codToRider = true;
-      if (b.kind === 'food' && b.fulfillment === 'delivery' && b.payMethod === 'cod' && (st.codCashTo || 'rider') === 'rider') b.riderPaysStore = true;   /* the rider pays the store for the food at pick-up, collects everything from the customer and keeps the customer's delivery fee */   /* the rider keeps the COD cash; it is settled against their earnings and the platform pays the store */
+      if (b.kind === 'food' && b.fulfillment === 'delivery' && b.payMethod === 'cod' && (st.codCashTo || 'rider') === 'rider') { b.riderPaysStore = true; b.payAtPickup = true; }   /* the rider pays the store for the food at pick-up, collects everything from the customer and keeps the customer's delivery fee */   /* the rider keeps the COD cash; it is settled against their earnings and the platform pays the store */
       b.id = b.ref; b.history.push({ at: created, status: b.status, by: me.name, role: 'customer' }); out.push(b);
     });
     var due = out.reduce(function (t, b) { return t + (+b.dueNow || 0); }, 0);
@@ -1013,7 +1013,7 @@ function createCore(env) {
     if (b.kind !== 'food' || b.fulfillment !== 'delivery') err('Only deliveries can be tracked.');
     var st = Pricing.store(cat, b.bizId) || { lat: 12.57, lng: 122.13, storeName: bizName(cat, b.bizId) };
     var store = { lat: +st.lat, lng: +st.lng, name: st.storeName }, dest = { lat: b.lat != null ? +b.lat : null, lng: b.lng != null ? +b.lng : null, label: b.landmark || b.customer.address };
-    var out = { ref: b.ref, status: b.status, store: store, dest: dest, live: false, done: Rules.DELIVERED.indexOf(b.status) >= 0 || Rules.CLOSED.indexOf(b.status) >= 0, rider: null, loc: null, eta: null };
+    var out = { ref: b.ref, status: b.status, store: store, dest: dest, live: false, done: Rules.delivered(b) || Rules.CLOSED.indexOf(b.status) >= 0, rider: null, loc: null, eta: null };
     if (!b.rider) return out;
     var r = await env.db.get(T.staff, b.rider) || {};
     out.rider = { name: r.name || 'Your rider', phone: r.phone || '', vehicle: r.vehicle || '', plate: r.plate || '', accepted: !!b.riderAccepted };
@@ -1092,7 +1092,7 @@ function createCore(env) {
   /* Super Admin: deactivate / reactivate a rider (signs them out, no new requests) or remove them for good */
   async function riderChecks(e) {
     var all = await allBookings(), st = settings(await catalog());
-    var active = all.filter(function (b) { return b.rider === e && b.kind === 'food' && Rules.DELIVERED.indexOf(b.status) < 0 && Rules.CLOSED.indexOf(b.status) < 0; });
+    var active = all.filter(function (b) { return b.rider === e && b.kind === 'food' && !Rules.delivered(b) && Rules.CLOSED.indexOf(b.status) < 0; });
     var net = Rules.r2(all.filter(function (b) { return b.rider === e && Rules.riderPayable(b); }).reduce(function (t, b) { return t + Rules.ledger(b, st).riderNet; }, 0));
     return { active: active, net: net, all: all };
   }
