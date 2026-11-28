@@ -201,7 +201,7 @@ var Pricing = {
 /* ===== RULES (shared by every app and the backend — keep identical) ===== */
 var Rules = {
   /* Every status used anywhere. Flows below pick the ones that apply to each kind of transaction. */
-  STATUSES: ['Finding Rider', 'New', 'Accepted', 'Awaiting Payment', 'Payment Confirmed', 'Preparing', 'Ready for Pick-up', 'Out for Delivery', 'Order Picked Up', 'Delivered',
+  STATUSES: ['Finding Rider', 'New', 'Accepted', 'Awaiting Payment', 'Payment Confirmed', 'Preparing', 'Ready for Pick-up', 'Out for Delivery', 'Rider Arrived', 'Order Picked Up', 'Delivered',
     'Checked In', 'Checked Out', 'Returned', 'Payment Collected', 'Completed', 'Cancelled', 'Rejected', 'Refunded', 'Expired'],
   EXCEPTIONS: ['Cancelled', 'Rejected', 'Refunded', 'Expired'],
   FREE: ['Cancelled', 'Rejected', 'Refunded', 'Expired'],          // these release dates/units and earn no platform fee
@@ -225,8 +225,8 @@ var Rules = {
     if (b.kind === 'rental') return pre.concat(['Order Picked Up', 'Returned', 'Payment Collected', 'Completed']);
     if (b.kind === 'tour') return pre.concat(['Checked In', 'Payment Collected', 'Completed']);
     if (b.fulfillment === 'delivery' && b.dispatch) pre = b.payMethod === 'online' || b.payMethod === 'transfer' ? ['Awaiting Payment', 'Finding Rider', 'Payment Confirmed', 'Accepted'] : ['Finding Rider', 'New', 'Accepted'];
-    if (b.fulfillment === 'delivery' && b.payAtPickup) return pre.concat(['Preparing', 'Ready for Pick-up', 'Payment Collected', 'Out for Delivery', 'Delivered', 'Completed']);   /* COD: the rider pays the store at pick-up, then goes out for delivery */
-    if (b.fulfillment === 'delivery') return pre.concat(['Preparing', 'Ready for Pick-up', 'Out for Delivery', 'Delivered'], b.payMethod === 'cod' ? ['Payment Collected', 'Completed'] : ['Completed']);
+    if (b.fulfillment === 'delivery' && b.payAtPickup) return pre.concat(['Preparing', 'Ready for Pick-up', 'Payment Collected', 'Out for Delivery', 'Rider Arrived', 'Delivered', 'Completed']);   /* COD: the rider pays the store at pick-up, then goes out for delivery */
+    if (b.fulfillment === 'delivery') return pre.concat(['Preparing', 'Ready for Pick-up', 'Out for Delivery', 'Rider Arrived', 'Delivered'], b.payMethod === 'cod' ? ['Payment Collected', 'Completed'] : ['Completed']);
     return pre.concat(['Preparing', 'Ready for Pick-up', 'Order Picked Up'], b.payMethod === 'pickup' ? ['Payment Collected', 'Completed'] : ['Completed']);
   },
   /* Cash on delivery: only after N completed transactions, and only up to a ceiling. Returns null when allowed, else the reason. */
@@ -257,7 +257,7 @@ var Rules = {
   allowed: function (b, actor) {
     if (!actor) return [];
     if (actor.role === 'super') return Rules.STATUSES.filter(function (s) { return s !== b.status; });
-    if (actor.role === 'manager') return actor.bizId === b.bizId ? Rules.STATUSES.filter(function (s) { return s !== b.status && !(b.payAtPickup && !b.cashCollected && ['Out for Delivery', 'Delivered', 'Completed'].indexOf(s) >= 0); }) : [];   /* COD paid at pick-up: record the rider's payment first */
+    if (actor.role === 'manager') return actor.bizId === b.bizId ? Rules.STATUSES.filter(function (s) { return s !== b.status && !(b.payAtPickup && !b.cashCollected && ['Out for Delivery', 'Rider Arrived', 'Delivered', 'Completed'].indexOf(s) >= 0); }) : [];   /* COD paid at pick-up: record the rider's payment first */
     var nx = Rules.next(b), out = [];
     if (actor.role === 'staff' && actor.bizId === b.bizId) {
       if (nx && !(nx === 'Payment Confirmed' && b.payMethod === 'online') && !(nx === 'Payment Collected' && b.codToRider)) out.push(nx);   // HitPay confirms itself; riders record COD cash they keep
@@ -267,7 +267,8 @@ var Rules = {
     if (actor.role === 'customer' && b.email === actor.email) return Rules.custCanCancel(b) ? ['Cancelled'] : [];
     if (actor.role === 'rider' && b.rider === actor.email && b.riderAccepted) {
       if (b.payAtPickup ? b.status === 'Payment Collected' : ['Ready for Pick-up', 'Preparing'].indexOf(b.status) >= 0) out.push('Out for Delivery');
-      if (b.status === 'Out for Delivery') out.push('Delivered');
+      if (b.status === 'Out for Delivery') out.push('Rider Arrived');
+      if (b.status === 'Out for Delivery' || b.status === 'Rider Arrived') out.push('Delivered');
       if (b.status === 'Delivered' && b.payMethod === 'cod' && b.codToRider) out.push('Payment Collected');
       return out;   // COD cash is recorded by the merchant (amount received) when they tag Payment Collected
     }
@@ -304,8 +305,8 @@ var Rules = {
   codAmounts: function (b) {
     if (!b || b.payMethod !== 'cod') return null;
     var collect = Rules.payable(b), fee = +(b.quote && b.quote.deliveryFee) || 0;
-    var sub = +(b.quote && b.quote.riderSubsidy) || 0;   /* the store's rider subsidy: the rider pays the store that much less at pick-up */
-    if (b.riderPaysStore) return { mode: 'payStore', payStore: Rules.r2(collect - fee - sub), collect: collect, keep: Rules.r2(fee + sub), subsidy: sub };
+    var sub = +(b.quote && b.quote.riderSubsidy) || 0;   /* the store's rider subsidy: not taken off at pick-up; deducted from the store's payout and paid to the rider at payout */
+    if (b.riderPaysStore) return { mode: 'payStore', payStore: Rules.r2(collect - fee), collect: collect, keep: fee, subsidy: sub };
     if (b.codToRider) return { mode: 'keepAll', payStore: 0, collect: collect, keep: collect };
     if (b.platformPaysRider) return { mode: 'handAll', payStore: collect, collect: collect, keep: 0 };
     return { mode: 'handFood', payStore: Rules.r2(collect - fee), collect: collect, keep: fee };
@@ -353,7 +354,7 @@ var Rules = {
     o.bizNet = Rules.r2(due - m.fee - o.cashBiz - o.storeDelivery);
     if (b.rider && b.kind === 'food' && Rules.delivered(b)) {
       o.riderShare = Rules.riderEarning(b, st);
-      o.riderCash = cod ? (codTara ? (b.cashCollected && b.cashCollected.role === 'rider' ? +b.cashCollected.amount : Rules.payable(b)) : b.platformPaysRider ? 0 : Rules.r2(m.delivery + (b.riderPaysStore ? +(b.quote.riderSubsidy || 0) : 0))) : 0;
+      o.riderCash = cod ? (codTara ? (b.cashCollected && b.cashCollected.role === 'rider' ? +b.cashCollected.amount : Rules.payable(b)) : b.platformPaysRider ? 0 : m.delivery) : 0;
       o.riderNet = Rules.r2(o.riderShare - o.riderCash);
     }
     return o;
@@ -363,7 +364,7 @@ var Rules = {
   /* points a customer earns on an amount paid for items (after discounts and points used, delivery fee excluded) */
   pointsEstimate: function (biz, amount) { var p = Rules.rewardsOf(biz); return p.enabled ? Rules.pointsFor(p, amount) : 0; },
   /* live rider tracking: shared only while an accepted delivery is on its way */
-  TRACK: ['New', 'Payment Confirmed', 'Accepted', 'Preparing', 'Ready for Pick-up', 'Out for Delivery'],
+  TRACK: ['New', 'Payment Confirmed', 'Accepted', 'Preparing', 'Ready for Pick-up', 'Out for Delivery', 'Rider Arrived'],
   trackable: function (b) { return b.kind === 'food' && b.fulfillment === 'delivery' && !!b.rider && !!b.riderAccepted && (Rules.TRACK.indexOf(b.status) >= 0 || (b.payAtPickup && b.status === 'Payment Collected')); },
   r2: function (n) { return Math.round(n * 100) / 100; },
   /* Transactions ready for payout: businesses once Completed, riders once delivered */
@@ -699,6 +700,7 @@ function createCore(env) {
     if (prev === 'Finding Rider') { if (b.offer) b.offer.closed = now(), await env.db.put(T.book, b); await event('status', txt, ['cust:' + b.email, 'super'].concat(((b.offer && b.offer.riders) || []).map(function (e) { return 'rider:' + e; })), b.ref, b.bizId, ['cust:' + b.email], 'Update on ' + b.ref + ': ' + status, 'Your order ' + b.ref + ' is now: ' + status + (note ? '\nNote: ' + note : ''), who.email); return b; }
     var mailTo = ['cust:' + b.email]; if (who.role === 'super' || who.role === 'system' || who.role === 'rider') mailTo.push('biz:' + b.bizId);
     if (b.rider && ['Ready for Pick-up', 'Cancelled', 'Rejected'].indexOf(status) >= 0) mailTo.push('rider:' + b.rider);
+    if (status === 'Rider Arrived') { await event('status', b.ref + ': your order has arrived. ' + (who.name || 'Your rider') + ' is at your location.', audFor(b), b.ref, b.bizId, ['cust:' + b.email], 'Your order ' + b.ref + ' has arrived', 'Your rider has arrived with your order ' + b.ref + ' from ' + bn + '. Please meet them at your location.' + (b.payMethod === 'cod' ? ' Please prepare ' + 'P' + Rules.payable(b) + ' in cash.' : ''), who.email); return b; }
     await event('status', txt, audFor(b), b.ref, b.bizId, mailTo, 'Update on ' + b.ref + ': ' + status, 'Your ' + (b.kind === 'food' ? 'order' : 'booking') + ' ' + b.ref + ' with ' + bn + ' is now: ' + status + (note ? '\nNote: ' + note : '') + '\n\n' + summary(b), who.email);
     return b;
   }
@@ -1434,15 +1436,16 @@ function createCore(env) {
     var loc = r.loc && (Date.parse(now()) - Date.parse(r.loc.at)) < 15 * 6e4 ? r.loc : null;
     if (!loc && env.demo) {   /* demo: simulate the ride from the store to the customer */
       var to = dest.lat != null ? dest : { lat: store.lat + 0.012, lng: store.lng - 0.01 }, h = (b.history || []).filter(function (x) { return x.status === 'Out for Delivery'; }).pop();
-      var t = b.status === 'Out for Delivery' && h ? Math.min(0.95, (Date.parse(now()) - Date.parse(h.at)) / (8 * 6e4)) : 0;
+      var t = b.status === 'Rider Arrived' ? 1 : b.status === 'Out for Delivery' && h ? Math.min(0.95, (Date.parse(now()) - Date.parse(h.at)) / (8 * 6e4)) : 0;
       loc = { lat: store.lat + (to.lat - store.lat) * t + (t ? 0 : 0.0006), lng: store.lng + (to.lng - store.lng) * t, acc: 10, at: now(), simulated: true };
     }
     if (loc) {
       out.loc = loc; out.live = true;
       var to2 = dest.lat != null ? dest : null, km = 0;
-      if (b.status === 'Out for Delivery') km = to2 ? Pricing.km(loc.lat, loc.lng, to2.lat, to2.lng) : 0;
+      if (b.status === 'Rider Arrived') km = 0;
+      else if (b.status === 'Out for Delivery') km = to2 ? Pricing.km(loc.lat, loc.lng, to2.lat, to2.lng) : 0;
       else km = Pricing.km(loc.lat, loc.lng, store.lat, store.lng) + (to2 ? Pricing.km(store.lat, store.lng, to2.lat, to2.lng) : 0);
-      out.km = Pricing.round(km); out.eta = Math.max(1, Math.round(km * 1.3 / 25 * 60) + (b.status === 'Out for Delivery' ? 0 : 5));
+      out.km = Pricing.round(km); out.eta = Math.max(1, Math.round(km * 1.3 / 25 * 60) + (b.status === 'Out for Delivery' || b.status === 'Rider Arrived' ? 0 : 5));
     }
     return out;
   };

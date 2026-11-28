@@ -287,6 +287,7 @@ function createCore(env) {
     if (prev === 'Finding Rider') { if (b.offer) b.offer.closed = now(), await env.db.put(T.book, b); await event('status', txt, ['cust:' + b.email, 'super'].concat(((b.offer && b.offer.riders) || []).map(function (e) { return 'rider:' + e; })), b.ref, b.bizId, ['cust:' + b.email], 'Update on ' + b.ref + ': ' + status, 'Your order ' + b.ref + ' is now: ' + status + (note ? '\nNote: ' + note : ''), who.email); return b; }
     var mailTo = ['cust:' + b.email]; if (who.role === 'super' || who.role === 'system' || who.role === 'rider') mailTo.push('biz:' + b.bizId);
     if (b.rider && ['Ready for Pick-up', 'Cancelled', 'Rejected'].indexOf(status) >= 0) mailTo.push('rider:' + b.rider);
+    if (status === 'Rider Arrived') { await event('status', b.ref + ': your order has arrived. ' + (who.name || 'Your rider') + ' is at your location.', audFor(b), b.ref, b.bizId, ['cust:' + b.email], 'Your order ' + b.ref + ' has arrived', 'Your rider has arrived with your order ' + b.ref + ' from ' + bn + '. Please meet them at your location.' + (b.payMethod === 'cod' ? ' Please prepare ' + 'P' + Rules.payable(b) + ' in cash.' : ''), who.email); return b; }
     await event('status', txt, audFor(b), b.ref, b.bizId, mailTo, 'Update on ' + b.ref + ': ' + status, 'Your ' + (b.kind === 'food' ? 'order' : 'booking') + ' ' + b.ref + ' with ' + bn + ' is now: ' + status + (note ? '\nNote: ' + note : '') + '\n\n' + summary(b), who.email);
     return b;
   }
@@ -1022,15 +1023,16 @@ function createCore(env) {
     var loc = r.loc && (Date.parse(now()) - Date.parse(r.loc.at)) < 15 * 6e4 ? r.loc : null;
     if (!loc && env.demo) {   /* demo: simulate the ride from the store to the customer */
       var to = dest.lat != null ? dest : { lat: store.lat + 0.012, lng: store.lng - 0.01 }, h = (b.history || []).filter(function (x) { return x.status === 'Out for Delivery'; }).pop();
-      var t = b.status === 'Out for Delivery' && h ? Math.min(0.95, (Date.parse(now()) - Date.parse(h.at)) / (8 * 6e4)) : 0;
+      var t = b.status === 'Rider Arrived' ? 1 : b.status === 'Out for Delivery' && h ? Math.min(0.95, (Date.parse(now()) - Date.parse(h.at)) / (8 * 6e4)) : 0;
       loc = { lat: store.lat + (to.lat - store.lat) * t + (t ? 0 : 0.0006), lng: store.lng + (to.lng - store.lng) * t, acc: 10, at: now(), simulated: true };
     }
     if (loc) {
       out.loc = loc; out.live = true;
       var to2 = dest.lat != null ? dest : null, km = 0;
-      if (b.status === 'Out for Delivery') km = to2 ? Pricing.km(loc.lat, loc.lng, to2.lat, to2.lng) : 0;
+      if (b.status === 'Rider Arrived') km = 0;
+      else if (b.status === 'Out for Delivery') km = to2 ? Pricing.km(loc.lat, loc.lng, to2.lat, to2.lng) : 0;
       else km = Pricing.km(loc.lat, loc.lng, store.lat, store.lng) + (to2 ? Pricing.km(store.lat, store.lng, to2.lat, to2.lng) : 0);
-      out.km = Pricing.round(km); out.eta = Math.max(1, Math.round(km * 1.3 / 25 * 60) + (b.status === 'Out for Delivery' ? 0 : 5));
+      out.km = Pricing.round(km); out.eta = Math.max(1, Math.round(km * 1.3 / 25 * 60) + (b.status === 'Out for Delivery' || b.status === 'Rider Arrived' ? 0 : 5));
     }
     return out;
   };

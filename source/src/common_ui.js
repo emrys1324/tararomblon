@@ -33,7 +33,7 @@ const kindIcon = k => ic(k === 'stay' ? 'bed' : k === 'rental' ? 'scooter' : k =
 const STATUS_TONE = s => Rules.EXCEPTIONS.indexOf(s) >= 0 ? 'bad' : s === 'Completed' ? 'done' : ['Awaiting Payment', 'New'].indexOf(s) >= 0 ? 'wait' : 'go';
 const statusChip = s => `<span class="schip ${STATUS_TONE(s)}">${esc(s)}</span>`;
 function actionLabel(b, s) {
-  return ({ 'Accepted': 'Accept', 'Payment Confirmed': 'Confirm payment', 'Preparing': 'Start preparing', 'Ready for Pick-up': b.fulfillment === 'delivery' ? 'Ready for rider pick-up' : 'Ready for pick-up', 'Out for Delivery': 'Out for delivery',
+  return ({ 'Accepted': 'Accept', 'Payment Confirmed': 'Confirm payment', 'Preparing': 'Start preparing', 'Ready for Pick-up': b.fulfillment === 'delivery' ? 'Ready for rider pick-up' : 'Ready for pick-up', 'Out for Delivery': 'Out for delivery', 'Rider Arrived': 'Arrived at customer',
     'Delivered': 'Mark delivered', 'Payment Collected': b.kind === 'food' ? 'Payment collected' : 'Balance collected', 'Completed': 'Complete', 'Checked In': 'Check in guest', 'Checked Out': 'Check out guest',
     'Order Picked Up': b.kind === 'rental' ? 'Scooter picked up' : 'Customer picked up', 'Returned': 'Scooter returned', 'Rejected': 'Reject', 'Cancelled': 'Cancel', 'Refunded': 'Refund', 'Expired': 'Expire',
     'New': 'Set as New', 'Awaiting Payment': 'Set Awaiting Payment' })[s] || s;
@@ -313,7 +313,7 @@ const Track = {
     this.lastD = d; if (!$('#trT')) return;
     const P = this.pts(d); this.move('rider', P.rider); this.fit(P);
     const ago = d.loc ? Math.max(0, Math.round((Date.now() - Date.parse(d.loc.at)) / 1000)) : null, r = d.rider;
-    $('#trT').textContent = d.done ? 'Delivered' : !r ? 'No rider assigned yet' : d.status === 'Out for Delivery' ? (r.name + ' is on the way') : (r.name + ' is heading to ' + d.store.name);
+    $('#trT').textContent = d.done ? 'Delivered' : !r ? 'No rider assigned yet' : d.status === 'Rider Arrived' ? (r.name + ' has arrived with your order') : d.status === 'Out for Delivery' ? (r.name + ' is on the way') : (r.name + ' is heading to ' + d.store.name);
     $('#trS').innerHTML = d.done ? 'This order has been delivered. Live tracking has ended.' : d.live ? `<b class="eta">${d.eta ? 'About ' + d.eta + ' min' : ''}</b>${d.km != null ? ' · ' + d.km + ' km away' : ''} · updated ${ago < 60 ? ago + 's' : Math.round(ago / 60) + ' min'} ago${d.loc.simulated ? ' (demo)' : ''}` : r ? (r.accepted ? 'Waiting for the rider\'s live location. It appears once the rider\'s app is open with location on.' : 'Waiting for the rider to accept the delivery.') : 'The store will assign a rider soon.';
     $('#trInfo').innerHTML = `<div class="trbar">${r ? `<div class="tav">${ic('bike', 22)}</div><div><b>${esc(r.name)}</b><span class="hint">${esc([r.vehicle, r.plate].filter(Boolean).join(' · ') || 'Delivery rider')}</span></div>${r.phone ? `<a class="btn ghost sm" href="tel:${esc(String(r.phone).replace(/\s/g, ''))}">${ic('phone', 14)} Call</a>` : ''}` : ''}</div>
       ${d.dest && d.dest.label ? `<p class="hint" style="margin-top:8px">${ic('pin', 14)} Deliver to: ${esc(d.dest.label)}</p>` : ''}

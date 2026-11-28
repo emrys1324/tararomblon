@@ -1,7 +1,7 @@
 /* ===== RULES (shared by every app and the backend — keep identical) ===== */
 var Rules = {
   /* Every status used anywhere. Flows below pick the ones that apply to each kind of transaction. */
-  STATUSES: ['Finding Rider', 'New', 'Accepted', 'Awaiting Payment', 'Payment Confirmed', 'Preparing', 'Ready for Pick-up', 'Out for Delivery', 'Order Picked Up', 'Delivered',
+  STATUSES: ['Finding Rider', 'New', 'Accepted', 'Awaiting Payment', 'Payment Confirmed', 'Preparing', 'Ready for Pick-up', 'Out for Delivery', 'Rider Arrived', 'Order Picked Up', 'Delivered',
     'Checked In', 'Checked Out', 'Returned', 'Payment Collected', 'Completed', 'Cancelled', 'Rejected', 'Refunded', 'Expired'],
   EXCEPTIONS: ['Cancelled', 'Rejected', 'Refunded', 'Expired'],
   FREE: ['Cancelled', 'Rejected', 'Refunded', 'Expired'],          // these release dates/units and earn no platform fee
@@ -25,8 +25,8 @@ var Rules = {
     if (b.kind === 'rental') return pre.concat(['Order Picked Up', 'Returned', 'Payment Collected', 'Completed']);
     if (b.kind === 'tour') return pre.concat(['Checked In', 'Payment Collected', 'Completed']);
     if (b.fulfillment === 'delivery' && b.dispatch) pre = b.payMethod === 'online' || b.payMethod === 'transfer' ? ['Awaiting Payment', 'Finding Rider', 'Payment Confirmed', 'Accepted'] : ['Finding Rider', 'New', 'Accepted'];
-    if (b.fulfillment === 'delivery' && b.payAtPickup) return pre.concat(['Preparing', 'Ready for Pick-up', 'Payment Collected', 'Out for Delivery', 'Delivered', 'Completed']);   /* COD: the rider pays the store at pick-up, then goes out for delivery */
-    if (b.fulfillment === 'delivery') return pre.concat(['Preparing', 'Ready for Pick-up', 'Out for Delivery', 'Delivered'], b.payMethod === 'cod' ? ['Payment Collected', 'Completed'] : ['Completed']);
+    if (b.fulfillment === 'delivery' && b.payAtPickup) return pre.concat(['Preparing', 'Ready for Pick-up', 'Payment Collected', 'Out for Delivery', 'Rider Arrived', 'Delivered', 'Completed']);   /* COD: the rider pays the store at pick-up, then goes out for delivery */
+    if (b.fulfillment === 'delivery') return pre.concat(['Preparing', 'Ready for Pick-up', 'Out for Delivery', 'Rider Arrived', 'Delivered'], b.payMethod === 'cod' ? ['Payment Collected', 'Completed'] : ['Completed']);
     return pre.concat(['Preparing', 'Ready for Pick-up', 'Order Picked Up'], b.payMethod === 'pickup' ? ['Payment Collected', 'Completed'] : ['Completed']);
   },
   /* Cash on delivery: only after N completed transactions, and only up to a ceiling. Returns null when allowed, else the reason. */
@@ -57,7 +57,7 @@ var Rules = {
   allowed: function (b, actor) {
     if (!actor) return [];
     if (actor.role === 'super') return Rules.STATUSES.filter(function (s) { return s !== b.status; });
-    if (actor.role === 'manager') return actor.bizId === b.bizId ? Rules.STATUSES.filter(function (s) { return s !== b.status && !(b.payAtPickup && !b.cashCollected && ['Out for Delivery', 'Delivered', 'Completed'].indexOf(s) >= 0); }) : [];   /* COD paid at pick-up: record the rider's payment first */
+    if (actor.role === 'manager') return actor.bizId === b.bizId ? Rules.STATUSES.filter(function (s) { return s !== b.status && !(b.payAtPickup && !b.cashCollected && ['Out for Delivery', 'Rider Arrived', 'Delivered', 'Completed'].indexOf(s) >= 0); }) : [];   /* COD paid at pick-up: record the rider's payment first */
     var nx = Rules.next(b), out = [];
     if (actor.role === 'staff' && actor.bizId === b.bizId) {
       if (nx && !(nx === 'Payment Confirmed' && b.payMethod === 'online') && !(nx === 'Payment Collected' && b.codToRider)) out.push(nx);   // HitPay confirms itself; riders record COD cash they keep
@@ -67,7 +67,8 @@ var Rules = {
     if (actor.role === 'customer' && b.email === actor.email) return Rules.custCanCancel(b) ? ['Cancelled'] : [];
     if (actor.role === 'rider' && b.rider === actor.email && b.riderAccepted) {
       if (b.payAtPickup ? b.status === 'Payment Collected' : ['Ready for Pick-up', 'Preparing'].indexOf(b.status) >= 0) out.push('Out for Delivery');
-      if (b.status === 'Out for Delivery') out.push('Delivered');
+      if (b.status === 'Out for Delivery') out.push('Rider Arrived');
+      if (b.status === 'Out for Delivery' || b.status === 'Rider Arrived') out.push('Delivered');
       if (b.status === 'Delivered' && b.payMethod === 'cod' && b.codToRider) out.push('Payment Collected');
       return out;   // COD cash is recorded by the merchant (amount received) when they tag Payment Collected
     }
@@ -104,8 +105,8 @@ var Rules = {
   codAmounts: function (b) {
     if (!b || b.payMethod !== 'cod') return null;
     var collect = Rules.payable(b), fee = +(b.quote && b.quote.deliveryFee) || 0;
-    var sub = +(b.quote && b.quote.riderSubsidy) || 0;   /* the store's rider subsidy: the rider pays the store that much less at pick-up */
-    if (b.riderPaysStore) return { mode: 'payStore', payStore: Rules.r2(collect - fee - sub), collect: collect, keep: Rules.r2(fee + sub), subsidy: sub };
+    var sub = +(b.quote && b.quote.riderSubsidy) || 0;   /* the store's rider subsidy: not taken off at pick-up; deducted from the store's payout and paid to the rider at payout */
+    if (b.riderPaysStore) return { mode: 'payStore', payStore: Rules.r2(collect - fee), collect: collect, keep: fee, subsidy: sub };
     if (b.codToRider) return { mode: 'keepAll', payStore: 0, collect: collect, keep: collect };
     if (b.platformPaysRider) return { mode: 'handAll', payStore: collect, collect: collect, keep: 0 };
     return { mode: 'handFood', payStore: Rules.r2(collect - fee), collect: collect, keep: fee };
@@ -153,7 +154,7 @@ var Rules = {
     o.bizNet = Rules.r2(due - m.fee - o.cashBiz - o.storeDelivery);
     if (b.rider && b.kind === 'food' && Rules.delivered(b)) {
       o.riderShare = Rules.riderEarning(b, st);
-      o.riderCash = cod ? (codTara ? (b.cashCollected && b.cashCollected.role === 'rider' ? +b.cashCollected.amount : Rules.payable(b)) : b.platformPaysRider ? 0 : Rules.r2(m.delivery + (b.riderPaysStore ? +(b.quote.riderSubsidy || 0) : 0))) : 0;
+      o.riderCash = cod ? (codTara ? (b.cashCollected && b.cashCollected.role === 'rider' ? +b.cashCollected.amount : Rules.payable(b)) : b.platformPaysRider ? 0 : m.delivery) : 0;
       o.riderNet = Rules.r2(o.riderShare - o.riderCash);
     }
     return o;
@@ -163,7 +164,7 @@ var Rules = {
   /* points a customer earns on an amount paid for items (after discounts and points used, delivery fee excluded) */
   pointsEstimate: function (biz, amount) { var p = Rules.rewardsOf(biz); return p.enabled ? Rules.pointsFor(p, amount) : 0; },
   /* live rider tracking: shared only while an accepted delivery is on its way */
-  TRACK: ['New', 'Payment Confirmed', 'Accepted', 'Preparing', 'Ready for Pick-up', 'Out for Delivery'],
+  TRACK: ['New', 'Payment Confirmed', 'Accepted', 'Preparing', 'Ready for Pick-up', 'Out for Delivery', 'Rider Arrived'],
   trackable: function (b) { return b.kind === 'food' && b.fulfillment === 'delivery' && !!b.rider && !!b.riderAccepted && (Rules.TRACK.indexOf(b.status) >= 0 || (b.payAtPickup && b.status === 'Payment Collected')); },
   r2: function (n) { return Math.round(n * 100) / 100; },
   /* Transactions ready for payout: businesses once Completed, riders once delivered */

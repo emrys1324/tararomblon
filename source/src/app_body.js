@@ -683,9 +683,10 @@ function checkoutFood() {
     const payOpts = () => {
       const o = [];
       const qq = quote(), codWhy = st.ful === 'delivery' && F.codEnabled ? Rules.codBlock(SET(), window._myB ? Rules.completedCount(window._myB) : 0, qq.error ? (Pricing.food(CAT, { bizId: F.bizId, lines: cart.food, fulfillment: 'quote' }).subtotal || 0) : qq.total, session.profile && session.profile.created) : null;
+      if (st.ful === 'delivery' && F.onlineEnabled) o.push(['online', 'Pay online via HitPay — GCash, Maya & other e-wallets, QR Ph or card']);   /* HitPay (GCash) is the default for delivery */
       if (st.ful === 'delivery' && F.codEnabled && !codWhy) o.push(['cod', 'Cash on delivery']);
       if (st.ful === 'pickup') o.push(['pickup', 'Pay upon pick-up']);
-      if (F.onlineEnabled) o.push(['online', 'Pay online via HitPay — GCash, Maya & other e-wallets, QR Ph or card']);
+      if (st.ful !== 'delivery' && F.onlineEnabled) o.push(['online', 'Pay online via HitPay — GCash, Maya & other e-wallets, QR Ph or card']);
       if (SET().transferEnabled) o.push(['transfer', 'Bank or e-wallet transfer (upload proof)']);
       const cur = (document.querySelector('input[name=pay]:checked') || {}).value;
       $('#payOpts').innerHTML = o.map((x, i) => `<label><input type="radio" name="pay" value="${x[0]}" ${(cur ? cur === x[0] : i === 0) ? 'checked' : ''}> ${ic(x[0] === 'online' ? 'card' : x[0] === 'transfer' ? 'wallet' : x[0] === 'cod' ? 'cash' : 'store')} ${x[1]}</label>`).join('');
@@ -820,14 +821,14 @@ function bookingCard(b) {
     ${activityLog(b)}</div>`;
 }
 /* ===== order status as a moving progress bar (motorcycle for deliveries) ===== */
-const STEP_LABEL = { 'Finding Rider': 'Finding a rider', 'Awaiting Payment': 'Waiting for payment', 'Payment Confirmed': 'Payment confirmed', 'New': 'Order placed', 'Accepted': 'Accepted by the store', 'Preparing': 'Preparing your order', 'Ready for Pick-up': 'Ready for pick-up', 'Payment Collected': 'Rider at the store', 'Out for Delivery': 'On the way to you', 'Delivered': 'Delivered', 'Order Picked Up': 'Picked up', 'Checked In': 'Checked in', 'Checked Out': 'Checked out', 'Returned': 'Returned', 'Completed': 'Completed' };
+const STEP_LABEL = { 'Finding Rider': 'Finding a rider', 'Awaiting Payment': 'Waiting for payment', 'Payment Confirmed': 'Payment confirmed', 'New': 'Order placed', 'Accepted': 'Accepted by the store', 'Preparing': 'Preparing your order', 'Ready for Pick-up': 'Ready for pick-up', 'Payment Collected': 'Rider at the store', 'Out for Delivery': 'On the way to you', 'Rider Arrived': 'Your order has arrived', 'Delivered': 'Delivered', 'Order Picked Up': 'Picked up', 'Checked In': 'Checked in', 'Checked Out': 'Checked out', 'Returned': 'Returned', 'Completed': 'Completed' };
 function progressBar(b) {
   const f = Rules.flow(b), bad = Rules.EXCEPTIONS.includes(b.status), i = Math.max(0, f.indexOf(b.status)), last = f.length - 1;
   const done = !bad && (b.status === 'Completed' || (b.kind === 'food' && Rules.delivered(b)));
   const vis = f.filter(s => !(b.payAtPickup && s === 'Payment Collected' && false));
   const pct = bad ? 0 : done ? 100 : Math.round(i / last * 100), nx = Rules.next(b);
   const icon = b.kind === 'food' ? (b.fulfillment === 'delivery' ? 'scooter' : 'cup') : b.kind === 'rental' ? 'scooter' : b.kind === 'stay' ? 'bed' : 'boat';
-  const mood = bad ? 'bad' : done ? 'done' : b.status === 'Finding Rider' ? 'search' : b.status === 'Out for Delivery' ? 'go' : 'wait';
+  const mood = bad ? 'bad' : done ? 'done' : b.status === 'Finding Rider' ? 'search' : ['Out for Delivery', 'Rider Arrived'].includes(b.status) ? 'go' : 'wait';
   return `<div class="prog ${mood}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="${esc(STEP_LABEL[b.status] || b.status)}">
     <div class="ptrack"><div class="pfill" style="width:${pct}%"></div>${vis.map((s, k) => `<span class="pdot ${k <= i && !bad ? 'on' : ''}" style="left:${k / last * 100}%" title="${esc(STEP_LABEL[s] || s)}"></span>`).join('')}
       <span class="prider" style="left:${pct}%">${ic(done ? 'check' : icon, 18)}</span>${b.kind === 'food' && b.fulfillment === 'delivery' ? `<span class="phome">${ic('home', 14)}</span>` : ''}</div>
@@ -842,7 +843,7 @@ function riderBlock(b) {
   const r = b.riderInfo;
   if (!b.rider) return Rules.delivered(b) ? '' : b.status === 'Finding Rider' ? `<div class="rcard wait finding"><span class="spin"></span><div><b>Finding a nearby rider…</b><span class="hint">Your order goes to ${esc(bizName(b.bizId))} as soon as a rider accepts.</span></div></div>` : b.status === 'Awaiting Payment' ? '' : `<div class="rcard wait">${ic('bike', 18)}<div><b>Rider</b><span class="hint">Finding a rider…</span></div></div>`;
   const veh = [r && r.vehicle, r && r.plate].filter(Boolean).join(' · ');
-  const st = Rules.delivered(b) ? 'Delivered your order' : !b.riderAccepted ? 'Waiting for the rider to accept' : b.status === 'Out for Delivery' ? 'On the way to you' : b.status === 'Ready for Pick-up' ? 'Picking up your order' : 'Heading to the store';
+  const st = Rules.delivered(b) ? 'Delivered your order' : !b.riderAccepted ? 'Waiting for the rider to accept' : b.status === 'Rider Arrived' ? 'Has arrived with your order. Please meet your rider.' : b.status === 'Out for Delivery' ? 'On the way to you' : b.status === 'Ready for Pick-up' ? 'Picking up your order' : 'Heading to the store';
   return `<div class="rcard">${ic('bike', 18)}<div><b>${esc(r ? r.name : 'Your rider')}</b><span class="hint">${esc(st)}${veh ? ' · ' + esc(veh) : ''}</span></div>${r && r.phone && canTrack(b) ? `<a class="btn ghost sm" href="tel:${esc(String(r.phone).replace(/\s/g, ''))}">${ic('phone', 14)} Call</a>` : ''}</div>`;
 }
 async function custCancel(ref) { const b = (window._myB || []).find(x => x.ref === ref) || {}, grp = b.payMethod === 'online' && b.status === 'Awaiting Payment' ? (window._myB || []).filter(x => x.group === b.group && x.status === 'Awaiting Payment' && x.ref !== ref) : [];

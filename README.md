@@ -35,11 +35,17 @@ source/                  editable source + build.py + tests
 
 There are no npm packages to install. The functions use Node's built-in `fetch` and `crypto`.
 
+## New: Rider Arrived status, HitPay as the default payment
+
+- **Rider Arrived:** delivery orders now go Out for Delivery → **Rider Arrived** → Delivered. The rider taps **Arrived at customer** when they reach the drop-off. The customer sees "Your order has arrived" on the progress bar and rider card and gets a push and email ("Your order … has arrived"; COD orders are reminded how much cash to prepare). The rider can still mark Delivered directly if needed.
+- **Default payment:** for delivery, **Pay online via HitPay (GCash, Maya, cards)** is listed first and selected by default for everyone. Cash on delivery only appears once the customer has 3 completed orders (and the order is ₱500 or less). Customers who signed up before the date in Super Admin → Settings → "skip the completed-orders rule" are still exempt; clear that field to apply the rule to everyone.
+- **COD cash:** the rider pays the store the **full order total** at pick-up and collects the order + delivery fee from the customer.
+
 ## New: merchant rider subsidy
 
 - **Merchant app → Delivery fees** has a new **Rider subsidy (₱)** column per distance band (₱0–1000). It is an extra amount the store gives the rider on top of the customer's delivery fee.
 - Riders see the subsidy on the **delivery request** before they accept (it is included in the "you earn" amount, with a "Rider subsidy from {store}" line), and it stays visible through pick-up, delivery and earnings.
-- **COD:** the rider pays the store the food total minus the subsidy, collects the full amount from the customer, and keeps delivery fee + subsidy.
+- **COD:** the rider pays the store the full order total at pick-up, collects everything from the customer and keeps the delivery fee. The subsidy is deducted from the store's payout and the platform pays it to the rider on the rider payout schedule.
 - **GCash / HitPay (online):** the subsidy is deducted from the store's payout and the platform pays it to the rider on the regular rider payout schedule.
 
 ## New: straightforward delivery fees — no store fee

@@ -230,7 +230,7 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   const fb = (await ok('mBookings', { token: pstaff })).bookings.find(b => b.ref === fref), expCash = Rules.cashExpected(fb);
   const ca = Rules.codAmounts(fb);
   assert(fb.riderPaysStore && fb.payAtPickup && ca.payStore === expCash && ca.collect === Rules.payable(fb) && ca.keep === (+fb.quote.deliveryFee || 0), 'COD: rider pays the store P' + ca.payStore + ' at pick-up and collects P' + ca.collect + ' from the customer');
-  assert(Rules.next(fb) === 'Payment Collected' && JSON.stringify(Rules.flow(fb).slice(-5)) === JSON.stringify(['Ready for Pick-up', 'Payment Collected', 'Out for Delivery', 'Delivered', 'Completed']), 'flow: Ready for Pick-up → Payment Collected → Out for Delivery → Delivered → Completed');
+  assert(Rules.next(fb) === 'Payment Collected' && JSON.stringify(Rules.flow(fb).slice(-6)) === JSON.stringify(['Ready for Pick-up', 'Payment Collected', 'Out for Delivery', 'Rider Arrived', 'Delivered', 'Completed']), 'flow: Ready for Pick-up → Payment Collected → Out for Delivery → Delivered → Completed');
   await fails('setStatus', { token: rider, ref: fref, status: 'Out for Delivery' }, /can't set/);
   await fails('setStatus', { token: pstaff, ref: fref, status: 'Out for Delivery' }, /next step/);
   await fails('setStatus', { token: pmgr, ref: fref, status: 'Out for Delivery' }, /can't set|next step/);
@@ -713,10 +713,10 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   const sub_sb1 = Pricing.deliverySplit(sub_sbC, sub_sbF, 0.5), sub_sb2 = Pricing.deliverySplit(sub_sbC, sub_sbF, 3);
   assert(sub_sb1.fee === 0 && sub_sb1.subsidy === 10 && sub_sb1.riderFee === 20 && sub_sb1.incentive === 10, 'free + P10 subsidy: rider earns P20 (P10 store, P10 platform)');
   assert(sub_sb2.fee === 40 && sub_sb2.subsidy === 15 && sub_sb2.riderFee === 55 && sub_sb2.incentive === 0, 'P40 fee + P15 subsidy: rider earns P55');
-  const sub_codS = { kind: 'food', fulfillment: 'delivery', payMethod: 'cod', status: 'Completed', payStatus: 'Paid', rider: 'r@x', riderPaysStore: true, payAtPickup: true, fee: 15, discount: 0, lines: [{ total: 150 }], quote: { subtotal: 150, total: 190, deliveryFee: 40, storeDeliveryShare: 15, riderSubsidy: 15, riderFee: 55 }, cashCollected: { amount: 135 } };
+  const sub_codS = { kind: 'food', fulfillment: 'delivery', payMethod: 'cod', status: 'Completed', payStatus: 'Paid', rider: 'r@x', riderPaysStore: true, payAtPickup: true, fee: 15, discount: 0, lines: [{ total: 150 }], quote: { subtotal: 150, total: 190, deliveryFee: 40, storeDeliveryShare: 15, riderSubsidy: 15, riderFee: 55 }, cashCollected: { amount: 150 } };
   const sub_ca2 = Rules.codAmounts(sub_codS), sub_lc = Rules.ledger(sub_codS, {});
-  assert(sub_ca2.payStore === 135 && sub_ca2.collect === 190 && sub_ca2.keep === 55 && Rules.cashExpected(sub_codS) === 135, 'COD: rider pays the store P135 (P150 food − P15 subsidy), collects P190, keeps P55');
-  assert(sub_lc.bizNet === -15 && sub_lc.riderCash === 55 && sub_lc.riderNet === 0, 'COD: store owes only the platform fee; rider already holds their P55');
+  assert(sub_ca2.payStore === 150 && sub_ca2.collect === 190 && sub_ca2.keep === 40 && sub_ca2.subsidy === 15 && Rules.cashExpected(sub_codS) === 150, 'COD: rider pays the store the full P150 order, collects P190, keeps the P40 delivery fee');
+  assert(sub_lc.bizNet === -30 && sub_lc.riderCash === 40 && sub_lc.riderNet === 15, 'COD: store owes the platform fee + P15 subsidy (from its payout); platform pays the rider the P15 subsidy at payout');
   const sub_onS = Object.assign({}, sub_codS, { payMethod: 'online', riderPaysStore: false, payAtPickup: false, dueNow: 190, cashCollected: null }), sub_lo2 = Rules.ledger(sub_onS, {});
   assert(sub_lo2.storeDelivery === 15 && sub_lo2.riderCash === 0 && sub_lo2.riderNet === 55, 'GCash / HitPay: subsidy taken from the store payout; platform pays the rider P55 at payout');
   const sub_sOrd = await ok('createBooking', { token: cust, kind: 'food', bizId: 'pahuway', fulfillment: 'delivery', payMethod: 'online', lat: 12.5720, lng: 122.1330, landmark: 'x', lines: [{ itemId: item.id, qty: 1, addons: [] }] });
@@ -728,6 +728,20 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   let sub_myS = (await ok('rOrders', { token: sub_rTok })).orders.find(x => x.ref === sub_sOrd.refs[0]); assert(sub_myS.quote.riderSubsidy > 0 && !sub_myS.subsidyHidden, 'after accepting, the subsidy stays visible');
   for (const st of ['Accepted', 'Preparing', 'Ready for Pick-up']) await ok('setStatus', { token: pm2, ref: sub_sOrd.refs[0], status: st });
   sub_myS = (await ok('rOrders', { token: sub_rTok })).orders.find(x => x.ref === sub_sOrd.refs[0]); assert(sub_myS.quote.riderSubsidy > 0, 'at the store (Ready for Pick-up) the rider sees the P' + sub_myS.quote.riderSubsidy + ' subsidy');
+  console.log('Rider Arrived status');
+  const ra_ref = sub_sOrd.refs[0], ra_email = DB.bookings.find(r => r.id === ra_ref).data.email;
+  await ok('setStatus', { token: sub_rTok, ref: ra_ref, status: 'Out for Delivery' });
+  let ra_b = DB.bookings.find(r => r.id === ra_ref).data;
+  assert(Rules.next(ra_b) === 'Rider Arrived' && Rules.allowed(ra_b, { role: 'rider', email: 'paolo@r.ph' }).join() === 'Rider Arrived,Delivered', 'out for delivery: the rider can tap Arrived (or Delivered)');
+  assert(Rules.trackable(Object.assign({}, ra_b, { status: 'Rider Arrived' })), 'live tracking continues while the rider is at the door');
+  const ra_m0 = MAILS.length; await ok('setStatus', { token: sub_rTok, ref: ra_ref, status: 'Rider Arrived' });
+  const ra_mail = MAILS.slice(ra_m0).find(m => m.to[0] === ra_email);
+  assert(ra_mail && /has arrived/.test(ra_mail.subject), 'the customer is told their order has arrived: "' + (ra_mail && ra_mail.subject) + '"');
+  ra_b = DB.bookings.find(r => r.id === ra_ref).data;
+  assert(!Rules.delivered(ra_b) && Rules.allowed(ra_b, { role: 'rider', email: 'paolo@r.ph' }).join() === 'Delivered', 'arrived is not yet delivered; next the rider marks Delivered');
+  await ok('setStatus', { token: sub_rTok, ref: ra_ref, status: 'Delivered' });
+  assert(Rules.delivered(DB.bookings.find(r => r.id === ra_ref).data), 'then Delivered');
+  assert(JSON.stringify(Rules.flow({ kind: 'food', fulfillment: 'delivery', payMethod: 'cod', payAtPickup: true }).slice(-5)) === JSON.stringify(['Payment Collected', 'Out for Delivery', 'Rider Arrived', 'Delivered', 'Completed']), 'COD flow includes Rider Arrived');
   await ok('rAvailable', { token: sub_rTok, value: false });
 
   console.log('\nALL PASSED · ' + calls + ' simulated network calls · ' + MAILS.length + ' emails');
