@@ -723,9 +723,9 @@ const ph = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slic
   await ok('setStatus', { token: admin, ref: sub_sOrd.refs[0], status: 'Payment Confirmed' });
   const sub_rTok = (await ok('riderLogin', { email: 'paolo@r.ph', password: 'paolo-pass-2' })).token; await ok('rAvailable', { token: sub_rTok, value: true }); await ok('assignRider', { token: admin, ref: sub_sOrd.refs[0], rider: 'paolo@r.ph' });
   const sub_offS = (await ok('rOrders', { token: sub_rTok })).offers.find(x => x.ref === sub_sOrd.refs[0]);
-  assert(sub_offS && sub_offS.riderFee === Pricing.round(DB.bookings.find(r => r.id === sub_sOrd.refs[0]).data.quote.riderFee - DB.bookings.find(r => r.id === sub_sOrd.refs[0]).data.quote.riderSubsidy), 'the delivery request does not show the subsidy');
+  assert(sub_offS && sub_offS.subsidy > 0 && sub_offS.riderFee === DB.bookings.find(r => r.id === sub_sOrd.refs[0]).data.quote.riderFee, 'the delivery request shows the P' + (sub_offS && sub_offS.subsidy) + ' subsidy in the earning');
   await ok('rOffer', { token: sub_rTok, ref: sub_sOrd.refs[0], accept: true });
-  let sub_myS = (await ok('rOrders', { token: sub_rTok })).orders.find(x => x.ref === sub_sOrd.refs[0]); assert(!sub_myS.quote.riderSubsidy && sub_myS.subsidyHidden, 'after accepting, still hidden until pick-up');
+  let sub_myS = (await ok('rOrders', { token: sub_rTok })).orders.find(x => x.ref === sub_sOrd.refs[0]); assert(sub_myS.quote.riderSubsidy > 0 && !sub_myS.subsidyHidden, 'after accepting, the subsidy stays visible');
   for (const st of ['Accepted', 'Preparing', 'Ready for Pick-up']) await ok('setStatus', { token: pm2, ref: sub_sOrd.refs[0], status: st });
   sub_myS = (await ok('rOrders', { token: sub_rTok })).orders.find(x => x.ref === sub_sOrd.refs[0]); assert(sub_myS.quote.riderSubsidy > 0, 'at the store (Ready for Pick-up) the rider sees the P' + sub_myS.quote.riderSubsidy + ' subsidy');
   await ok('rAvailable', { token: sub_rTok, value: false });

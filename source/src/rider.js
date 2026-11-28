@@ -73,9 +73,9 @@ function render() {
 function offersHtml(on) {
   const L = RP.offers || []; if (!on || !L.length) return '';
   return `<div class="offers"><h3>${ic('bell', 18)} New delivery request${L.length > 1 ? 's' : ''} <span class="hint">first to accept gets it</span></h3>${L.map(o => `<div class="offer">
-    <div class="oftop"><b class="ofearn">${peso(o.riderFee)}</b><span>you earn${o.km != null ? ' · ' + o.km + ' km delivery' : ''}${o.kmToStore != null ? ' · ' + o.kmToStore + ' km to the store' : ''}</span></div>
+    <div class="oftop"><b class="ofearn">${peso(o.riderFee)}</b><span>you earn${o.subsidy ? ' (incl. ' + peso(o.subsidy) + ' store subsidy)' : ''}${o.km != null ? ' · ' + o.km + ' km delivery' : ''}${o.kmToStore != null ? ' · ' + o.kmToStore + ' km to the store' : ''}</span></div>
     <div class="rstops"><div><span class="lbl">Pick up</span><b>${esc(o.store.name)}</b><span class="hint">${esc(o.store.address || '')}</span></div><div><span class="lbl">Deliver to</span><b>${esc(o.dropoff.label || o.dropoff.area || 'Customer')}</b>${o.dropoff.label && o.dropoff.area ? `<span class="hint">${esc(o.dropoff.area)}</span>` : ''}</div></div>
-    <div class="hint">${o.items} item${o.items === 1 ? '' : 's'} · ${o.collect ? (o.payStore ? 'Cash on delivery: pay the store ' + peso(o.payStore) + ' at pick-up, collect ' + peso(o.collect) : 'Cash on delivery: collect ' + peso(o.collect)) : 'Already paid'}${o.incentive ? ' · incl. ' + peso(o.incentive) + ' platform incentive' : ''} · ${esc(o.ref)} · ${tm(o.offerAt)}</div>
+    ${o.subsidy ? `<div class="codl sub"><span>${ic('tag', 14)} Rider subsidy from ${esc(o.store.name)}</span><b>+${peso(o.subsidy)}</b></div>` : ''}<div class="hint">${o.items} item${o.items === 1 ? '' : 's'} · ${o.collect ? (o.payStore ? 'Cash on delivery: pay the store ' + peso(o.payStore) + ' at pick-up, collect ' + peso(o.collect) : 'Cash on delivery: collect ' + peso(o.collect)) : 'Already paid'}${o.incentive ? ' · incl. ' + peso(o.incentive) + ' platform incentive' : ''} · ${esc(o.ref)} · ${tm(o.offerAt)}</div>
     <div class="sact"><button class="btn" data-ofok="${esc(o.ref)}">${ic('check')} Accept</button><button class="btn ghost" data-ofno="${esc(o.ref)}">Decline</button></div></div>`).join('')}</div>`;
 }
 function wireOffers() {
@@ -95,7 +95,7 @@ function nextPayout() {
 /* Cash on delivery: a clear box with what to pay the store at pick-up and what to collect from the customer */
 function codBox(b) {
   const a = Rules.codAmounts(b), sub = +(b.quote && b.quote.riderSubsidy) || 0;
-  if (!a) return sub && ['Ready for Pick-up', 'Out for Delivery'].includes(b.status) ? `<div class="codbox"><b>${ic('tag', 16)} Rider subsidy</b><div class="codl sub"><span>${esc(bizName(b.bizId))} adds to your earning</span><b>+${peso(sub)}</b></div><small>Already paid online: the platform pays your full earning in the next payout (every ${payDays()} days).</small></div>` : '';
+  if (!a) return sub && !Rules.CLOSED.includes(b.status) && !Rules.delivered(b) ? `<div class="codbox"><b>${ic('tag', 16)} Rider subsidy</b><div class="codl sub"><span>${esc(bizName(b.bizId))} adds to your earning</span><b>+${peso(sub)}</b></div><small>Already paid online: the platform pays your full earning in the next payout (every ${payDays()} days).</small></div>` : '';
   if (Rules.CLOSED.includes(b.status)) return '';
   const store = bizName(b.bizId), picked = ['Out for Delivery', 'Delivered', 'Payment Collected'].includes(b.status);
   if (a.mode === 'payStore') return `<div class="codbox"><b>${ic('wallet', 16)} Cash on delivery</b>

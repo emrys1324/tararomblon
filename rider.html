@@ -1300,7 +1300,7 @@ function createCore(env) {
   function offerView(b, cat, me) {
     var S = storeOf(cat, b), q = b.quote || {}, k = riderKm(me, S);
     return { ref: b.ref, status: b.status, created: b.created, offerAt: b.offer.at, store: { name: S.name, address: S.address, lat: S.lat, lng: S.lng }, dropoff: { label: b.landmark || '', area: (b.customer && b.customer.address) || '', lat: b.lat, lng: b.lng },
-      km: q.km, kmToStore: k, riderFee: Pricing.round((q.riderFee || 0) - (q.riderSubsidy || 0)), customerFee: q.deliveryFee || 0, storeFee: q.storeDeliveryShare || 0, incentive: q.deliveryIncentive || 0, payMethod: b.payMethod, collect: b.payMethod === 'cod' ? Rules.payable(b) : 0, payStore: b.payMethod === 'cod' && b.riderPaysStore ? Rules.r2(Rules.codAmounts(b).payStore + (q.riderSubsidy || 0)) : 0, items: (b.lines || []).reduce(function (t, l) { return t + (+l.qty || 1); }, 0) };
+      km: q.km, kmToStore: k, riderFee: q.riderFee || 0, subsidy: q.riderSubsidy || 0, customerFee: q.deliveryFee || 0, storeFee: q.storeDeliveryShare || 0, incentive: q.deliveryIncentive || 0, payMethod: b.payMethod, collect: b.payMethod === 'cod' ? Rules.payable(b) : 0, payStore: b.payMethod === 'cod' && b.riderPaysStore ? Rules.codAmounts(b).payStore : 0, items: (b.lines || []).reduce(function (t, l) { return t + (+l.qty || 1); }, 0) };
   }
 
   /* ---------- bookings ---------- */
@@ -2053,8 +2053,7 @@ function createCore(env) {
   };
   /* rider */
   /* the store's rider subsidy is shown to the rider only at the store (pick-up) and after delivery */
-  function riderSeesSubsidy(b) { return ['Ready for Pick-up', 'Payment Collected'].indexOf(b.status) >= 0 && !Rules.delivered(b) || Rules.delivered(b) || b.status === 'Out for Delivery' || Rules.CLOSED.indexOf(b.status) >= 0; }
-  A.rOrders = async function (p) { var who = await auth(p.token, 'rider'); await sweepOffers(); var cat = await catalog(), all = await allBookings(); return { me: pubStaff(who.rec), offers: who.rec.available ? all.filter(function (b) { return b.dispatch && !b.rider && b.offer && !b.offer.closed && b.offer.riders.indexOf(who.email) >= 0 && (b.offer.declined || []).indexOf(who.email) < 0 && Rules.CLOSED.indexOf(b.status) < 0; }).map(function (b) { return offerView(b, cat, who.rec); }) : [], orders: (await allBookings()).filter(function (b) { return b.rider === who.email; }).map(function (b) { var c = strip(b); delete c.fee; delete c.discount; delete c.idFile; delete c.proofFile; if (!riderSeesSubsidy(b) && c.quote && c.quote.riderSubsidy) { c.quote.riderFee = Pricing.round(c.quote.riderFee - c.quote.riderSubsidy); c.quote.storeDeliveryShare = 0; c.quote.riderSubsidy = 0; c.subsidyHidden = true; } return c; }) }; };
+  A.rOrders = async function (p) { var who = await auth(p.token, 'rider'); await sweepOffers(); var cat = await catalog(), all = await allBookings(); return { me: pubStaff(who.rec), offers: who.rec.available ? all.filter(function (b) { return b.dispatch && !b.rider && b.offer && !b.offer.closed && b.offer.riders.indexOf(who.email) >= 0 && (b.offer.declined || []).indexOf(who.email) < 0 && Rules.CLOSED.indexOf(b.status) < 0; }).map(function (b) { return offerView(b, cat, who.rec); }) : [], orders: (await allBookings()).filter(function (b) { return b.rider === who.email; }).map(function (b) { var c = strip(b); delete c.fee; delete c.discount; delete c.idFile; delete c.proofFile; return c; }) }; };
   A.rAvailable = async function (p) { var who = await auth(p.token, 'rider'), still = !p.value && (await allBookings()).some(function (b) { return b.rider === who.email && liveFor(b); }); who.rec = await patch(T.staff, who.rec.id || who.email, function (r) { r.available = !!p.value; r.lastSeen = now(); if (!p.value && !still) delete r.loc; }) || who.rec; await event('rider', who.name + ' is now ' + (p.value ? 'available' : 'offline'), ['super'], '', '', []); return { me: pubStaff(who.rec) }; };
   A.rOffer = async function (p) {
     var who = await auth(p.token, 'rider'), b = await getB(p.ref), cat = await catalog();
@@ -3135,9 +3134,9 @@ function render() {
 function offersHtml(on) {
   const L = RP.offers || []; if (!on || !L.length) return '';
   return `<div class="offers"><h3>${ic('bell', 18)} New delivery request${L.length > 1 ? 's' : ''} <span class="hint">first to accept gets it</span></h3>${L.map(o => `<div class="offer">
-    <div class="oftop"><b class="ofearn">${peso(o.riderFee)}</b><span>you earn${o.km != null ? ' · ' + o.km + ' km delivery' : ''}${o.kmToStore != null ? ' · ' + o.kmToStore + ' km to the store' : ''}</span></div>
+    <div class="oftop"><b class="ofearn">${peso(o.riderFee)}</b><span>you earn${o.subsidy ? ' (incl. ' + peso(o.subsidy) + ' store subsidy)' : ''}${o.km != null ? ' · ' + o.km + ' km delivery' : ''}${o.kmToStore != null ? ' · ' + o.kmToStore + ' km to the store' : ''}</span></div>
     <div class="rstops"><div><span class="lbl">Pick up</span><b>${esc(o.store.name)}</b><span class="hint">${esc(o.store.address || '')}</span></div><div><span class="lbl">Deliver to</span><b>${esc(o.dropoff.label || o.dropoff.area || 'Customer')}</b>${o.dropoff.label && o.dropoff.area ? `<span class="hint">${esc(o.dropoff.area)}</span>` : ''}</div></div>
-    <div class="hint">${o.items} item${o.items === 1 ? '' : 's'} · ${o.collect ? (o.payStore ? 'Cash on delivery: pay the store ' + peso(o.payStore) + ' at pick-up, collect ' + peso(o.collect) : 'Cash on delivery: collect ' + peso(o.collect)) : 'Already paid'}${o.incentive ? ' · incl. ' + peso(o.incentive) + ' platform incentive' : ''} · ${esc(o.ref)} · ${tm(o.offerAt)}</div>
+    ${o.subsidy ? `<div class="codl sub"><span>${ic('tag', 14)} Rider subsidy from ${esc(o.store.name)}</span><b>+${peso(o.subsidy)}</b></div>` : ''}<div class="hint">${o.items} item${o.items === 1 ? '' : 's'} · ${o.collect ? (o.payStore ? 'Cash on delivery: pay the store ' + peso(o.payStore) + ' at pick-up, collect ' + peso(o.collect) : 'Cash on delivery: collect ' + peso(o.collect)) : 'Already paid'}${o.incentive ? ' · incl. ' + peso(o.incentive) + ' platform incentive' : ''} · ${esc(o.ref)} · ${tm(o.offerAt)}</div>
     <div class="sact"><button class="btn" data-ofok="${esc(o.ref)}">${ic('check')} Accept</button><button class="btn ghost" data-ofno="${esc(o.ref)}">Decline</button></div></div>`).join('')}</div>`;
 }
 function wireOffers() {
@@ -3157,7 +3156,7 @@ function nextPayout() {
 /* Cash on delivery: a clear box with what to pay the store at pick-up and what to collect from the customer */
 function codBox(b) {
   const a = Rules.codAmounts(b), sub = +(b.quote && b.quote.riderSubsidy) || 0;
-  if (!a) return sub && ['Ready for Pick-up', 'Out for Delivery'].includes(b.status) ? `<div class="codbox"><b>${ic('tag', 16)} Rider subsidy</b><div class="codl sub"><span>${esc(bizName(b.bizId))} adds to your earning</span><b>+${peso(sub)}</b></div><small>Already paid online: the platform pays your full earning in the next payout (every ${payDays()} days).</small></div>` : '';
+  if (!a) return sub && !Rules.CLOSED.includes(b.status) && !Rules.delivered(b) ? `<div class="codbox"><b>${ic('tag', 16)} Rider subsidy</b><div class="codl sub"><span>${esc(bizName(b.bizId))} adds to your earning</span><b>+${peso(sub)}</b></div><small>Already paid online: the platform pays your full earning in the next payout (every ${payDays()} days).</small></div>` : '';
   if (Rules.CLOSED.includes(b.status)) return '';
   const store = bizName(b.bizId), picked = ['Out for Delivery', 'Delivered', 'Payment Collected'].includes(b.status);
   if (a.mode === 'payStore') return `<div class="codbox"><b>${ic('wallet', 16)} Cash on delivery</b>
