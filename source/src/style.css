@@ -622,3 +622,16 @@ footer .fown span{display:inline}
 .hcard{background:#fff;border:1px solid var(--line);border-radius:14px;margin:0 0 10px;overflow:hidden}.hcard>summary{list-style:none;display:flex;gap:12px;align-items:center;padding:12px 14px;cursor:pointer}.hcard>summary::-webkit-details-marker{display:none}
 .hcard .hic{flex:none;width:40px;height:40px;border-radius:12px;background:#fff1e6;color:var(--coral-d,#c4561c);display:grid;place-items:center}.hcard .hmid{flex:1;min-width:0;display:flex;flex-direction:column}.hcard .hmid .hint{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hcard .hright{display:flex;flex-direction:column;align-items:flex-end;gap:4px}.hcard[open]>summary{border-bottom:1px solid var(--marble-2)}.hcard>.trip{margin:0;border:none;border-radius:0;box-shadow:none}.hcard.bad .hright b{color:var(--mute);text-decoration:line-through}
+/* thank-you note after completion */
+.thxov{position:fixed;inset:0;z-index:95;background:rgba(10,20,40,.4);display:flex;align-items:center;justify-content:center;padding:16px;animation:thxin .25s ease-out}
+.thxov.out{opacity:0;transition:opacity .3s}
+@keyframes thxin{from{opacity:0}to{opacity:1}}
+.thxbox{position:relative;background:#fff;border-radius:22px;max-width:400px;width:100%;padding:26px 22px 0;text-align:center;box-shadow:0 18px 50px rgba(0,0,0,.3);overflow:hidden;animation:thxpop .35s cubic-bezier(.2,1.3,.5,1)}
+@keyframes thxpop{from{transform:scale(.85)}to{transform:none}}
+.thxicon{width:62px;height:62px;margin:0 auto 10px;border-radius:50%;background:#e8f6ec;color:#1d7a3e;display:grid;place-items:center}
+.thxbox h3{margin:0 0 8px;font-size:24px}.thxbox p{margin:0 0 14px;color:var(--ink,#223);line-height:1.5;font-size:15px}
+.thxpilot{text-align:left;background:#fff7ef;border:1px solid #f6d3b4;border-radius:12px;padding:10px 12px;margin-bottom:18px;font-size:13.5px;line-height:1.45}.thxpilot b{display:flex;gap:6px;align-items:center;color:var(--coral-d,#c4561c);margin-bottom:3px}.thxpilot span{color:var(--ink,#223)}
+.thxx{position:absolute;top:10px;right:10px;width:34px;height:34px;border-radius:50%;background:var(--marble,#f6f3ec);color:var(--navy)}
+.thxbar{height:5px;margin:0 -22px;background:#eef1f6}.thxbar i{display:block;height:100%;background:linear-gradient(90deg,#1d7a3e,#ee7a35);animation:thxbar 20s linear forwards}
+@keyframes thxbar{from{width:100%}to{width:0}}
+@media(prefers-reduced-motion:reduce){.thxbox,.thxov{animation:none}}

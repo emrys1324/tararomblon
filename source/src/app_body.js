@@ -849,7 +849,7 @@ async function renderOrders(quiet) {
   const el = $('#ordBody'); if (!el) return;
   if (!session) { el.innerHTML = `<div class="empty"><div class="big">${ic('receipt', 40)}</div><h2 style="color:var(--ink)">Your orders & bookings</h2><p style="margin:8px 0 16px">Log in to see the status of your orders and bookings and track your rider.</p><button class="btn navy" onclick="openSignIn()">Log in</button></div>`; return; }
   if (!quiet) el.innerHTML = `<div class="shead"><div><h2>My orders & bookings</h2><p>Status updates automatically</p></div></div><div class="empty">Loading…</div>`;
-  let list; try { list = (await api('myBookings', { token: session.token })).bookings; window._myB = list; activeBadges(); }
+  let list; try { list = (await api('myBookings', { token: session.token })).bookings; window._myB = list; activeBadges(); checkThanks(); }
   catch (x) { if (!quiet) el.innerHTML = `<div class="err">${esc(x.message)}</div>`; if (/sign in/i.test(x.message)) signOut(); return; }
   if (currentView !== 'orders') return;
   const open = [...document.querySelectorAll('#ordBody details.alog[open]')].map(d => d.dataset.ref);
@@ -875,7 +875,32 @@ function histCard(b) {
   const what = b.kind === 'food' ? b.lines.map(l => l.qty + '× ' + l.name).join(', ') : b.lines.map(l => l.label).join(', ');
   return `<details class="hcard ${bad ? 'bad' : ''}"><summary><span class="hic">${kindIcon(b.kind)}</span><div class="hmid"><b>${esc(bizName(b.bizId))}</b><span class="hint">${esc(what).slice(0, 90)}</span><span class="hint">${done.toLocaleDateString('en-PH', { dateStyle: 'medium' })} · ${esc(b.ref)}</span></div><div class="hright"><b>${peso(Rules.payable(b))}</b>${statusChip(b.status)}</div></summary>${bookingCard(b)}</details>`;
 }
-async function refreshActive() { if (!session) return; try { window._myB = (await api('myBookings', { token: session.token })).bookings; activeBadges(); } catch (x) { } }
+async function refreshActive() { if (!session) return; try { window._myB = (await api('myBookings', { token: session.token })).bookings; activeBadges(); checkThanks(); } catch (x) { } }
+/* ===== Thank-you note after an order or booking is completed (shown once per order, closes by itself after 20 seconds) ===== */
+function checkThanks() {
+  if (!session || !window._myB) return;
+  const key = 'tr_thanks_' + session.profile.email, seen = store(key) || {}, now = Date.now();
+  const doneAt = b => { const h = (b.history || []).filter(x => x.status === 'Completed').pop(); return Date.parse((h && h.at) || b.updated || b.created); };
+  const fresh = window._myB.filter(b => b.status === 'Completed' && !seen[b.ref]);
+  if (!fresh.length) return;
+  fresh.forEach(b => { seen[b.ref] = 1; }); store(key, seen);
+  const show = fresh.filter(b => now - doneAt(b) < 24 * 3600e3).sort((a, b) => doneAt(b) - doneAt(a))[0];   /* older completions are just marked as seen */
+  if (show) thankYou(show);
+}
+function thankYou(b) {
+  const old = $('#thxOv'); if (old) old.remove();
+  const first = ((session.profile.name || '').split(' ')[0]) || '', store = bizName(b.bizId), what = b.kind === 'food' ? 'order' : 'booking';
+  const d = document.createElement('div'); d.id = 'thxOv'; d.className = 'thxov'; d.setAttribute('role', 'dialog'); d.setAttribute('aria-live', 'polite'); d.setAttribute('aria-labelledby', 'thxT');
+  d.innerHTML = `<div class="thxbox"><button class="thxx" aria-label="Close">${ic('x', 18)}</button><div class="thxicon">${ic('check', 30)}</div>
+    <h3 id="thxT">Salamat${first ? ', ' + esc(first) : ''}!</h3>
+    <p>Your ${what} <b>${esc(b.ref)}</b> from <b>${esc(store)}</b> is complete. Thank you for supporting local businesses and riders in Romblon.</p>
+    <div class="thxpilot"><b>${ic('info', 14)} We're in our pilot stage</b><span>Rating riders and stores isn't available yet while we polish the customer journey. Have feedback? Message us anytime in the app.</span></div>
+    <div class="thxbar"><i></i></div></div>`;
+  document.body.appendChild(d);
+  const close = () => { d.classList.add('out'); setTimeout(() => d.remove(), 300); };
+  d.querySelector('.thxx').onclick = close; d.addEventListener('click', e => { if (e.target === d) close(); });
+  setTimeout(close, 20000);
+}
 function wireMyBookings() {
   document.querySelectorAll('[data-demopay]').forEach(x => x.onclick = () => { const bs = window._myB.filter(b => b.group === x.dataset.demopay); demoPay({ group: x.dataset.demopay, dueNow: bs.reduce((t, b) => t + b.dueNow, 0), bookings: bs }); });
   document.querySelectorAll('[data-proof]').forEach(x => x.onclick = () => {
