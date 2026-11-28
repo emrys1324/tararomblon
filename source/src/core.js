@@ -199,7 +199,7 @@ function createCore(env) {
   function offerView(b, cat, me) {
     var S = storeOf(cat, b), q = b.quote || {}, k = riderKm(me, S);
     return { ref: b.ref, status: b.status, created: b.created, offerAt: b.offer.at, store: { name: S.name, address: S.address, lat: S.lat, lng: S.lng }, dropoff: { label: b.landmark || '', area: (b.customer && b.customer.address) || '', lat: b.lat, lng: b.lng },
-      km: q.km, kmToStore: k, riderFee: q.riderFee || 0, customerFee: q.deliveryFee || 0, storeFee: q.storeDeliveryShare || 0, payMethod: b.payMethod, collect: b.payMethod === 'cod' ? Rules.payable(b) : 0, payStore: b.payMethod === 'cod' && b.riderPaysStore ? Rules.codAmounts(b).payStore : 0, items: (b.lines || []).reduce(function (t, l) { return t + (+l.qty || 1); }, 0) };
+      km: q.km, kmToStore: k, riderFee: q.riderFee || 0, customerFee: q.deliveryFee || 0, storeFee: q.storeDeliveryShare || 0, incentive: q.deliveryIncentive || 0, payMethod: b.payMethod, collect: b.payMethod === 'cod' ? Rules.payable(b) : 0, payStore: b.payMethod === 'cod' && b.riderPaysStore ? Rules.codAmounts(b).payStore : 0, items: (b.lines || []).reduce(function (t, l) { return t + (+l.qty || 1); }, 0) };
   }
 
   /* ---------- bookings ---------- */
@@ -915,7 +915,7 @@ function createCore(env) {
     await event('listing', who.name + ' saved the menu of ' + F.storeName + ' (' + out.length + ' items' + (added ? ', ' + added + ' added' : '') + (removed.length ? ', removed: ' + removed.join(', ') : '') + ')', ['super', 'biz:' + who.bizId], '', who.bizId, [], '', '', who.email);
     return { items: out, added: added, removed: removed.length };
   };
-  /* Merchant Admin: simple delivery fees per distance (what the customer pays). Riders get at least the minimum rider earning; the store covers the difference. */
+  /* Merchant Admin: simple delivery fees per distance (what the customer pays). Riders earn it; the platform tops them up to the minimum. */
   A.mSaveDelivery = async function (p) {
     var who = await auth(p.token, 'manager'), cat = await catalog(true), F = Pricing.store(cat, who.bizId); if (!F) err('This business has no food store.');
     var bands = (p.bands || []).map(function (b) { return { upToKm: Pricing.round(+b.upToKm), fee: Pricing.round(+b.fee) }; });

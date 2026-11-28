@@ -776,25 +776,21 @@ var Pricing = {
   deliveryText: function (cat, food) {
     var b = Pricing.bands(food);
     if (food.matrixFees && b.length) return b.map(function (m, i) { var c = +(m.customerFee != null && m.customerFee !== '' ? m.customerFee : m.fee) || 0; return (i ? b[i - 1].upToKm : 0) + '–' + m.upToKm + ' km: ' + (c ? '₱' + c : 'Free'); }).join(' · ');
-    var R = Pricing.deliveryRule(cat); return 'Free within ' + R.freeKm + ' km of the store, then ₱' + Math.round(R.perKm * R.customerPct / 100) + ' per km.';
+    var R = Pricing.deliveryRule(cat); return 'Free within ' + R.freeKm + ' km of the store, then ₱' + R.perKm + ' per km.';
   },
   deliveryRule: function (cat) { var d = (cat && cat.settings && cat.settings.delivery) || {}, D = Pricing.DELIVERY, o = {}; for (var k in D) o[k] = d[k] == null || d[k] === '' || isNaN(+d[k]) ? D[k] : +d[k]; return o; },
   deliverySplit: function (cat, food, km) {
     var R = Pricing.deliveryRule(cat), b = Pricing.bands(food), max = +food.maxKm || (b.length ? +b[b.length - 1].upToKm : R.maxKm);
     if (km == null || km > max + 1e-9) return null;
-    /* the restaurant's own matrix: each band sets what the customer pays, what the store pays and what the rider gets */
+    /* the customer pays the delivery fee; the rider earns it, and the platform tops the rider up to the minimum (incentive). Stores pay nothing. */
+    var mk = function (c, extra, band) { c = Pricing.round(c); var r = Math.max(c, R.minRider), o = { km: km, fee: c, riderFee: Pricing.round(r), storeShare: 0, incentive: Pricing.round(r - c), extraKm: extra || 0 }; if (band != null) { o.band = band; o.fromKm = band ? +b[band - 1].upToKm : 0; o.toKm = +b[band].upToKm; } return o; };
     if (food.matrixFees && b.length) {
-      for (var i = 0; i < b.length; i++) if (km <= +b[i].upToKm + 1e-9) {
-        var m = b[i], c = +(m.customerFee != null && m.customerFee !== '' ? m.customerFee : m.fee) || 0, s = +m.storeFee || 0, r = m.riderFee == null || m.riderFee === '' ? c + s : +m.riderFee;
-        if (food.simpleFees) { r = Math.max(c, R.minRider); s = Pricing.round(r - c); }   /* simple: the merchant sets only what the customer pays; riders get at least the minimum, the store covers any difference */
-        return { km: km, fee: Pricing.round(c), riderFee: Pricing.round(r), storeShare: Pricing.round(s), extraKm: 0, band: i, fromKm: i ? +b[i - 1].upToKm : 0, toKm: +m.upToKm };
-      }
+      for (var i = 0; i < b.length; i++) if (km <= +b[i].upToKm + 1e-9) return mk(+(b[i].customerFee != null && b[i].customerFee !== '' ? b[i].customerFee : b[i].fee) || 0, 0, i);
       return null;
     }
-    if (km <= R.freeKm + 1e-9) return { km: km, fee: 0, riderFee: R.baseFee, storeShare: R.baseFee, extraKm: 0 };
-    var extra = Math.ceil(Pricing.round(km - R.freeKm) - 1e-9), full = extra * R.perKm, cust = Math.round(full * R.customerPct / 100);
-    var rider = Math.max(full, R.minRider);
-    return { km: km, fee: cust, riderFee: rider, storeShare: Pricing.round(rider - cust), extraKm: extra };
+    if (km <= R.freeKm + 1e-9) return mk(0, 0);
+    var extra = Math.ceil(Pricing.round(km - R.freeKm) - 1e-9);
+    return mk(extra * R.perKm, extra);
   },
 
   /* Add-on groups on a menu item: [{ id, name, active, required, max (1-3), options: [{ id, name, price, active }] }].
@@ -851,7 +847,7 @@ var Pricing = {
       fee = split.fee;
     } else if (p.fulfillment === 'pickup' && !F.pickupEnabled) return { error: 'Pick-up is not available right now.' };
     return { ok: true, bizId: F.bizId, storeName: F.storeName, lines: out, subtotal: Pricing.round(sub), km: km, deliveryFee: fee, total: Pricing.round(sub + fee),
-      riderFee: split ? split.riderFee : 0, storeDeliveryShare: split ? split.storeShare : 0, deliveryBand: split && split.band != null ? { from: split.fromKm, to: split.toKm } : null, extraKm: split ? split.extraKm || 0 : 0 };
+      riderFee: split ? split.riderFee : 0, storeDeliveryShare: split ? split.storeShare : 0, deliveryIncentive: split ? split.incentive || 0 : 0, deliveryBand: split && split.band != null ? { from: split.fromKm, to: split.toKm } : null, extraKm: split ? split.extraKm || 0 : 0 };
   }
 };
 /* ===== END PRICING ===== */
@@ -1268,7 +1264,7 @@ function createCore(env) {
   function offerView(b, cat, me) {
     var S = storeOf(cat, b), q = b.quote || {}, k = riderKm(me, S);
     return { ref: b.ref, status: b.status, created: b.created, offerAt: b.offer.at, store: { name: S.name, address: S.address, lat: S.lat, lng: S.lng }, dropoff: { label: b.landmark || '', area: (b.customer && b.customer.address) || '', lat: b.lat, lng: b.lng },
-      km: q.km, kmToStore: k, riderFee: q.riderFee || 0, customerFee: q.deliveryFee || 0, storeFee: q.storeDeliveryShare || 0, payMethod: b.payMethod, collect: b.payMethod === 'cod' ? Rules.payable(b) : 0, payStore: b.payMethod === 'cod' && b.riderPaysStore ? Rules.codAmounts(b).payStore : 0, items: (b.lines || []).reduce(function (t, l) { return t + (+l.qty || 1); }, 0) };
+      km: q.km, kmToStore: k, riderFee: q.riderFee || 0, customerFee: q.deliveryFee || 0, storeFee: q.storeDeliveryShare || 0, incentive: q.deliveryIncentive || 0, payMethod: b.payMethod, collect: b.payMethod === 'cod' ? Rules.payable(b) : 0, payStore: b.payMethod === 'cod' && b.riderPaysStore ? Rules.codAmounts(b).payStore : 0, items: (b.lines || []).reduce(function (t, l) { return t + (+l.qty || 1); }, 0) };
   }
 
   /* ---------- bookings ---------- */
@@ -1984,7 +1980,7 @@ function createCore(env) {
     await event('listing', who.name + ' saved the menu of ' + F.storeName + ' (' + out.length + ' items' + (added ? ', ' + added + ' added' : '') + (removed.length ? ', removed: ' + removed.join(', ') : '') + ')', ['super', 'biz:' + who.bizId], '', who.bizId, [], '', '', who.email);
     return { items: out, added: added, removed: removed.length };
   };
-  /* Merchant Admin: simple delivery fees per distance (what the customer pays). Riders get at least the minimum rider earning; the store covers the difference. */
+  /* Merchant Admin: simple delivery fees per distance (what the customer pays). Riders earn it; the platform tops them up to the minimum. */
   A.mSaveDelivery = async function (p) {
     var who = await auth(p.token, 'manager'), cat = await catalog(true), F = Pricing.store(cat, who.bizId); if (!F) err('This business has no food store.');
     var bands = (p.bands || []).map(function (b) { return { upToKm: Pricing.round(+b.upToKm), fee: Pricing.round(+b.fee) }; });
@@ -3104,7 +3100,7 @@ function card(b) {
       <div><span class="lbl">${b.kind === 'food' ? 'Order' : 'Booking'}</span>${b.lines.map(l => `<div>${esc(l.type ? l.label : l.qty + ' x ' + l.name)}${l.addons && l.addons.length ? ` <span class="hint">(${esc(l.addons.join(', '))})</span>` : ''}${l.note ? ` <span class="hint">"${esc(l.note)}"</span>` : ''}${l.type ? `<br><span class="hint">${esc(bookingDates(l))}${l.type === 'stay' ? ' · ' + l.guests + ' guest(s)' : l.type === 'tour' ? ' · ' + l.pax + ' pax' : ' · ' + l.helmets + ' helmet(s) · ' + esc(l.pickup) + ' to ' + esc(l.ret)}</span>` : ''}</div>`).join('')}
         ${b.kind === 'food' && b.fulfillment === 'delivery' ? `<div class="hint" style="margin-top:4px">${ic('pin', 14)} ${esc(b.landmark || c.address)}${b.lat ? ` · <a href="https://maps.google.com/?q=${b.lat},${b.lng}" target="_blank" rel="noopener">map pin</a>` : ''}</div>` : ''}</div>
       <div><span class="lbl">Payment</span><b>${peso(Rules.payable(b))}</b> <span class="hint">${esc(Rules.PAY_LABEL[b.payMethod] || b.payMethod)} · ${esc(b.payStatus)}</span>
-        ${b.kind === 'food' && b.fulfillment === 'delivery' && b.quote.riderFee != null ? `<br><span class="hint" data-delsplit>${ic('bike', 14)} Delivery${b.quote.km != null ? ' ' + b.quote.km + ' km' : ''}: customer pays ${peso(b.quote.deliveryFee)} · store pays ${peso(b.quote.storeDeliveryShare || 0)}</span>` : ''}
+        ${b.kind === 'food' && b.fulfillment === 'delivery' && b.quote.riderFee != null ? `<br><span class="hint" data-delsplit>${ic('bike', 14)} Delivery${b.quote.km != null ? ' ' + b.quote.km + ' km' : ''}: customer pays ${peso(b.quote.deliveryFee)}${+b.quote.storeDeliveryShare ? ' · store pays ' + peso(b.quote.storeDeliveryShare) : ''}</span>` : ''}
         ${b.kind !== 'food' && b.payStatus === 'Paid' && b.quote.balance ? `<br><span class="hint">Downpayment ${peso(b.dueNow)} paid · collect ${peso(b.quote.balance)} on arrival</span>` : ''}
         ${Rules.reductions(b).total ? `<br><span class="hint">${b.code ? 'Code ' + esc(b.code.code) + ' -' + peso(b.code.amount) + (b.code.fundedBy === 'tara' ? ' (paid back by Tara Romblon)' : '') : ''}${b.code && b.points ? ' · ' : ''}${b.points ? b.points.points + ' points -' + peso(b.points.amount) : ''}</span>` : ''}
         ${b.kind === 'food' && Rules.CASH.includes(b.payMethod) ? `<br><span class="hint">${b.payMethod === 'cod' && b.riderPaysStore ? 'The rider pays you ' + peso(Rules.cashExpected(b)) + ' in cash at pick-up' : ''}${b.payMethod === 'cod' && b.codToRider ? 'Rider collects ' + peso(Rules.payable(b)) + ' (paid to the rider; your share comes in your payout)' : ''}${b.payMethod === 'cod' && (b.codToRider || b.riderPaysStore) ? '' : b.payMethod === 'cod' ? 'Rider collects ' + peso(Rules.payable(b)) + ', hands you ' + peso(Rules.cashExpected(b)) : 'Collect ' + peso(Rules.payable(b)) + ' at pick-up'}</span>` : ''}
@@ -3411,7 +3407,7 @@ function delFeeCard(F) {
   return `<div class="acard" id="dfCard"><h3><span class="hl">${ic('bike')} Delivery fees</span></h3><p class="hint" style="margin:0 0 8px">Set what customers pay for delivery, by distance from your store. Set ₱0 for free delivery. Customers farther than the last distance can't order delivery.</p>
     ${rows.map((r, i) => `<div class="dfrow"><span class="dffrom">${i ? rows[i - 1].upToKm : 0} km to</span><div class="field"><label>Up to (km)</label><input type="number" min="0.1" step="0.1" data-df="${i}|upToKm" value="${esc(r.upToKm)}"></div><div class="field"><label>Delivery fee (₱)</label><input type="number" min="0" step="1" data-df="${i}|fee" value="${esc(r.fee)}"></div><button class="xbtn" data-dfx="${i}" title="Remove">${ic('x')}</button></div>`).join('')}
     <div class="rowbtns mt"><button class="btn ghost sm" id="dfAdd">${ic('plus', 14)} Add distance</button><button class="btn sm" id="dfSave">Save delivery fees</button></div>
-    <p class="hint mt">Riders always earn at least ${peso(min)} per delivery. If the fee is lower (or free), your store pays the rider the difference. Customers see: <b>${esc(rows.map((r, i) => (i ? rows[i - 1].upToKm : 0) + '–' + r.upToKm + ' km: ' + (+r.fee ? '₱' + r.fee : 'Free')).join(' · '))}</b></p><div class="err" id="dfErr"></div></div>`;
+    <p class="hint mt">Customers pay this fee and the rider earns it; your store pays nothing toward delivery. When the fee is low or free, Tara Romblon tops the rider up. Customers see: <b>${esc(rows.map((r, i) => (i ? rows[i - 1].upToKm : 0) + '–' + r.upToKm + ' km: ' + (+r.fee ? '₱' + r.fee : 'Free')).join(' · '))}</b></p><div class="err" id="dfErr"></div></div>`;
 }
 function wireDelFees(F) {
   const rows = delFeeRows(F), redraw = () => { $('#dfCard').outerHTML = delFeeCard(F); wireDelFees(F); };

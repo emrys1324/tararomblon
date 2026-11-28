@@ -897,25 +897,21 @@ var Pricing = {
   deliveryText: function (cat, food) {
     var b = Pricing.bands(food);
     if (food.matrixFees && b.length) return b.map(function (m, i) { var c = +(m.customerFee != null && m.customerFee !== '' ? m.customerFee : m.fee) || 0; return (i ? b[i - 1].upToKm : 0) + '–' + m.upToKm + ' km: ' + (c ? '₱' + c : 'Free'); }).join(' · ');
-    var R = Pricing.deliveryRule(cat); return 'Free within ' + R.freeKm + ' km of the store, then ₱' + Math.round(R.perKm * R.customerPct / 100) + ' per km.';
+    var R = Pricing.deliveryRule(cat); return 'Free within ' + R.freeKm + ' km of the store, then ₱' + R.perKm + ' per km.';
   },
   deliveryRule: function (cat) { var d = (cat && cat.settings && cat.settings.delivery) || {}, D = Pricing.DELIVERY, o = {}; for (var k in D) o[k] = d[k] == null || d[k] === '' || isNaN(+d[k]) ? D[k] : +d[k]; return o; },
   deliverySplit: function (cat, food, km) {
     var R = Pricing.deliveryRule(cat), b = Pricing.bands(food), max = +food.maxKm || (b.length ? +b[b.length - 1].upToKm : R.maxKm);
     if (km == null || km > max + 1e-9) return null;
-    /* the restaurant's own matrix: each band sets what the customer pays, what the store pays and what the rider gets */
+    /* the customer pays the delivery fee; the rider earns it, and the platform tops the rider up to the minimum (incentive). Stores pay nothing. */
+    var mk = function (c, extra, band) { c = Pricing.round(c); var r = Math.max(c, R.minRider), o = { km: km, fee: c, riderFee: Pricing.round(r), storeShare: 0, incentive: Pricing.round(r - c), extraKm: extra || 0 }; if (band != null) { o.band = band; o.fromKm = band ? +b[band - 1].upToKm : 0; o.toKm = +b[band].upToKm; } return o; };
     if (food.matrixFees && b.length) {
-      for (var i = 0; i < b.length; i++) if (km <= +b[i].upToKm + 1e-9) {
-        var m = b[i], c = +(m.customerFee != null && m.customerFee !== '' ? m.customerFee : m.fee) || 0, s = +m.storeFee || 0, r = m.riderFee == null || m.riderFee === '' ? c + s : +m.riderFee;
-        if (food.simpleFees) { r = Math.max(c, R.minRider); s = Pricing.round(r - c); }   /* simple: the merchant sets only what the customer pays; riders get at least the minimum, the store covers any difference */
-        return { km: km, fee: Pricing.round(c), riderFee: Pricing.round(r), storeShare: Pricing.round(s), extraKm: 0, band: i, fromKm: i ? +b[i - 1].upToKm : 0, toKm: +m.upToKm };
-      }
+      for (var i = 0; i < b.length; i++) if (km <= +b[i].upToKm + 1e-9) return mk(+(b[i].customerFee != null && b[i].customerFee !== '' ? b[i].customerFee : b[i].fee) || 0, 0, i);
       return null;
     }
-    if (km <= R.freeKm + 1e-9) return { km: km, fee: 0, riderFee: R.baseFee, storeShare: R.baseFee, extraKm: 0 };
-    var extra = Math.ceil(Pricing.round(km - R.freeKm) - 1e-9), full = extra * R.perKm, cust = Math.round(full * R.customerPct / 100);
-    var rider = Math.max(full, R.minRider);
-    return { km: km, fee: cust, riderFee: rider, storeShare: Pricing.round(rider - cust), extraKm: extra };
+    if (km <= R.freeKm + 1e-9) return mk(0, 0);
+    var extra = Math.ceil(Pricing.round(km - R.freeKm) - 1e-9);
+    return mk(extra * R.perKm, extra);
   },
 
   /* Add-on groups on a menu item: [{ id, name, active, required, max (1-3), options: [{ id, name, price, active }] }].
@@ -972,7 +968,7 @@ var Pricing = {
       fee = split.fee;
     } else if (p.fulfillment === 'pickup' && !F.pickupEnabled) return { error: 'Pick-up is not available right now.' };
     return { ok: true, bizId: F.bizId, storeName: F.storeName, lines: out, subtotal: Pricing.round(sub), km: km, deliveryFee: fee, total: Pricing.round(sub + fee),
-      riderFee: split ? split.riderFee : 0, storeDeliveryShare: split ? split.storeShare : 0, deliveryBand: split && split.band != null ? { from: split.fromKm, to: split.toKm } : null, extraKm: split ? split.extraKm || 0 : 0 };
+      riderFee: split ? split.riderFee : 0, storeDeliveryShare: split ? split.storeShare : 0, deliveryIncentive: split ? split.incentive || 0 : 0, deliveryBand: split && split.band != null ? { from: split.fromKm, to: split.toKm } : null, extraKm: split ? split.extraKm || 0 : 0 };
   }
 };
 /* ===== END PRICING ===== */
@@ -1389,7 +1385,7 @@ function createCore(env) {
   function offerView(b, cat, me) {
     var S = storeOf(cat, b), q = b.quote || {}, k = riderKm(me, S);
     return { ref: b.ref, status: b.status, created: b.created, offerAt: b.offer.at, store: { name: S.name, address: S.address, lat: S.lat, lng: S.lng }, dropoff: { label: b.landmark || '', area: (b.customer && b.customer.address) || '', lat: b.lat, lng: b.lng },
-      km: q.km, kmToStore: k, riderFee: q.riderFee || 0, customerFee: q.deliveryFee || 0, storeFee: q.storeDeliveryShare || 0, payMethod: b.payMethod, collect: b.payMethod === 'cod' ? Rules.payable(b) : 0, payStore: b.payMethod === 'cod' && b.riderPaysStore ? Rules.codAmounts(b).payStore : 0, items: (b.lines || []).reduce(function (t, l) { return t + (+l.qty || 1); }, 0) };
+      km: q.km, kmToStore: k, riderFee: q.riderFee || 0, customerFee: q.deliveryFee || 0, storeFee: q.storeDeliveryShare || 0, incentive: q.deliveryIncentive || 0, payMethod: b.payMethod, collect: b.payMethod === 'cod' ? Rules.payable(b) : 0, payStore: b.payMethod === 'cod' && b.riderPaysStore ? Rules.codAmounts(b).payStore : 0, items: (b.lines || []).reduce(function (t, l) { return t + (+l.qty || 1); }, 0) };
   }
 
   /* ---------- bookings ---------- */
@@ -2105,7 +2101,7 @@ function createCore(env) {
     await event('listing', who.name + ' saved the menu of ' + F.storeName + ' (' + out.length + ' items' + (added ? ', ' + added + ' added' : '') + (removed.length ? ', removed: ' + removed.join(', ') : '') + ')', ['super', 'biz:' + who.bizId], '', who.bizId, [], '', '', who.email);
     return { items: out, added: added, removed: removed.length };
   };
-  /* Merchant Admin: simple delivery fees per distance (what the customer pays). Riders get at least the minimum rider earning; the store covers the difference. */
+  /* Merchant Admin: simple delivery fees per distance (what the customer pays). Riders earn it; the platform tops them up to the minimum. */
   A.mSaveDelivery = async function (p) {
     var who = await auth(p.token, 'manager'), cat = await catalog(true), F = Pricing.store(cat, who.bizId); if (!F) err('This business has no food store.');
     var bands = (p.bands || []).map(function (b) { return { upToKm: Pricing.round(+b.upToKm), fee: Pricing.round(+b.fee) }; });

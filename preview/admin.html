@@ -776,25 +776,21 @@ var Pricing = {
   deliveryText: function (cat, food) {
     var b = Pricing.bands(food);
     if (food.matrixFees && b.length) return b.map(function (m, i) { var c = +(m.customerFee != null && m.customerFee !== '' ? m.customerFee : m.fee) || 0; return (i ? b[i - 1].upToKm : 0) + '–' + m.upToKm + ' km: ' + (c ? '₱' + c : 'Free'); }).join(' · ');
-    var R = Pricing.deliveryRule(cat); return 'Free within ' + R.freeKm + ' km of the store, then ₱' + Math.round(R.perKm * R.customerPct / 100) + ' per km.';
+    var R = Pricing.deliveryRule(cat); return 'Free within ' + R.freeKm + ' km of the store, then ₱' + R.perKm + ' per km.';
   },
   deliveryRule: function (cat) { var d = (cat && cat.settings && cat.settings.delivery) || {}, D = Pricing.DELIVERY, o = {}; for (var k in D) o[k] = d[k] == null || d[k] === '' || isNaN(+d[k]) ? D[k] : +d[k]; return o; },
   deliverySplit: function (cat, food, km) {
     var R = Pricing.deliveryRule(cat), b = Pricing.bands(food), max = +food.maxKm || (b.length ? +b[b.length - 1].upToKm : R.maxKm);
     if (km == null || km > max + 1e-9) return null;
-    /* the restaurant's own matrix: each band sets what the customer pays, what the store pays and what the rider gets */
+    /* the customer pays the delivery fee; the rider earns it, and the platform tops the rider up to the minimum (incentive). Stores pay nothing. */
+    var mk = function (c, extra, band) { c = Pricing.round(c); var r = Math.max(c, R.minRider), o = { km: km, fee: c, riderFee: Pricing.round(r), storeShare: 0, incentive: Pricing.round(r - c), extraKm: extra || 0 }; if (band != null) { o.band = band; o.fromKm = band ? +b[band - 1].upToKm : 0; o.toKm = +b[band].upToKm; } return o; };
     if (food.matrixFees && b.length) {
-      for (var i = 0; i < b.length; i++) if (km <= +b[i].upToKm + 1e-9) {
-        var m = b[i], c = +(m.customerFee != null && m.customerFee !== '' ? m.customerFee : m.fee) || 0, s = +m.storeFee || 0, r = m.riderFee == null || m.riderFee === '' ? c + s : +m.riderFee;
-        if (food.simpleFees) { r = Math.max(c, R.minRider); s = Pricing.round(r - c); }   /* simple: the merchant sets only what the customer pays; riders get at least the minimum, the store covers any difference */
-        return { km: km, fee: Pricing.round(c), riderFee: Pricing.round(r), storeShare: Pricing.round(s), extraKm: 0, band: i, fromKm: i ? +b[i - 1].upToKm : 0, toKm: +m.upToKm };
-      }
+      for (var i = 0; i < b.length; i++) if (km <= +b[i].upToKm + 1e-9) return mk(+(b[i].customerFee != null && b[i].customerFee !== '' ? b[i].customerFee : b[i].fee) || 0, 0, i);
       return null;
     }
-    if (km <= R.freeKm + 1e-9) return { km: km, fee: 0, riderFee: R.baseFee, storeShare: R.baseFee, extraKm: 0 };
-    var extra = Math.ceil(Pricing.round(km - R.freeKm) - 1e-9), full = extra * R.perKm, cust = Math.round(full * R.customerPct / 100);
-    var rider = Math.max(full, R.minRider);
-    return { km: km, fee: cust, riderFee: rider, storeShare: Pricing.round(rider - cust), extraKm: extra };
+    if (km <= R.freeKm + 1e-9) return mk(0, 0);
+    var extra = Math.ceil(Pricing.round(km - R.freeKm) - 1e-9);
+    return mk(extra * R.perKm, extra);
   },
 
   /* Add-on groups on a menu item: [{ id, name, active, required, max (1-3), options: [{ id, name, price, active }] }].
@@ -851,7 +847,7 @@ var Pricing = {
       fee = split.fee;
     } else if (p.fulfillment === 'pickup' && !F.pickupEnabled) return { error: 'Pick-up is not available right now.' };
     return { ok: true, bizId: F.bizId, storeName: F.storeName, lines: out, subtotal: Pricing.round(sub), km: km, deliveryFee: fee, total: Pricing.round(sub + fee),
-      riderFee: split ? split.riderFee : 0, storeDeliveryShare: split ? split.storeShare : 0, deliveryBand: split && split.band != null ? { from: split.fromKm, to: split.toKm } : null, extraKm: split ? split.extraKm || 0 : 0 };
+      riderFee: split ? split.riderFee : 0, storeDeliveryShare: split ? split.storeShare : 0, deliveryIncentive: split ? split.incentive || 0 : 0, deliveryBand: split && split.band != null ? { from: split.fromKm, to: split.toKm } : null, extraKm: split ? split.extraKm || 0 : 0 };
   }
 };
 /* ===== END PRICING ===== */
@@ -1268,7 +1264,7 @@ function createCore(env) {
   function offerView(b, cat, me) {
     var S = storeOf(cat, b), q = b.quote || {}, k = riderKm(me, S);
     return { ref: b.ref, status: b.status, created: b.created, offerAt: b.offer.at, store: { name: S.name, address: S.address, lat: S.lat, lng: S.lng }, dropoff: { label: b.landmark || '', area: (b.customer && b.customer.address) || '', lat: b.lat, lng: b.lng },
-      km: q.km, kmToStore: k, riderFee: q.riderFee || 0, customerFee: q.deliveryFee || 0, storeFee: q.storeDeliveryShare || 0, payMethod: b.payMethod, collect: b.payMethod === 'cod' ? Rules.payable(b) : 0, payStore: b.payMethod === 'cod' && b.riderPaysStore ? Rules.codAmounts(b).payStore : 0, items: (b.lines || []).reduce(function (t, l) { return t + (+l.qty || 1); }, 0) };
+      km: q.km, kmToStore: k, riderFee: q.riderFee || 0, customerFee: q.deliveryFee || 0, storeFee: q.storeDeliveryShare || 0, incentive: q.deliveryIncentive || 0, payMethod: b.payMethod, collect: b.payMethod === 'cod' ? Rules.payable(b) : 0, payStore: b.payMethod === 'cod' && b.riderPaysStore ? Rules.codAmounts(b).payStore : 0, items: (b.lines || []).reduce(function (t, l) { return t + (+l.qty || 1); }, 0) };
   }
 
   /* ---------- bookings ---------- */
@@ -1984,7 +1980,7 @@ function createCore(env) {
     await event('listing', who.name + ' saved the menu of ' + F.storeName + ' (' + out.length + ' items' + (added ? ', ' + added + ' added' : '') + (removed.length ? ', removed: ' + removed.join(', ') : '') + ')', ['super', 'biz:' + who.bizId], '', who.bizId, [], '', '', who.email);
     return { items: out, added: added, removed: removed.length };
   };
-  /* Merchant Admin: simple delivery fees per distance (what the customer pays). Riders get at least the minimum rider earning; the store covers the difference. */
+  /* Merchant Admin: simple delivery fees per distance (what the customer pays). Riders earn it; the platform tops them up to the minimum. */
   A.mSaveDelivery = async function (p) {
     var who = await auth(p.token, 'manager'), cat = await catalog(true), F = Pricing.store(cat, who.bizId); if (!F) err('This business has no food store.');
     var bands = (p.bands || []).map(function (b) { return { upToKm: Pricing.round(+b.upToKm), fee: Pricing.round(+b.fee) }; });
@@ -3037,11 +3033,11 @@ function aIn(path, label, type, extra) {
 }
 /* Delivery fee matrix of one restaurant: distance bands with what the customer pays, what the store pays and what the rider gets */
 function deliveryMatrix(F, P0) {
-  if (!ADM.mxAdv && (F.simpleFees || !F.matrixFees)) {
+  if (true) {
     const M = F.matrix || [], min = Pricing.deliveryRule(ADM.draft).minRider, cf = m => m.customerFee != null && m.customerFee !== '' ? m.customerFee : (m.fee || 0);
     const inp = (path, v, label, step) => `<div class="field"><label>${label}</label><input type="number" min="0" step="${step}" data-b="${path}" data-t="num" value="${v == null ? '' : esc(v)}" onchange="const f=ADM.draft.foods[ADM.si]; f.matrixFees=true; f.simpleFees=true; admRerender()"></div>`;
-    return `<div class="acard"><h3>Delivery fees · ${esc(F.storeName)} <button class="link" style="margin-left:auto;font-size:13px" onclick="ADM.mxAdv=true;admRerender()">Advanced (store / rider split)</button></h3>
-      <p class="hint">What customers pay by distance from the store (₱0 = free). The merchant can also change this in the Merchant app → Store settings. Riders always earn at least ${peso(min)}; the store covers the difference.${F.matrixFees ? '' : ' <b>Not set yet: this store follows Settings → Delivery fee.</b>'}</p>
+    return `<div class="acard"><h3>Delivery fees · ${esc(F.storeName)}</h3>
+      <p class="hint">What customers pay by distance from the store (₱0 = free). The merchant can also change this in the Merchant app → Store settings. The customer pays it and the rider earns it; stores pay nothing. Riders earn at least ${peso(min)}: the platform tops up.${F.matrixFees ? '' : ' <b>Not set yet: this store follows Settings → Delivery fee.</b>'}</p>
       ${M.map((m, i) => `<div class="dfrow"><span class="dffrom">${i ? M[i - 1].upToKm : 0} km to</span>${inp(`${P0}.matrix.${i}.upToKm`, m.upToKm, 'Up to (km)', '0.1')}${inp(`${P0}.matrix.${i}.customerFee`, cf(m), 'Delivery fee (₱)', '1')}<button class="xbtn" onclick="admDel('${P0}.matrix',${i})">${ic('x')}</button></div>`).join('') || '<p class="meta">No distances yet.</p>'}
       <button class="btn ghost sm mt" onclick="const f=ADM.draft.foods[ADM.si]; f.matrixFees=true; f.simpleFees=true; const l=(f.matrix||[]).slice(-1)[0]; admAdd('${P0}.matrix',{upToKm:l?+l.upToKm+2:1,customerFee:l?(+(l.customerFee||l.fee||0))+20:0})">+ Add distance</button></div>`;
   }
@@ -3622,8 +3618,8 @@ function vDiscounts() {
 function delExample() {
   const el = $('#delEx'); if (!el) return; const c = { settings: ADM.draft.settings }, R = Pricing.deliveryRule(c), F = { maxKm: R.maxKm };
   const kms = [R.freeKm, Pricing.round(R.freeKm + 0.5), Pricing.round(R.freeKm + 1.7), Pricing.round(R.freeKm + 3.5)].filter((k, i, a) => k > 0 && a.indexOf(k) === i && k <= R.maxKm);
-  el.innerHTML = `<div class="delsum"><b>${peso(R.baseFee)}</b> base for the first ${R.freeKm} km · then <b>${peso(R.perKm)}</b> per km (customer ${R.customerPct}%, store ${Pricing.round(100 - R.customerPct)}%)${R.minRider ? ' · rider gets at least ' + peso(R.minRider) : ''}</div>
-    <div class="tscroll"><table class="btable"><tr><th>Distance</th><th>Customer pays</th><th>Store pays</th><th>Rider earns</th></tr>${kms.map(k => { const d = Pricing.deliverySplit(c, F, k); return d ? `<tr><td>${k} km</td><td>${d.fee ? peso(d.fee) : 'Free'}</td><td>${peso(d.storeShare)}</td><td><b>${peso(d.riderFee)}</b></td></tr>` : ''; }).join('')}</table></div>`;
+  el.innerHTML = `<div class="delsum">Free for the first ${R.freeKm} km · then <b>${peso(R.perKm)}</b> per km, paid by the customer${R.minRider ? ' · riders earn at least ' + peso(R.minRider) + ' (the platform tops up)' : ''}</div>
+    <div class="tscroll"><table class="btable"><tr><th>Distance</th><th>Customer pays</th><th>Rider earns</th><th>Platform incentive</th></tr>${kms.map(k => { const d = Pricing.deliverySplit(c, F, k); return d ? `<tr><td>${k} km</td><td>${d.fee ? peso(d.fee) : 'Free'}</td><td><b>${peso(d.riderFee)}</b></td><td>${peso(d.incentive || 0)}</td></tr>` : ''; }).join('')}</table></div>`;
 }
 function vSettings() {
   setTimeout(() => {
@@ -3635,10 +3631,10 @@ function vSettings() {
   const st = ADM.draft.settings = Object.assign({}, DEFAULT_SETTINGS, ADM.draft.settings || {}); st.email = Object.assign({}, DEFAULT_SETTINGS.email, st.email || {}); st.delivery = Pricing.deliveryRule({ settings: st });
   const three = (path, v) => `<div class="seg">${[['required', 'Required'], ['optional', 'Optional'], ['off', 'Off']].map(o => `<button type="button" class="${v === o[0] ? 'on' : ''}" data-set="${path}" data-val="${o[0]}">${o[1]}</button>`).join('')}</div>`;
   P(`<div class="acard" id="delCard"><h3><span class="hl">${ic('bike')} Delivery fee</span></h3>
-      <p class="hint" style="margin:0 0 8px">Applies to every food delivery. The rider earns the whole fee; the customer and the store share it.</p>
-      <div class="agrid">${aIn('settings.delivery.baseFee', 'Base delivery fee (₱) — paid by the store, free for the customer', 'num')}${aIn('settings.delivery.freeKm', 'Base fee covers the first (km)', 'num')}${aIn('settings.delivery.perKm', 'Fee per succeeding km (₱, each started km)', 'num')}${aIn('settings.delivery.customerPct', 'Customer pays (% of the succeeding-km fee; the store pays the rest)', 'num')}${aIn('settings.delivery.minRider', 'Minimum rider earning per delivery (₱; the store tops up)', 'num')}${aIn('settings.delivery.maxKm', 'Longest delivery (km), unless a store sets its own', 'num')}</div>
+      <p class="hint" style="margin:0 0 8px">Default for stores without their own delivery fees. The customer pays the delivery fee and the rider earns it; stores pay nothing. When the fee is below the minimum (or free), the platform tops the rider up.</p>
+      <div class="agrid">${aIn('settings.delivery.freeKm', 'Free delivery for the first (km)', 'num')}${aIn('settings.delivery.perKm', 'Delivery fee per km after that (₱, each started km)', 'num')}${aIn('settings.delivery.minRider', 'Minimum rider earning per delivery (₱; the platform tops up as an incentive)', 'num')}${aIn('settings.delivery.maxKm', 'Longest delivery (km), unless a store sets its own', 'num')}</div>
       <div id="delEx" class="mt"></div>
-      <p class="hint">Restaurants that charge by their own delivery matrix (Listings &amp; rates → restaurant → Delivery) use that instead. Empty fields use the defaults: ₱20 base for the first 1.5 km · ₱10 per succeeding km · customer 70% · ₱20 minimum · 10 km. Tap Save to apply; new orders use the new fees.</p></div>
+      <p class="hint">Restaurants that charge by their own delivery matrix (Listings &amp; rates → restaurant → Delivery) use that instead. Empty fields use the defaults: free for the first 1.5 km · ₱10 per km after · ₱20 minimum rider earning · 10 km. Tap Save to apply; new orders use the new fees.</p></div>
     <div class="acard" id="iconCard"><h3><span class="hl">${ic('upload')} Website icon & app</span></h3>
       <div class="iconset"><div class="iconpv">${st.siteIcon ? `<img src="${esc(st.siteIcon)}" alt="Website icon">` : `<img src="${DEMO ? '' : '/img/icon-192.png'}" alt="Default icon" onerror="this.replaceWith(document.createTextNode('Default'))">`}</div>
         <div><p class="hint" style="margin:0 0 8px">Shown on the browser tab, bookmarks and the phone home screen when customers install the Tara Romblon app. Use a square logo (PNG or JPG, at least 512×512). Non-square pictures are fitted inside a square on the background colour below.</p>

@@ -9,11 +9,11 @@ function aIn(path, label, type, extra) {
 }
 /* Delivery fee matrix of one restaurant: distance bands with what the customer pays, what the store pays and what the rider gets */
 function deliveryMatrix(F, P0) {
-  if (!ADM.mxAdv && (F.simpleFees || !F.matrixFees)) {
+  if (true) {
     const M = F.matrix || [], min = Pricing.deliveryRule(ADM.draft).minRider, cf = m => m.customerFee != null && m.customerFee !== '' ? m.customerFee : (m.fee || 0);
     const inp = (path, v, label, step) => `<div class="field"><label>${label}</label><input type="number" min="0" step="${step}" data-b="${path}" data-t="num" value="${v == null ? '' : esc(v)}" onchange="const f=ADM.draft.foods[ADM.si]; f.matrixFees=true; f.simpleFees=true; admRerender()"></div>`;
-    return `<div class="acard"><h3>Delivery fees · ${esc(F.storeName)} <button class="link" style="margin-left:auto;font-size:13px" onclick="ADM.mxAdv=true;admRerender()">Advanced (store / rider split)</button></h3>
-      <p class="hint">What customers pay by distance from the store (₱0 = free). The merchant can also change this in the Merchant app → Store settings. Riders always earn at least ${peso(min)}; the store covers the difference.${F.matrixFees ? '' : ' <b>Not set yet: this store follows Settings → Delivery fee.</b>'}</p>
+    return `<div class="acard"><h3>Delivery fees · ${esc(F.storeName)}</h3>
+      <p class="hint">What customers pay by distance from the store (₱0 = free). The merchant can also change this in the Merchant app → Store settings. The customer pays it and the rider earns it; stores pay nothing. Riders earn at least ${peso(min)}: the platform tops up.${F.matrixFees ? '' : ' <b>Not set yet: this store follows Settings → Delivery fee.</b>'}</p>
       ${M.map((m, i) => `<div class="dfrow"><span class="dffrom">${i ? M[i - 1].upToKm : 0} km to</span>${inp(`${P0}.matrix.${i}.upToKm`, m.upToKm, 'Up to (km)', '0.1')}${inp(`${P0}.matrix.${i}.customerFee`, cf(m), 'Delivery fee (₱)', '1')}<button class="xbtn" onclick="admDel('${P0}.matrix',${i})">${ic('x')}</button></div>`).join('') || '<p class="meta">No distances yet.</p>'}
       <button class="btn ghost sm mt" onclick="const f=ADM.draft.foods[ADM.si]; f.matrixFees=true; f.simpleFees=true; const l=(f.matrix||[]).slice(-1)[0]; admAdd('${P0}.matrix',{upToKm:l?+l.upToKm+2:1,customerFee:l?(+(l.customerFee||l.fee||0))+20:0})">+ Add distance</button></div>`;
   }

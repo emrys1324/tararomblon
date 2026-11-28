@@ -35,6 +35,12 @@ source/                  editable source + build.py + tests
 
 There are no npm packages to install. The functions use Node's built-in `fetch` and `crypto`.
 
+## New: straightforward delivery fees — no store fee
+
+- The **customer pays the delivery fee** (set per distance by each merchant, or the Settings default: free for the first 1.5 km, then ₱10 per km). **Stores pay nothing** toward delivery.
+- The **rider earns the delivery fee**. When it is below the minimum rider earning (₱20) or free, **the platform tops the rider up** as an incentive. The Rider app shows the incentive on requests and in Earnings; Super Admin → Settings → Delivery fee shows customer / rider / incentive per distance.
+- Older orders keep the split they were placed with, so their payouts don't change.
+
 ## New: COD — the rider pays the store at pick-up
 
 - Settings → Riders → "Cash collected by riders on COD orders goes to" → **Rider pays the store at pick-up** (now the default).
