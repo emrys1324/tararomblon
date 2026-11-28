@@ -49,7 +49,7 @@ There are no npm packages to install. The functions use Node's built-in `fetch` 
 
 ## New: simple delivery fees set by each merchant; delivery address from the map
 
-- **Merchant app → Store settings → Delivery fees**: each food merchant sets what customers pay per distance (Up to km → ₱ fee, ₱0 = free). Customers farther than the last distance can't order delivery. Riders always earn at least the minimum (Settings → Delivery fee, ₱20); if the fee is lower or free, the store covers the difference. Super Admin sees the same simple table (Listings & rates → restaurant → Delivery), with an "Advanced" view for a custom store / rider split.
+- **Merchant app → Delivery fees** (its own tab for every food business): each food merchant sets what customers pay per distance (Up to km → ₱ fee, ₱0 = free). Customers farther than the last distance can't order delivery. Riders always earn at least the minimum (Settings → Delivery fee, ₱20); if the fee is lower or free, the store covers the difference. Super Admin sees the same simple table (Listings & rates → restaurant → Delivery), with an "Advanced" view for a custom store / rider split.
 - **Checkout**: the "House / landmark" field is gone. The delivery address is the one from the map: the place picked in the search box, or the address of the pinned spot (current location, tap or drag). Extra directions go in "Notes for the store and rider".
 
 ## New: photo galleries for stays (like Airbnb)

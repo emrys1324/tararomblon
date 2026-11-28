@@ -3069,11 +3069,11 @@ async function reload(quiet) {
 function render() {
   const unread = MP.threads.filter(t => Chat.unread(t)).length;
   const cal = hasCal() ? [['calendar', 'cal', 'Calendar']] : [];
-  const tabs = isAdm() ? [['orders', 'receipt', 'Orders & bookings'], ['today', 'sun', 'Today'], ...cal, ['messages', 'chat', 'Messages'], ['reports', 'chart', 'Reports'], ['listings', 'box', 'Listings & prices'], ['store', 'store', 'Store settings'], ['team', 'users', 'Team']]
+  const tabs = isAdm() ? [['orders', 'receipt', 'Orders & bookings'], ['today', 'sun', 'Today'], ...cal, ['messages', 'chat', 'Messages'], ['reports', 'chart', 'Reports'], ['listings', 'box', 'Listings & prices'], ...(Pricing.store(CAT, MP.me.bizId) ? [['delivery', 'bike', 'Delivery fees']] : []), ['store', 'store', 'Store settings'], ['team', 'users', 'Team']]
     : [['today', 'sun', 'Today'], ['orders', 'receipt', 'Orders'], ...cal, ['messages', 'chat', 'Messages'], ['listings', 'box', 'Availability']];
   if (!tabs.some(t => t[0] === MP.tab)) MP.tab = tabs[0][0];
   $('#root').innerHTML = `<div class="ptabs">${tabs.map(t => `<button class="${MP.tab === t[0] ? 'on' : ''}" onclick="MP.tab='${t[0]}';render()">${ic(t[1])} ${t[2]}${t[0] === 'messages' && unread ? ` <i>${unread}</i>` : ''}</button>`).join('')}</div><div id="pbody"></div>`;
-  ({ orders: vOrders, today: vToday, calendar: vCalendar, messages: vMessages, reports: vReports, listings: vListings, store: vStore, team: vTeam })[MP.tab]();
+  ({ orders: vOrders, today: vToday, calendar: vCalendar, messages: vMessages, reports: vReports, listings: vListings, delivery: vDelivery, store: vStore, team: vTeam })[MP.tab]();
 }
 
 /* ---- Orders ---- */
@@ -3410,11 +3410,18 @@ function delFeeCard(F) {
     <p class="hint mt">Customers pay this fee and the rider earns it; your store pays nothing toward delivery. When the fee is low or free, Tara Romblon tops the rider up. Customers see: <b>${esc(rows.map((r, i) => (i ? rows[i - 1].upToKm : 0) + '–' + r.upToKm + ' km: ' + (+r.fee ? '₱' + r.fee : 'Free')).join(' · '))}</b></p><div class="err" id="dfErr"></div></div>`;
 }
 function wireDelFees(F) {
-  const rows = delFeeRows(F), redraw = () => { $('#dfCard').outerHTML = delFeeCard(F); wireDelFees(F); };
+  const rows = delFeeRows(F), redraw = () => { const c = $('#dfCard'); if (!c || !c.isConnected || MP._dfBusy) return; MP._dfBusy = true; try { const t = document.createElement('div'); t.innerHTML = delFeeCard(F); c.replaceWith(t.firstElementChild); } catch (e) { } MP._dfBusy = false; wireDelFees(F); };
   document.querySelectorAll('[data-df]').forEach(x => { x.oninput = () => { const [i, k] = x.dataset.df.split('|'); rows[+i][k] = x.value === '' ? '' : +x.value; }; x.onchange = redraw; });
   document.querySelectorAll('[data-dfx]').forEach(x => x.onclick = () => { rows.splice(+x.dataset.dfx, 1); redraw(); });
   $('#dfAdd').onclick = () => { const l = rows[rows.length - 1]; rows.push({ upToKm: l ? Pricing.round(+l.upToKm + 2) : 1, fee: l ? +l.fee + 20 : 0 }); redraw(); };
-  $('#dfSave').onclick = async () => { loading(true, 'Saving…'); try { await api('mSaveDelivery', { token: MP.token, bands: rows }); const c = await api('getCatalog'); if (c.catalog) CAT = Pricing.norm(c.catalog); MP.dfee = null; loading(false); toast('Delivery fees saved'); const F2 = Pricing.store(CAT, F.bizId) || F; $('#dfCard').outerHTML = delFeeCard(F2); wireDelFees(F2); } catch (x) { loading(false); $('#dfErr').textContent = x.message; } };
+  $('#dfSave').onclick = async () => { loading(true, 'Saving…'); try { await api('mSaveDelivery', { token: MP.token, bands: rows }); const c = await api('getCatalog'); if (c.catalog) CAT = Pricing.norm(c.catalog); MP.dfee = null; loading(false); toast('Delivery fees saved'); vDelivery(); } catch (x) { loading(false); $('#dfErr').textContent = x.message; } };
+}
+/* Delivery fees tab: the Merchant Admin sets what customers pay per distance band */
+function vDelivery() {
+  const F = Pricing.store(CAT, MP.me.bizId); if (!F) { $('#pbody').innerHTML = '<div class="empty">Delivery fees are for food stores.</div>'; return; }
+  const set = Pricing.bands(F).length && F.matrixFees;
+  $('#pbody').innerHTML = `${set ? '' : `<div class="warn" style="margin-bottom:12px">You haven't set your own delivery fees yet, so customers are charged the Tara Romblon default (${esc(Pricing.deliveryText(CAT, Object.assign({}, F, { matrixFees: false })))}). Set your own below and tap Save.</div>`}${delFeeCard(F)}`;
+  wireDelFees(F);
 }
 async function vStore() {
   if (!isAdm()) { $('#pbody').innerHTML = '<div class="empty">Store settings are for the Merchant Admin.</div>'; return; }
@@ -3424,7 +3431,7 @@ async function vStore() {
   const fld = (id, label, v, type, ph) => `<div class="field"><label>${label}</label><input id="${id}" ${type ? 'type="' + type + '"' : ''} value="${esc(v || '')}" placeholder="${esc(ph || '')}"></div>`;
   const tsel = (id, v) => `<select id="${id}">${HALF.map(t => `<option value="${t}" ${t === v ? 'selected' : ''}>${fmtT(t)}</option>`).join('')}</select>`;
   const tog = (id, label, on) => `<label class="tog"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}> ${label}</label>`;
-  $('#pbody').innerHTML = `${F ? delFeeCard(F) : ''}<div class="acard"><h3><span class="hl">${ic('store')} Business information</span></h3>
+  $('#pbody').innerHTML = `<div class="acard"><h3><span class="hl">${ic('store')} Business information</span></h3>
       <div class="agrid">${fld('sfN', 'Name of business *', z.name)}${fld('sfT', 'Tagline', z.tagline, '', 'e.g. Specialty coffee by the sea')}${fld('sfP', 'Contact number', z.phone, 'tel')}${fld('sfE', 'Email for notifications', z.email, 'email')}${fld('sfF', 'Facebook page / website', z.facebook)}
         <div class="field"><label>Town</label><select id="sfTown">${TOWNS.map(t => `<option ${t === (z.town || 'San Agustin') ? 'selected' : ''}>${t}</option>`).join('')}</select></div></div>
       <div class="mt">${fld('sfA', 'Address', z.address || (F && F.address))}</div><div class="mt">${fld('sfL', 'Landmark / directions', z.landmark)}</div>
@@ -3446,7 +3453,6 @@ async function vStore() {
   const saveTok = async tok => { loading(true, 'Connecting to Loyverse…'); try { const r = await api('mSaveLoyverse', { token: MP.token, loyverseToken: tok }); loading(false); toast(r.loyverseConnected ? 'Loyverse connected' : 'Loyverse disconnected'); vStore(); } catch (x) { loading(false); toast(x.message); } };
   if ($('#lvSave')) $('#lvSave').onclick = () => { const t = $('#lvTok').value.trim(); if (!t) { toast('Paste your Loyverse access token.'); return; } saveTok(t); };
   if ($('#lvOff')) $('#lvOff').onclick = () => saveTok('');
-  if (F) wireDelFees(F);
   $('#sfSave').onclick = async () => {
     const v = id => $('#' + id) ? $('#' + id).value.trim() : undefined, c = id => $('#' + id) ? $('#' + id).checked : undefined, hours = {};
     DAYS.forEach(([d]) => hours[d] = { open: $('#ho_' + d).value, close: $('#hc_' + d).value, closed: $('#hx_' + d).checked });
